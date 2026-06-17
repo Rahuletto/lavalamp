@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# lavalamp — Cloudflare-native AI coding harness
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${SCRIPT_DIR}/.."
+SERVER_PATH="${REPO_DIR}/dist/server.mjs"
+
+show_help() {
+  cat <<'EOF'
+lavalamp — Cloudflare-native AI coding harness
+
+USAGE:
+  lavalamp                       Start interactive session in current directory
+  lavalamp --inline "PROMPT"     Run a single prompt and exit
+  lavalamp --workspace /path     Set workspace directory (default: cwd)
+  lavalamp --model MODEL         Override default model
+  lavalamp login                 Authenticate with Cloudflare
+  lavalamp logout                Remove stored credentials
+  lavalamp status                Show login status
+  lavalamp --help                Show this help
+  lavalamp --version             Show version
+
+KEYBINDINGS:
+  Enter       steer (inject after current tool call, same turn)
+  Tab         queue (send after full response, next turn)
+  Shift+Enter newline (or Ctrl+J as fallback)
+  Ctrl+C      interrupt current operation
+  Ctrl+D      exit
+
+EXAMPLES:
+  lavalamp login
+  lavalamp
+  lavalamp --inline "read greet.ts and change the greeting to use Hi instead of Hello"
+  lavalamp --workspace /path/to/project --inline "list all TypeScript files"
+
+ENVIRONMENT:
+  LAVALAMP_MODEL          Override default model (e.g. "anthropic/claude-sonnet-4-20250514")
+  LAVALAMP_WORKSPACE      Override workspace directory
+  ANTHROPIC_API_KEY       API key for Anthropic models (BYOK)
+  OPENAI_API_KEY          API key for OpenAI models (BYOK)
+  OPENROUTER_API_KEY      API key for OpenRouter models (BYOK)
+EOF
+}
+
+show_version() {
+  echo "lavalamp 0.1.0"
+}
+
+# Handle subcommands before flag parsing
+case "${1:-}" in
+  login|logout|status)
+    exec bun run "${REPO_DIR}/src/cli/auth.ts" "$@"
+    ;;
+esac
+
+# Parse args
+INLINE_MODE=false
+INLINE_PROMPT=""
+WORKSPACE=""
+MODEL=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --inline|-i)
+      INLINE_MODE=true
+      shift
+      if [[ $# -gt 0 ]]; then
+        INLINE_PROMPT="$1"
+        shift
+      else
+        echo "[lavalamp] Error: --inline requires a prompt argument" >&2
+        exit 1
+      fi
+      ;;
+    --workspace|-w)
+      shift
+      if [[ $# -gt 0 ]]; then
+        WORKSPACE="$(cd "$1" 2>/dev/null && pwd || echo "$1")"
+        shift
+      else
+        echo "[lavalamp] Error: --workspace requires a path" >&2
+        exit 1
+      fi
+      ;;
+    --model|-m)
+      shift
+      if [[ $# -gt 0 ]]; then
+        MODEL="$1"
+        shift
+      else
+        echo "[lavalamp] Error: --model requires a model ID" >&2
+        exit 1
+      fi
+      ;;
+    --help|-h)
+      show_help
+      exit 0
+      ;;
+    --version|-v)
+      show_version
+      exit 0
+      ;;
+    *)
+      echo "[lavalamp] Unknown argument: $1" >&2
+      echo "[lavalamp] Use --help for usage information" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Build environment
+export LAVALAMP_WORKSPACE="${WORKSPACE:-$(pwd)}"
+if [ -n "$MODEL" ]; then
+  export LAVALAMP_MODEL="$MODEL"
+fi
+
+if [ "$INLINE_MODE" = true ]; then
+  if [ -z "$INLINE_PROMPT" ]; then
+    echo "[lavalamp] Error: --inline requires a prompt" >&2
+    exit 1
+  fi
+
+  echo "[lavalamp] Running: $INLINE_PROMPT" >&2
+  echo "[lavalamp] Workspace: $LAVALAMP_WORKSPACE" >&2
+  echo ""
+
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts --inline "$INLINE_PROMPT" 2>&1
+else
+  echo "[lavalamp] Starting interactive session..." >&2
+  echo "[lavalamp] Workspace: $LAVALAMP_WORKSPACE" >&2
+  echo ""
+
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts 2>&1
+fi
