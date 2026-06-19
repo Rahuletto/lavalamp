@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, existsSync, statSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
+import { requestPermission } from '../permissions/middleware';
 
 function findShell(): string {
   const platform = process.platform;
@@ -107,13 +108,47 @@ function execCommand(command: string, options: ExecOptions = {}): Promise<ShellR
   });
 }
 
+/**
+ * Wrap exec with permission gating for `bash` tool.
+ * Read-only sed commands are auto-allowed by the rules.
+ */
+async function gatedExec(
+  command: string,
+  options: ExecOptions = {},
+  workspaceRoot: string,
+): Promise<ShellResult> {
+  const response = await requestPermission('bash', { command }, workspaceRoot);
+  if (response.decision === 'deny') {
+    return { exitCode: 1, stdout: '', stderr: 'Permission denied', timedOut: false };
+  }
+  return execCommand(command, options);
+}
+
+/**
+ * Wrap writeFile with permission gating for `write`/`edit` tools.
+ */
+async function gatedWriteFile(
+  path: string,
+  content: string | Uint8Array,
+  workspaceRoot: string,
+  cwd: string,
+): Promise<void> {
+  const response = await requestPermission('write', { file_path: path }, workspaceRoot);
+  if (response.decision === 'deny') {
+    throw new Error('Permission denied for write');
+  }
+  const resolved = resolve(cwd, path);
+  mkdirSync(dirname(resolved), { recursive: true });
+  writeFileSync(resolved, content);
+}
+
 export function local(options: { env?: Record<string, string> } = {}) {
   return {
     createSessionEnv: async () => {
       const cwd = process.cwd();
       return {
         cwd,
-        exec: execCommand,
+        exec: (command: string, opts: ExecOptions = {}) => gatedExec(command, opts, cwd),
         async readFile(path: string): Promise<string> {
           return readFileSync(resolve(cwd, path), 'utf-8');
         },
@@ -121,9 +156,7 @@ export function local(options: { env?: Record<string, string> } = {}) {
           return new Uint8Array(readFileSync(resolve(cwd, path)));
         },
         async writeFile(path: string, content: string | Uint8Array): Promise<void> {
-          const resolved = resolve(cwd, path);
-          mkdirSync(dirname(resolved), { recursive: true });
-          writeFileSync(resolved, content);
+          return gatedWriteFile(path, content, cwd, cwd);
         },
         async stat(path: string) {
           const s = statSync(resolve(cwd, path));
