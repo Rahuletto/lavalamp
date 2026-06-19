@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
-import { loadCredentials, saveCredentials, type Credentials } from './credentials';
+import { clearCredentials, loadCredentials, saveCredentials, type Credentials } from './credentials';
 
 const REQUIRED_SCOPES = ['account:read', 'ai:write'];
 
@@ -25,21 +25,21 @@ function parseTomlValue(raw: string): string {
   return trimmed;
 }
 
-function readWranglerToken(): { oauthToken: string; scopes: string[] } | null {
+function readWranglerConfig(): { refreshToken: string; scopes: string[] } | null {
   const configPath = wranglerConfigPath();
   if (!existsSync(configPath)) return null;
 
   try {
     const content = readFileSync(configPath, 'utf-8');
-    let oauthToken = '';
+    let refreshToken = '';
     let scopes: string[] = [];
 
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('oauth_token')) {
+      if (trimmed.startsWith('refresh_token')) {
         const eqIdx = trimmed.indexOf('=');
         if (eqIdx !== -1) {
-          oauthToken = parseTomlValue(trimmed.slice(eqIdx + 1));
+          refreshToken = parseTomlValue(trimmed.slice(eqIdx + 1));
         }
       }
       if (trimmed.startsWith('scopes')) {
@@ -49,14 +49,35 @@ function readWranglerToken(): { oauthToken: string; scopes: string[] } | null {
           const inner = trimmed.slice(bracketStart + 1, bracketEnd);
           scopes = inner
             .split(',')
-            .map((s) => parseTomlValue(s.trim()))
+            .map((scope) => parseTomlValue(scope.trim()))
             .filter(Boolean);
         }
       }
     }
 
-    if (!oauthToken) return null;
-    return { oauthToken, scopes };
+    if (!refreshToken) return null;
+    return { refreshToken, scopes };
+  } catch {
+    return null;
+  }
+}
+
+async function readWranglerAuthToken(): Promise<string | null> {
+  try {
+    const result = await new Promise<{ stdout: string; exitCode: number }>((resolve) => {
+      const proc = spawn('bunx', ['wrangler', 'auth', 'token', '--json'], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        env: { ...process.env },
+      });
+      let stdout = '';
+      proc.stdout.on('data', (data: Buffer) => (stdout += data.toString()));
+      proc.on('close', (code) => resolve({ stdout, exitCode: code ?? 1 }));
+      proc.on('error', () => resolve({ stdout: '', exitCode: 1 }));
+    });
+
+    if (result.exitCode !== 0) return null;
+    const parsed = JSON.parse(result.stdout) as { token?: string };
+    return typeof parsed.token === 'string' ? parsed.token : null;
   } catch {
     return null;
   }
@@ -101,6 +122,10 @@ function prompt(question: string): Promise<string> {
       resolve(answer.trim());
     });
   });
+}
+
+export async function validateCredentials(creds: Credentials): Promise<boolean> {
+  return validateToken(creds.apiToken, creds.accountId);
 }
 
 async function validateToken(
@@ -178,12 +203,18 @@ async function resolveAccountId(oauthToken: string): Promise<string | null> {
 }
 
 async function tryWranglerToken(): Promise<Credentials | null> {
-  const wrangler = readWranglerToken();
+  const wrangler = readWranglerConfig();
   if (!wrangler) return null;
 
-  console.error(`[lavalamp] Found Wrangler token.`);
+  console.error(`[lavalamp] Found Wrangler login.`);
 
-  const accountId = await resolveAccountId(wrangler.oauthToken);
+  const oauthToken = await readWranglerAuthToken();
+  if (!oauthToken) {
+    console.error(`[lavalamp] Could not read refreshed Wrangler auth token.`);
+    return null;
+  }
+
+  const accountId = await resolveAccountId(oauthToken);
   if (!accountId) {
     console.error(`[lavalamp] Could not resolve account ID from token.`);
     return null;
@@ -191,26 +222,31 @@ async function tryWranglerToken(): Promise<Credentials | null> {
 
   console.error(`[lavalamp] Account ID: ${accountId.slice(0, 8)}...`);
 
-  const valid = await validateToken(wrangler.oauthToken, accountId);
+  const valid = await validateToken(oauthToken, accountId);
   if (!valid) {
     console.error(`[lavalamp] Token validation failed.`);
     return null;
   }
 
-  return { accountId, apiToken: wrangler.oauthToken };
+  return { accountId, apiToken: oauthToken };
 }
 
 export async function login(): Promise<Credentials> {
   const existing = loadCredentials();
   if (existing) {
-    console.error(`[lavalamp] Already logged in (account ${existing.accountId.slice(0, 8)}...)`);
-    return existing;
+    const valid = await validateCredentials(existing);
+    if (valid) {
+      console.error(`[lavalamp] Already logged in (account ${existing.accountId.slice(0, 8)}...)`);
+      return existing;
+    }
+    console.error(`[lavalamp] Existing credentials are invalid. Re-authenticating...`);
+    clearCredentials();
   }
 
   console.error(`[lavalamp] Setting up Cloudflare access...`);
   console.error('');
 
-  const wrangler = readWranglerToken();
+  const wrangler = readWranglerConfig();
   if (wrangler && hasRequiredScopes(wrangler.scopes)) {
     console.error(`[lavalamp] Using existing Wrangler token...`);
     const creds = await tryWranglerToken();
