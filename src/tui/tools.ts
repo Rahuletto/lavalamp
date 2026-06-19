@@ -36,9 +36,9 @@ export function summarizeToolArgs(
             ? args.path
             : "";
       const rest: string[] = [];
-      if (args.offset) rest.push(`L${args.offset}`);
-      if (args.limit) rest.push(`${args.limit} lines`);
-      return stripCwd(fp, cwd) + (rest.length ? ` ${rest.join(":")}` : "");
+      if (typeof args.offset !== "undefined" && args.offset !== null) rest.push(`offset=${args.offset}`);
+      if (typeof args.limit !== "undefined" && args.limit !== null) rest.push(`limit=${args.limit}`);
+      return stripCwd(fp, cwd) + (rest.length ? ` (${rest.join(", ")})` : "");
     }
     case "write":
     case "edit": {

@@ -159,28 +159,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
     id: "header",
     flexDirection: "row",
     width: "100%",
-    height: 1,
+    height: 2,
     padding: { left: 1, right: 1 },
+    paddingBottom: 1,
   });
   const headerTitle = new TextRenderable(renderer, {
     id: "header-title",
     content: "lavalamp",
     fg: COLORS.accent,
     attributes: TextAttributes.BOLD,
-  });
-  const headerSep = new TextRenderable(renderer, {
-    id: "header-sep",
-    content: "  ",
-    fg: COLORS.gray,
-  });
-  const headerPath = new TextRenderable(renderer, {
-    id: "header-path",
-    content: "",
-    fg: COLORS.gray,
+    selectable: false,
   });
   header.add(headerTitle);
-  header.add(headerSep);
-  header.add(headerPath);
   root.add(header);
 
   const messagesScroll = new ScrollBoxRenderable(renderer, {
@@ -212,6 +202,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
     flexShrink: 0,
     maxHeight: 10,
     visible: false,
+    border: true,
+    borderColor: COLORS.border,
+    borderStyle: "single",
+    paddingLeft: 1,
+    paddingRight: 1,
   });
   const completionScroll = new ScrollBoxRenderable(renderer, {
     id: "completion-scroll",
@@ -264,7 +259,19 @@ export async function startTui(options: TuiOptions): Promise<void> {
   taskStatusBar.add(taskStatusText);
   root.add(taskStatusBar);
 
-  const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  const SPINNER_FRAMES = [
+    "░░░░░░",
+    "░░░░░░",
+    "░░░░░░",
+    "░░░░░░",
+    "▓░░░░░",
+    "▒▓░░░░",
+    "░▒▓░░░",
+    "░░▒▓░░",
+    "░░░▒▓░",
+    "░░░░▒▓",
+    "░░░░░▒",
+  ];
   let spinnerFrame = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -709,7 +716,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const inputSeparatorTop = new TextRenderable(renderer, {
     id: "input-separator-top",
     content: "─".repeat(500),
-    fg: COLORS.dim,
+    fg: COLORS.border,
     width: "100%",
     height: 1,
     selectable: false,
@@ -843,7 +850,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const inputSeparatorBottom = new TextRenderable(renderer, {
     id: "input-separator-bottom",
     content: "─".repeat(500),
-    fg: COLORS.dim,
+    fg: COLORS.border,
     width: "100%",
     height: 1,
     selectable: false,
@@ -861,14 +868,31 @@ export async function startTui(options: TuiOptions): Promise<void> {
     id: "status-spinner",
     content: "",
     fg: COLORS.accent,
+    selectable: false,
   });
   const statusText = new TextRenderable(renderer, {
     id: "status-text",
     content: "",
     fg: COLORS.gray,
+    flexGrow: 1,
+    selectable: false,
+  });
+  const statusMode = new TextRenderable(renderer, {
+    id: "status-mode",
+    content: "",
+    fg: COLORS.planAccent,
+    selectable: false,
+  });
+  const statusPath = new TextRenderable(renderer, {
+    id: "status-path",
+    content: "",
+    fg: COLORS.gray,
+    selectable: false,
   });
   statusBar.add(statusSpinner);
+  statusBar.add(statusMode);
   statusBar.add(statusText);
+  statusBar.add(statusPath);
   root.add(statusBar);
 
   const viewerOverlay = new BoxRenderable(renderer, {
@@ -1034,7 +1058,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         flexDirection: "row",
         width: "100%",
         height: 1,
-        backgroundColor: sel ? COLORS.completionSelectedBg : undefined,
+        backgroundColor: sel ? (accent() + "20") : undefined,
       });
       row.add(
         new TextRenderable(renderer, {
@@ -1061,11 +1085,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     completionScroll.scrollTo(completionIndex);
     completionBox.visible = true;
+    inputSeparatorTop.visible = false;
   }
 
   function hideCompletions() {
     completing = false;
     completionBox.visible = false;
+    inputSeparatorTop.visible = true;
     for (const child of completionScroll.getChildren()) child.destroy();
   }
 
@@ -1095,7 +1121,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   function updateHeader() {
     headerTitle.content = state.planMode ? "lavalamp [PLAN]" : "lavalamp";
     headerTitle.fg = accent();
-    headerPath.content = shortenPath(cwd);
+    statusPath.content = shortenPath(cwd);
   }
 
   function updatePromptChar() {
@@ -1106,12 +1132,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
     refreshSubPanel();
     const subCount = state.subAgents.filter((sub) => sub.status === "running").length;
     const autorun = isAllowAll() ? " | SUDO" : getAutorunEntries().length > 0 ? " | AUTORUN" : "";
+    
+    if (state.planMode) {
+      statusMode.content = "PLAN ";
+      statusMode.fg = COLORS.planAccent;
+      statusMode.visible = true;
+    } else {
+      statusMode.content = "";
+      statusMode.visible = false;
+    }
+
     if (state.processing) {
       const q =
         state.queuePending.length > 0
           ? ` | queued: ${state.queuePending.length}`
           : "";
       statusSpinner.content = `${SPINNER_FRAMES[spinnerFrame]} `;
+      statusSpinner.fg = accent();
       statusSpinner.visible = true;
       statusText.content = `processing...${q}${subCount ? ` | ${subCount} subagents running` : ""}${autorun} (Enter: steer, Tab: queue)`;
       statusText.fg = autorun ? COLORS.pink : COLORS.gray;
@@ -1122,6 +1159,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       statusText.fg = COLORS.yellow;
     } else if (subCount > 0 || isAutorunActive()) {
       statusSpinner.content = subCount > 0 ? `${SPINNER_FRAMES[spinnerFrame]} ` : "";
+      statusSpinner.fg = accent();
       statusSpinner.visible = subCount > 0;
       statusText.content = `${subCount ? `${subCount} subagents running` : ""}${autorun}`.trim();
       statusText.fg = autorun ? COLORS.pink : COLORS.gray;
@@ -1301,14 +1339,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (diffStr) {
         const ext = fp.split(".").pop() || "";
         const lang = EXT_LANG_MAP[ext];
+        const diffLines = diffStr.split("\n").length;
         const diffComp = new DiffRenderable(renderer, {
           id: nextId(),
           diff: diffStr,
           view: "unified",
           filetype: lang || undefined,
           syntaxStyle: codeSyntaxStyle,
-          showLineNumbers: false,
-          height: 12,
+          showLineNumbers: true,
+          fg: COLORS.white,
+          lineNumberFg: COLORS.dim,
+          height: diffLines,
           width: "100%",
           selectable: true,
         });
@@ -1319,30 +1360,16 @@ export async function startTui(options: TuiOptions): Promise<void> {
       entry.headerLabel.fg = isError ? COLORS.red : COLORS.green;
       entry.headerLabel.content = `> ${entry.summary}${dur} \u25b8`;
       if (resultStr && !isError) {
-        const allLines = resultStr.split("\n");
-        const displayStr = allLines.length > 30
-          ? allLines.slice(0, 30).join("\n")
-          : resultStr;
         const lang = detectLanguage(fp);
         const code = new CodeRenderable(renderer, {
           id: nextId(),
-          content: displayStr,
+          content: resultStr,
           filetype: lang,
           syntaxStyle: codeSyntaxStyle,
           width: "100%",
           selectable: true,
         });
         entry.contentBox.add(code);
-        if (allLines.length > 30) {
-          entry.contentBox.add(
-            new TextRenderable(renderer, {
-              id: nextId(),
-              content: `  ... (${allLines.length - 30} more lines)`,
-              fg: COLORS.dim,
-              width: "100%",
-            }),
-          );
-        }
         entry.contentBox.visible = false;
       }
     } else {
@@ -2354,6 +2381,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     updatePromptChar();
     updateHeader();
+    updateStatus();
     requestScroll();
   }
 
@@ -2390,6 +2418,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (messages) {
       currentSessionId = chosen.id;
       state.messages = messages;
+      
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      if (lastUser && lastUser.content.startsWith("<<PLAN_MODE>>")) {
+        state.planMode = true;
+      } else {
+        state.planMode = false;
+      }
+      updateHeader();
+      updatePromptChar();
+      updateStatus();
+      
       renderAllMessages();
     }
   }
@@ -3021,6 +3060,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (messages) {
         currentSessionId = options.resumeSessionId;
         state.messages = messages;
+        
+        const lastUser = [...messages].reverse().find((m) => m.role === "user");
+        if (lastUser && lastUser.content.startsWith("<<PLAN_MODE>>")) {
+          state.planMode = true;
+          updateHeader();
+          updatePromptChar();
+          updateStatus();
+        }
+        
         renderAllMessages();
       } else {
         showResultPanel("session", [{ content: `  session not found: ${options.resumeSessionId}`, fg: COLORS.red }]);

@@ -14,7 +14,7 @@ export const COLORS = {
   darkBg: '#1a1b26',
   inputBg: '#24283b',
   inputFocusedBg: '#2f3449',
-  border: '#3b4261',
+  border: '#444444',
   focusedBorder: '#7aa2f7',
   completionBg: '#2a2d3a',
   completionSelectedBg: '#FF5F1F20',

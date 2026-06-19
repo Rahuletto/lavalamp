@@ -150,15 +150,15 @@ export const syntaxStyle = SyntaxStyle.fromStyles({
 });
 
 export const codeSyntaxStyle = SyntaxStyle.fromStyles({
-  default: { fg: "#9616FF" },
-  string: { fg: "#0A95FF" },
-  keyword: { fg: "#FF500A", bold: true },
-  comment: { fg: "#52100050" },
-  function: { fg: "#9616FF" },
-  number: { fg: "#79b8ff" },
-  operator: { fg: "#52100050" },
-  type: { fg: "#9616FF" },
-  variable: { fg: "#9616FF" },
-  property: { fg: "#79b8ff" },
-  constant: { fg: "#79b8ff" },
+  default: { fg: "#C9D1D9" },
+  string: { fg: "#A5D6FF" },
+  keyword: { fg: "#FF7B72", bold: true },
+  comment: { fg: "#8B949E" },
+  function: { fg: "#D2A8FF" },
+  number: { fg: "#79C0FF" },
+  operator: { fg: "#FF7B72" },
+  type: { fg: "#FFA657" },
+  variable: { fg: "#C9D1D9" },
+  property: { fg: "#79C0FF" },
+  constant: { fg: "#79C0FF" },
 });
