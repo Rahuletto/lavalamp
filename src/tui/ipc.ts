@@ -52,11 +52,23 @@ export interface PromptCallbacks {
   onError?: (error: Error) => void;
 }
 
+export interface PermissionRequestMsg {
+  type: 'permission_request';
+  requestId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+export type PermissionDecision = 'allow' | 'deny';
+
+export type OnPermissionRequest = (request: PermissionRequestMsg) => void;
+
 export class FlueProcess {
   private child: ChildProcess | null = null;
   private ready = false;
   private pending = new Map<string, PromptCallbacks>();
   private shutdownRequested = false;
+  onPermissionRequest?: OnPermissionRequest;
 
   constructor(
     private serverPath: string,
@@ -66,6 +78,20 @@ export class FlueProcess {
 
   get isProcessing(): boolean {
     return this.pending.size > 0;
+  }
+
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
+  sendPermissionResponse(requestId: string, decision: PermissionDecision, alwaysAllow?: boolean): void {
+    if (!this.child) return;
+    this.child.send({
+      type: 'permission_response',
+      requestId,
+      decision,
+      alwaysAllow: alwaysAllow ?? false,
+    });
   }
 
   async start(): Promise<void> {
@@ -161,7 +187,7 @@ export class FlueProcess {
     });
   }
 
-  prompt(message: string, callbacks: PromptCallbacks = {}): string {
+  prompt(message: string, callbacks: PromptCallbacks = {}, sessionId?: string): string {
     if (!this.child || !this.ready) {
       throw new Error('Server not started');
     }
@@ -173,9 +199,16 @@ export class FlueProcess {
       type: 'prompt',
       requestId,
       message,
+      sessionId,
     });
 
     this.child.on('message', (raw: Record<string, unknown>) => {
+      // Handle permission requests from the server
+      if (raw.type === 'permission_request') {
+        this.onPermissionRequest?.(raw as unknown as PermissionRequestMsg);
+        return;
+      }
+
       if (raw.requestId !== requestId) return;
 
       if (raw.type === 'started') {
