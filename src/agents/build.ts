@@ -17,6 +17,7 @@ import { createDeepWikiTool } from '../tools/deepwiki';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
 import { createOracleTool } from '../tools/oracle';
 import { createDoomLoopTool } from '../tools/doom-loop';
+import { createRipgrepTool } from '../tools/ripgrep';
 import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
 
@@ -68,6 +69,8 @@ export default createAgent((ctx) => {
     '',
     '## Core rules',
     '- Always `read` a file before editing it.',
+    '- Use `ripgrep` (not `grep`) for all codebase searches — it is faster and supports full regex.',
+    '- Use `read` with offset/limit to read specific chunks of large files instead of the entire file.',
     '- Edits use hashline format: [path#tag] header + SWAP/DEL/INS operations with +body lines.',
     '- Ranges are TIGHT: cover only lines that change. Use SWAP.BLK for whole functions/blocks.',
     '- After every edit, the tag changes. Re-read before the next edit on the same file.',
@@ -79,7 +82,7 @@ export default createAgent((ctx) => {
     '- DO NOT use write, edit, bash, rename, or undo. These are forbidden.',
     '- DO NOT create, modify, or delete any files.',
     '- DO NOT run any shell commands.',
-    '- ONLY use read, grep, glob, codebase_search, web_search, fetch_url, deepwiki, oracle, memory_read.',
+    '- ONLY use read, grep, ripgrep, glob, codebase_search, web_search, fetch_url, deepwiki, oracle, memory_read.',
     '- Your job: research the codebase, analyze requirements, think deeply about architecture.',
     '- Use create_task to build a structured implementation plan with clear steps.',
     '- Each task should be specific, actionable, and ordered by dependency.',
@@ -105,18 +108,21 @@ export default createAgent((ctx) => {
     '',
     '## Task management',
     '- Use `create_task` to add a new task with title and optional description.',
+    '- Use `start_task` to mark a task as being worked on.',
+    '- Use `complete_task` to mark a task as done. Completed tasks stay visible with [x].',
     '- Use `edit_task` to update a task title or description.',
-    '- Use `delete_task` to remove a task by ID.',
-    '- Use `complete_task` to mark a task as done.',
+    '- Use `delete_task` to permanently remove a task by ID.',
     '- Use `skip_task` to cancel/remove a task that is no longer needed.',
     '- Use `list_tasks` to see all tasks and their status.',
+    '- Tasks show in the TUI task panel in real-time. All tasks completed = panel hides.',
     '',
     '## Tools',
-    '- `read` → read file contents',
+    '- `read` → read file contents (supports offset/limit for chunks)',
     '- `write` → create or overwrite a file',
     '- `edit` → apply a hashline patch',
     '- `bash` → run shell commands',
-    '- `grep` → search file contents',
+    '- `grep` → search file contents (basic)',
+    '- `ripgrep` → search file contents with regex (preferred over grep)',
     '- `glob` → find files by pattern',
     '- `rename` → move/rename a file',
     '- `undo` → reverse the last file mutation',
@@ -133,9 +139,10 @@ export default createAgent((ctx) => {
     '- `oracle` → get second opinion from a different model',
     '- `doom_loop` → call when stuck to get recovery steps',
     '- `create_task` → add a task',
+    '- `start_task` → mark task in-progress',
+    '- `complete_task` → mark task done',
     '- `edit_task` → update a task',
     '- `delete_task` → remove a task',
-    '- `complete_task` → mark task done',
     '- `skip_task` → cancel a task',
     '- `list_tasks` → list all tasks',
   ];
@@ -160,6 +167,7 @@ export default createAgent((ctx) => {
       createCodebaseSearchTool({ root: workspaceRoot, resolve: (p: string) => `${workspaceRoot}/${p}`, assertAccessible: () => {}, assertInside: () => {}, isInside: () => true } as any),
       createOracleTool(),
       createDoomLoopTool(),
+      createRipgrepTool(workspaceRoot),
       ...createTaskTools(taskStore),
     ],
     sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
