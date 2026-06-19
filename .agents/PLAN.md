@@ -85,12 +85,24 @@ OpenCode/Claude Code.
 - [x] Design system: Red, Accent, Blue, Pink, Green, Cyan, Warn, Link color tokens.
 - **Exit:** full coding session driven entirely from the TUI.
 
-### M4 — Permission engine
-- [ ] Rule engine (allow/ask/deny/delegate, sequential, per-arg glob/regex) wrapping `execute`.
-- [ ] Safe defaults; self-protection for config/cred files.
+### M4 — Permission engine  [DONE]
+- [x] Rule engine (allow/ask/deny, per-tool, per-arg substring matching).
+- [x] Autorun state persisted in `.lavalamp/autorun.json` with status bar indicator.
+- [x] `/autorun`, `/sudo`, and `/permissions` TUI commands.
+- [x] Command/pattern-based always-allow and dangerous allow-everything sudo toggle.
+- [x] Safe defaults for read-only vs destructive/risky tools.
+- [x] PermissionBox approval UI with bidirectional IPC gating around tool execution.
+- [x] Sandbox-level permission wrapping (bash, write gated via IPC).
+- [x] Custom tool wrapping via `gate()` in build agent.
+- [x] Auto-deny timeout (30s) for unattended permission requests.
+- [x] User-configurable rules via `.lavalamp/rules.json`.
 - **Exit:** destructive ops prompt; read-only ops flow freely; rules user-configurable.
 
-### M5 — Agent roster + skills
+### M5 — Agent roster + parallel subagents  [IN PROGRESS]
+- [x] `deploy_parallel_subs` tool (up to 3 concurrent research agents).
+- [x] `SubAgentManager` orchestration module.
+- [x] Subagent panel and `/subagents` command.
+- [x] Auto-merge results back to the main agent.
 - [ ] `explore`, `plan`, `research`, `review` profiles + `task` dispatch + capability boundaries.
 - [ ] **spec-mode approval gate** (plan → approve → build).
 - [ ] Bundle our skills; load user-global + project-local skill dirs.

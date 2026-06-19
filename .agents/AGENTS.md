@@ -84,14 +84,15 @@ bin/lavalamp (bash wrapper)
               ├─ OpenTUI renderer (app.ts, ~2600 lines)
               │   Widget tree: header, messagesScroll, completionBox,
               │   lavaLampBox, taskStatusBar, resultBox, confirmBox,
-              │   queueBox, taskBox, inputRow, statusBar, viewerOverlay
+              │   queueBox, taskBox, subBox, inputRow, statusBar, viewerOverlay
               │
               └─ Shared modules
-                  state.ts    — Message, ToolCall, Task, AppState
+                  state.ts    — Message, ToolCall, Task, SubAgent, AppState
                   theme.ts    — COLORS (accent, plan accent, 20+ colors)
                   art.ts      — Slash commands, lava lamp frames, syntaxStyle
                   discover.ts — File/skill discovery, fuzzy search
                   sessions.ts — Session save/load/list (JSON in ~/.lavalamp/sessions/)
+                  subs.ts     — SubAgentManager; spawns parallel FlueProcess children
                   tools.ts    — Tool arg/result summarization, diff detection,
                                 file path extraction, language detection, EXT_LANG_MAP
 ```
@@ -116,15 +117,25 @@ bin/lavalamp (bash wrapper)
 - `oracle` — second opinion from a different model
 - `doom_loop` — recovery when stuck
 - `ripgrep` — wraps `rg` binary with regex, file type, context, case-insensitive, multiline
+- `deploy_parallel_subs` — returns a structured marker for the TUI to spawn up to 3 parallel research agents
 - `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks`
 - `sessions`, `session_context` — session introspection
 - `memory_read`, `memory_write`, `memory_append` — persistent project memory
 
 **Flue built-in tools:**
 - `read`, `write`, `edit`, `bash`, `grep`, `glob`
+- Permission defaults allow read-only `bash` commands that start with `sed ` so the harness can inspect precise file ranges; other `bash` commands still ask.
 
 **TUI-local slash commands (not sent to agent):**
-- `/help`, `/clear`, `/compact`, `/sessions`, `/memory`, `/model`, `/workspace`, `/skills`, `/mcp`, `/tools`, `/plan`, `/copy`, `/undo`, `/quit`
+- `/help`, `/clear`, `/compact`, `/sessions`, `/memory`, `/model`, `/workspace`, `/skills`, `/mcp`, `/tools`, `/subagents`, `/autorun`, `/permissions`, `/plan`, `/copy`, `/undo`, `/quit`
+- `/sudo` toggles dangerous allow-everything mode and always shows a confirmation box before enabling.
+
+**Permission engine (fully wired):**
+- `src/permissions/rules.ts` — default allow/ask/deny rules plus `.lavalamp/rules.json` loading/saving.
+- `src/permissions/autorun.ts` — persisted command/pattern always-allow plus `/sudo` allow-all state in `.lavalamp/autorun.json`.
+- `src/permissions/middleware.ts` — server-side permission gating via bidirectional IPC. Sends `permission_request` to TUI, awaits `permission_response`. Auto-denies after 30s.
+- Sandbox (`src/sandbox/local.ts`) wraps `exec()` and `writeFile()` with permission checks.
+- Custom tools wrapped with `gate()` in `src/agents/build.ts`.
 
 ---
 
@@ -161,8 +172,17 @@ bin/lavalamp (bash wrapper)
 - Messages include thinking and toolCalls for full replay
 
 **Safety:**
+- PermissionBox (yellow border) for destructive tool approval: `[y] Allow  [n] Deny  [a] Always Allow`
+- Bidirectional IPC: server blocks tool execution until TUI responds; auto-deny after 30s
 - Confirmation panel (yellow border) for Ctrl+C exit (double-press pattern)
+- Autorun/SUDO indicator in pink status bar when persisted always-allow or allow-all is active
 - Fatal error handler saves session and prints resume command
+
+**Parallel subagents:**
+- `deploy_parallel_subs` tool result is intercepted by the TUI.
+- `SubAgentManager` spawns up to 3 isolated `FlueProcess` children with focused research prompts.
+- Subagent panel shows running/done/failed state; `q` kills the first running subagent.
+- When all subagents finish, results are merged into a follow-up prompt for the main agent.
 
 ---
 
@@ -210,11 +230,13 @@ lavalamp/
 │   ├── sessions/             # Session persistence, memory, session/memory tools
 │   ├── auth/                 # Cloudflare login, credential storage
 │   ├── cli/auth.ts           # CLI auth subcommands
+│   ├── permissions/          # Rule engine, autorun state, permission middleware scaffold
 │   ├── tools/                # Agent-callable tools (rename, undo, web, ripgrep, tasks, etc.)
 │   └── tui/                  # Terminal UI
 │       ├── app.ts            # Main TUI (renderer, events, keybinds, viewers, ~2600 lines)
 │       ├── state.ts          # Message, ToolCall, Task, AppState interfaces
 │       ├── ipc.ts            # FlueProcess class (spawn, prompt, cancel, restart)
+│       ├── subs.ts           # Parallel subagent orchestration
 │       ├── theme.ts          # COLORS design tokens
 │       ├── art.ts            # Slash commands, lava lamp frames, syntaxStyle
 │       ├── discover.ts       # File/skill discovery, fuzzy search
@@ -262,10 +284,16 @@ Events: text_delta · thinking_delta · tool_start · tool · task_start · task
 
 ## 12. Current status
 
-**M0-M2.5 complete.** Full agent with 20+ tools, local sandbox, Cloudflare login,
-session persistence, memory, rich TUI with streaming, tool groups, thinking blocks,
+**M0-M4 complete.** Full agent with 20+ tools, local sandbox, Cloudflare login,
+session persistence, memory, rich OpenTUI with streaming, tool groups, thinking blocks,
 diff viewer, code viewer, vim keybindings, autocomplete, plan mode, session management.
+Permission engine with PermissionBox UI, bidirectional IPC gating, sandbox-level
+wrapping, autorun/sudo, and user-configurable rules.
 
-**Remaining milestones:** Permission engine (M4), multi-agent roster (M5),
-checkpoint/undo via git (M5.5), spectacle vision bridge (M6), LSP (M7),
-plugin system (M8), model picker + AI Gateway (M9).
+**M5 in progress.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, and
+auto-merge follow-up are implemented. Dedicated explore/plan/research/review profiles
+and spec-mode approval gate remain.
+
+**Remaining milestones:** Finish multi-agent roster (M5),
+checkpoint/undo via git (M5.5), spectacle vision bridge (M6), LSP (M7), plugin system
+(M8), model picker + AI Gateway (M9).
