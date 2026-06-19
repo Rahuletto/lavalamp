@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# lavalamp — Cloudflare-native AI coding harness
+# lavalamp — AI coding harness
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="${SCRIPT_DIR}/.."
@@ -9,31 +9,45 @@ SERVER_PATH="${REPO_DIR}/dist/server.mjs"
 
 show_help() {
   cat <<'EOF'
-lavalamp — Cloudflare-native AI coding harness
+lavalamp — AI coding harness
 
 USAGE:
   lavalamp                       Start interactive session in current directory
-  lavalamp --inline "PROMPT"     Run a single prompt and exit
+  lavalamp -p "PROMPT"           Run a single prompt and exit
+  lavalamp --continue            Resume a previous session
   lavalamp --workspace /path     Set workspace directory (default: cwd)
   lavalamp --model MODEL         Override default model
-  lavalamp login                 Authenticate with Cloudflare
-  lavalamp logout                Remove stored credentials
-  lavalamp status                Show login status
-  lavalamp --help                Show this help
-  lavalamp --version             Show version
+
+PIPE MODE:
+  cat file.ts | lavalamp -p "review this"     Pipe stdin as context
+  echo "question" | lavalamp -p "answer this" Pipe stdin as context
+
+OPTIONS:
+  -p, --print PROMPT             Run a single prompt and exit (aliases: --inline, -i)
+  -c, --continue                 Resume a previous session
+  -w, --workspace PATH           Set workspace directory
+  -m, --model MODEL              Override default model
+      --output-format FORMAT     Output format: text (default) or json
+      --quiet                    Suppress status messages in -p mode
+  -h, --help                     Show this help
+  -v, --version                  Show version
 
 KEYBINDINGS:
-  Enter       steer (inject after current tool call, same turn)
-  Tab         queue (send after full response, next turn)
-  Shift+Enter newline (or Ctrl+J as fallback)
-  Ctrl+C      interrupt current operation
-  Ctrl+D      exit
+  Enter       submit prompt / steer (during processing)
+  Tab         queue follow-up (during processing) / trigger autocomplete
+  Up/Down     browse command history
+  Shift+Tab   toggle plan mode
+  Ctrl+C      interrupt / exit (double-press)
+  Ctrl+D      exit (empty input)
 
 EXAMPLES:
-  lavalamp login
   lavalamp
-  lavalamp --inline "read greet.ts and change the greeting to use Hi instead of Hello"
-  lavalamp --workspace /path/to/project --inline "list all TypeScript files"
+  lavalamp --continue
+  lavalamp -p "read greet.ts and change the greeting to use Hi instead of Hello"
+  lavalamp -p "explain this repo" --output-format json
+  cat error.log | lavalamp -p "what caused this crash?"
+  git diff | lavalamp -p "review these changes"
+  lavalamp -m anthropic/claude-sonnet-4-20250514 -p "refactor auth module"
 
 ENVIRONMENT:
   LAVALAMP_MODEL          Override default model (e.g. "anthropic/claude-sonnet-4-20250514")
@@ -56,25 +70,36 @@ case "${1:-}" in
 esac
 
 # Parse args
-INLINE_MODE=false
-INLINE_PROMPT=""
+PRINT_MODE=false
+PRINT_PROMPT=""
 WORKSPACE=""
 MODEL=""
+RESUME_SESSION=false
+OUTPUT_FORMAT="text"
+QUIET=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --inline|-i)
-      INLINE_MODE=true
+    -p|--print|--inline|-i)
+      PRINT_MODE=true
       shift
       if [[ $# -gt 0 ]]; then
-        INLINE_PROMPT="$1"
+        PRINT_PROMPT="$1"
         shift
       else
-        echo "[lavalamp] Error: --inline requires a prompt argument" >&2
+        echo "[lavalamp] Error: -p requires a prompt argument" >&2
         exit 1
       fi
       ;;
-    --workspace|-w)
+    -c|--continue)
+      RESUME_SESSION=true
+      shift
+      if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
+        SESSION_ID="$1"
+        shift
+      fi
+      ;;
+    -w|--workspace)
       shift
       if [[ $# -gt 0 ]]; then
         WORKSPACE="$(cd "$1" 2>/dev/null && pwd || echo "$1")"
@@ -84,7 +109,7 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       ;;
-    --model|-m)
+    -m|--model)
       shift
       if [[ $# -gt 0 ]]; then
         MODEL="$1"
@@ -94,11 +119,25 @@ while [[ $# -gt 0 ]]; do
         exit 1
       fi
       ;;
-    --help|-h)
+    --output-format|--format)
+      shift
+      if [[ $# -gt 0 ]]; then
+        OUTPUT_FORMAT="$1"
+        shift
+      else
+        echo "[lavalamp] Error: --output-format requires text or json" >&2
+        exit 1
+      fi
+      ;;
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    -h|--help)
       show_help
       exit 0
       ;;
-    --version|-v)
+    -v|--version)
       show_version
       exit 0
       ;;
@@ -116,21 +155,25 @@ if [ -n "$MODEL" ]; then
   export LAVALAMP_MODEL="$MODEL"
 fi
 
-if [ "$INLINE_MODE" = true ]; then
-  if [ -z "$INLINE_PROMPT" ]; then
-    echo "[lavalamp] Error: --inline requires a prompt" >&2
-    exit 1
+if [ "$PRINT_MODE" = true ]; then
+  EXTRA_ARGS="-p"
+  if [ -n "$PRINT_PROMPT" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS $PRINT_PROMPT"
+  fi
+  EXTRA_ARGS="$EXTRA_ARGS --output-format $OUTPUT_FORMAT"
+  if [ "$QUIET" = true ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --quiet"
   fi
 
-  echo "[lavalamp] Running: $INLINE_PROMPT" >&2
-  echo "[lavalamp] Workspace: $LAVALAMP_WORKSPACE" >&2
-  echo ""
-
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts --inline "$INLINE_PROMPT" 2>&1
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts $EXTRA_ARGS
 else
-  echo "[lavalamp] Starting interactive session..." >&2
-  echo "[lavalamp] Workspace: $LAVALAMP_WORKSPACE" >&2
-  echo ""
+  EXTRA_ARGS=""
+  if [ "$RESUME_SESSION" = true ]; then
+    EXTRA_ARGS="--continue"
+    if [ -n "${SESSION_ID:-}" ]; then
+      EXTRA_ARGS="$EXTRA_ARGS $SESSION_ID"
+    fi
+  fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts 2>&1
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts $EXTRA_ARGS
 fi
