@@ -13,7 +13,8 @@ import { t, green, dim, bold, fg, type StyledText } from "@opentui/core";
 import type { KeyEvent, CliRenderer } from "@opentui/core";
 import * as fs from "fs";
 import * as path from "path";
-import { FlueProcess, type FlueEvent, type FlueResult } from "./ipc";
+import { FlueProcess, type FlueEvent, type FlueResult, type PermissionRequestMsg } from "./ipc";
+import { SubAgentManager } from "./subs";
 import { COLORS } from "./theme";
 import {
   type AppState,
@@ -21,12 +22,14 @@ import {
   type ToolCall,
   createInitialState,
 } from "./state";
-import { ALL_SLASH_COMMANDS, LAVA_LAMP_FRAMES, syntaxStyle } from "./art";
+import { ALL_SLASH_COMMANDS, SLASH_COMMAND_DESCRIPTIONS, LAVA_LAMP_FRAMES, syntaxStyle, codeSyntaxStyle } from "./art";
 import { walkFiles, discoverSkills, fuzzySearch } from "./discover";
 import { nameSession, saveSession, listSessions, loadSession } from "./sessions";
 import { stripCwd, summarizeToolArgs, summarizeToolResult, looksLikeDiff, extractResultText, detectLanguage, extractFilePaths, generateSyntheticDiff, EXT_LANG_MAP } from "./tools";
 import { clearCredentials } from "../auth/credentials";
 import { login } from "../auth/login";
+import { clearAutorun, getAutorunEntries, isAllowAll, isAutorunActive, loadAutorun, setAllowAll, setAutorun } from "../permissions/autorun";
+import { getDefaultRules, loadRules } from "../permissions/rules";
 
 export interface TuiOptions {
   serverPath: string;
@@ -41,6 +44,14 @@ function shortenPath(p: string): string {
   const home = process.env.HOME ?? "";
   if (home && p.startsWith(home)) return "~" + p.slice(home.length);
   return p;
+}
+
+function getTextContent(val: any): string {
+  if (typeof val === "string") return val;
+  if (val && typeof val === "object" && Array.isArray(val.chunks)) {
+    return val.chunks.map((c: any) => c.text || "").join("");
+  }
+  return String(val);
 }
 
 function styleBashCommand(cmd: string): StyledText {
@@ -60,7 +71,9 @@ function styleBashCommand(cmd: string): StyledText {
       styled.push(dim(part));
     }
   }
-  return t`${styled[0]}${styled.slice(1)}` as StyledText;
+  const strings = Array(styled.length + 1).fill("") as any;
+  strings.raw = strings;
+  return t(strings, ...styled) as StyledText;
 }
 
 export async function startTui(options: TuiOptions): Promise<void> {
@@ -71,7 +84,22 @@ export async function startTui(options: TuiOptions): Promise<void> {
     options.agentName ?? "build",
   );
   const cwd = options.cwd;
+  loadAutorun(cwd);
+  const permissionRules = loadRules(cwd);
+  const subManager = new SubAgentManager(options.serverPath, options.cwd, options.agentName ?? "build");
   let currentSessionId = `session_${Date.now()}`;
+
+  // Wire permission request handling from the server child process
+  flue.onPermissionRequest = async (request: PermissionRequestMsg) => {
+    const choice = await showPermissionBox(request);
+    if (choice === 'always') {
+      setAutorun(cwd, request.toolName, 'allow');
+      flue.sendPermissionResponse(request.requestId, 'allow', true);
+      updateStatus();
+    } else {
+      flue.sendPermissionResponse(request.requestId, choice === 'allow' ? 'allow' : 'deny');
+    }
+  };
 
   const renderer: CliRenderer = await createCliRenderer({
     exitOnCtrlC: false,
@@ -93,6 +121,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         spinnerTimer = null;
       }
       clearInterval(lavaLampTimer);
+      subManager.killAll();
       flue.shutdown().catch(() => {});
     },
   });
@@ -374,6 +403,107 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
+  // ── PermissionBox ──────────────────────────────────────────────────
+  const permissionBox = new BoxRenderable(renderer, {
+    id: "permission-box",
+    flexDirection: "column",
+    width: "100%",
+    flexShrink: 0,
+    borderStyle: "single",
+    borderColor: COLORS.yellow,
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    visible: false,
+  });
+  const permissionTitle = new TextRenderable(renderer, {
+    id: "permission-title",
+    content: "",
+    fg: COLORS.yellow,
+    attributes: TextAttributes.BOLD,
+    width: "100%",
+    height: 1,
+  });
+  const permissionBody = new BoxRenderable(renderer, {
+    id: "permission-body",
+    flexDirection: "column",
+    width: "100%",
+  });
+  permissionBox.add(permissionTitle);
+  permissionBox.add(permissionBody);
+  root.add(permissionBox);
+
+  let permissionResolve: ((choice: 'allow' | 'deny' | 'always') => void) | null = null;
+  let permissionTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function showPermissionBox(request: PermissionRequestMsg) {
+    for (const child of permissionBody.getChildren()) child.destroy();
+    permissionTitle.content = " Permission Required";
+
+    const rows: Array<{ content: string | StyledText; fg?: string }> = [
+      { content: `  Tool: ${request.toolName}`, fg: COLORS.white },
+    ];
+
+    if (request.toolName === "bash" && typeof request.args.command === "string") {
+      rows.push({ content: "  Command:", fg: COLORS.white });
+      rows.push({ content: styleBashCommand(request.args.command), fg: COLORS.white });
+    } else if (
+      (request.toolName === "write" || request.toolName === "edit" || request.toolName === "patch") &&
+      typeof request.args.file_path === "string"
+    ) {
+      rows.push({ content: `  File: ${stripCwd(request.args.file_path, cwd)}`, fg: COLORS.green });
+    } else {
+      const keys = Object.keys(request.args);
+      if (keys.length > 0) {
+        rows.push({ content: "  Args:", fg: COLORS.gray });
+        for (const [k, v] of Object.entries(request.args)) {
+          const valStr = typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
+          const truncatedVal = valStr.length > 100 ? valStr.slice(0, 97) + "..." : valStr;
+          rows.push({ content: `    ${k}: ${truncatedVal}`, fg: COLORS.gray });
+        }
+      }
+    }
+
+    rows.push({ content: "", fg: COLORS.dim });
+    rows.push({ content: "    [y] Allow    [n] Deny    [a] Always Allow", fg: COLORS.warn });
+    rows.push({ content: "", fg: COLORS.dim });
+    rows.push({ content: "    Escape to deny · Auto-deny in 30s", fg: COLORS.dim });
+
+    for (const row of rows) {
+      permissionBody.add(
+        new TextRenderable(renderer, {
+          id: nextId(),
+          content: row.content,
+          fg: row.fg ?? COLORS.gray,
+          width: "100%",
+        }),
+      );
+    }
+    permissionBox.visible = true;
+
+    if (permissionTimeout) clearTimeout(permissionTimeout);
+    permissionTimeout = setTimeout(() => {
+      if (permissionBox.visible) hidePermissionBox('deny');
+    }, 30_000);
+
+    return new Promise<'allow' | 'deny' | 'always'>((resolve) => {
+      permissionResolve = resolve;
+    });
+  }
+
+  function hidePermissionBox(choice: 'allow' | 'deny' | 'always') {
+    permissionBox.visible = false;
+    for (const child of permissionBody.getChildren()) child.destroy();
+    permissionTitle.content = "";
+    if (permissionTimeout) {
+      clearTimeout(permissionTimeout);
+      permissionTimeout = null;
+    }
+    if (permissionResolve) {
+      const resolve = permissionResolve;
+      permissionResolve = null;
+      resolve(choice);
+    }
+  }
+
   const queueBox = new BoxRenderable(renderer, {
     id: "queue-box",
     flexDirection: "column",
@@ -453,6 +583,65 @@ export async function startTui(options: TuiOptions): Promise<void> {
   taskBox.add(taskTitle);
   taskBox.add(taskBody);
   root.add(taskBox);
+
+  const subBox = new BoxRenderable(renderer, {
+    id: "sub-box",
+    flexDirection: "column",
+    width: "100%",
+    flexShrink: 0,
+    borderStyle: "single",
+    borderColor: COLORS.pink,
+    visible: false,
+  });
+  const subTitle = new TextRenderable(renderer, {
+    id: "sub-title",
+    content: " subagents",
+    fg: COLORS.pink,
+    attributes: TextAttributes.BOLD,
+    width: "100%",
+    height: 1,
+  });
+  const subBody = new BoxRenderable(renderer, {
+    id: "sub-body",
+    flexDirection: "column",
+    width: "100%",
+  });
+  subBox.add(subTitle);
+  subBox.add(subBody);
+  root.add(subBox);
+
+  function refreshSubPanel() {
+    for (const child of subBody.getChildren()) child.destroy();
+    if (state.subAgents.length === 0) {
+      subBox.visible = false;
+      return;
+    }
+    for (const sub of state.subAgents) {
+      const icon = sub.status === "running" ? SPINNER_FRAMES[spinnerFrame] : sub.status === "done" ? "✓" : "×";
+      const preview = sub.query.length > 70 ? sub.query.slice(0, 67) + "..." : sub.query;
+      subBody.add(new TextRenderable(renderer, {
+        id: nextId(),
+        content: `  ${icon} ${sub.id} ${sub.status}: ${preview}`,
+        fg: sub.status === "running" ? COLORS.pink : sub.status === "done" ? COLORS.green : COLORS.red,
+        width: "100%",
+      }));
+    }
+    subBox.visible = true;
+  }
+
+  subManager.onUpdate = (subs) => {
+    state.subAgents = subs;
+    refreshSubPanel();
+    updateStatus();
+  };
+
+  subManager.onAllComplete = (summary) => {
+    refreshSubPanel();
+    const followUp = `The parallel research has completed. Here are the findings:\n\n${summary}\n\nPlease analyze these results and continue with your task.`;
+    if (state.processing) state.queuePending.push(followUp);
+    else sendPrompt(followUp);
+    refreshQueuePanel();
+  };
 
   function refreshTaskPanel() {
     for (const child of taskBody.getChildren()) child.destroy();
@@ -665,7 +854,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     visible: false,
   });
 
-  const mainTuiChildren = [header, messagesScroll, completionBox, taskStatusBar, resultBox, confirmBox, queueBox, taskBox, inputRow, statusBar];
+  const mainTuiChildren = [header, messagesScroll, completionBox, taskStatusBar, resultBox, confirmBox, permissionBox, queueBox, taskBox, subBox, inputRow, statusBar];
 
   function hideMainTui() {
     for (const child of mainTuiChildren) {
@@ -694,11 +883,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let completing = false;
   let completionList: string[] = [];
   let completionIndex = 0;
-  let completionType: "slash" | "at" | "hash" | null = null;
+  let completionType: "slash" | "autorun-tool" | "at" | "hash" | null = null;
   let completionBaseCol = 0;
   let savedInput = "";
   let fileCache: string[] | null = null;
   let skillCache: string[] | null = null;
+  const TOOL_COMPLETIONS = [
+    "read", "write", "edit", "bash", "grep", "glob", "ripgrep", "rename", "undo", "history",
+    "web_search", "fetch_url", "deepwiki", "codebase_search", "oracle", "doom_loop",
+    "sessions", "session_context", "memory_read", "memory_write", "memory_append",
+    "create_task", "start_task", "complete_task", "edit_task", "delete_task", "skip_task", "list_tasks",
+    "deploy_parallel_subs",
+  ];
 
   function getFiles(): string[] {
     if (!fileCache) fileCache = walkFiles(cwd);
@@ -711,6 +907,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function triggerCompletion() {
     const before = inputField.plainText;
+    const autorunMatch = before.match(/^\/autorun\s+([^\s]*)$/);
+    if (autorunMatch) {
+      completionType = "autorun-tool";
+      completionBaseCol = before.lastIndexOf(autorunMatch[1]);
+      completionList = fuzzySearch(autorunMatch[1].toLowerCase(), TOOL_COMPLETIONS).map((r) => r.item);
+      completionIndex = 0;
+      if (completionList.length > 0) {
+        completing = true;
+        renderCompletions();
+      } else {
+        hideCompletions();
+      }
+      return;
+    }
     const slashIdx = before.lastIndexOf("/");
     if (slashIdx >= 0) {
       const afterSlash = before.slice(slashIdx + 1);
@@ -796,6 +1006,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
           overflow: "hidden",
         }),
       );
+      if (completionType === "slash" || completionType === "autorun-tool") {
+        row.add(
+          new TextRenderable(renderer, {
+            id: nextId(),
+            content: completionType === "slash" ? SLASH_COMMAND_DESCRIPTIONS[completionList[i]] ?? "" : "tool",
+            fg: COLORS.dim,
+            width: 22,
+            overflow: "hidden",
+          }),
+        );
+      }
       completionScroll.add(row);
     }
     completionScroll.scrollTo(completionIndex);
@@ -816,6 +1037,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     if (completionType === "slash") {
       inputField.setText(selected + " ");
+    } else if (completionType === "autorun-tool") {
+      const before = inputField.plainText;
+      const prefix = before.slice(0, completionBaseCol);
+      inputField.setText(prefix + selected + " ");
     } else {
       const before = inputField.plainText;
       const triggerIdx = completionBaseCol;
@@ -838,6 +1063,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function updateStatus() {
+    refreshSubPanel();
+    const subCount = state.subAgents.filter((sub) => sub.status === "running").length;
+    const autorun = isAllowAll() ? " | SUDO" : getAutorunEntries().length > 0 ? " | AUTORUN" : "";
     if (state.processing) {
       const q =
         state.queuePending.length > 0
@@ -845,13 +1073,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
           : "";
       statusSpinner.content = `${SPINNER_FRAMES[spinnerFrame]} `;
       statusSpinner.visible = true;
-      statusText.content = `processing...${q} (Enter: steer, Tab: queue)`;
-      statusText.fg = COLORS.gray;
+      statusText.content = `processing...${q}${subCount ? ` | ${subCount} subagents running` : ""}${autorun} (Enter: steer, Tab: queue)`;
+      statusText.fg = autorun ? COLORS.pink : COLORS.gray;
     } else if (state.queuePending.length > 0) {
       statusSpinner.content = "";
       statusSpinner.visible = false;
-      statusText.content = `queued: ${state.queuePending.length} messages`;
+      statusText.content = `queued: ${state.queuePending.length} messages${subCount ? ` | ${subCount} subagents running` : ""}${autorun}`;
       statusText.fg = COLORS.yellow;
+    } else if (subCount > 0 || isAutorunActive()) {
+      statusSpinner.content = subCount > 0 ? `${SPINNER_FRAMES[spinnerFrame]} ` : "";
+      statusSpinner.visible = subCount > 0;
+      statusText.content = `${subCount ? `${subCount} subagents running` : ""}${autorun}`.trim();
+      statusText.fg = autorun ? COLORS.pink : COLORS.gray;
     } else {
       statusSpinner.content = "";
       statusSpinner.visible = false;
@@ -1033,14 +1266,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
           diff: diffStr,
           view: "unified",
           filetype: lang || undefined,
-          syntaxStyle,
+          syntaxStyle: codeSyntaxStyle,
           showLineNumbers: false,
           height: 12,
           width: "100%",
           selectable: true,
         });
         entry.contentBox.add(diffComp);
-        entry.contentBox.visible = true;
+        entry.contentBox.visible = false;
       }
     } else if (toolName === "read") {
       entry.headerLabel.fg = isError ? COLORS.red : COLORS.green;
@@ -1055,7 +1288,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           id: nextId(),
           content: displayStr,
           filetype: lang,
-          syntaxStyle,
+          syntaxStyle: codeSyntaxStyle,
           width: "100%",
           selectable: true,
         });
@@ -1070,7 +1303,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
             }),
           );
         }
-        entry.contentBox.visible = true;
+        entry.contentBox.visible = false;
       }
     } else {
       entry.headerLabel.fg = isError ? COLORS.red : COLORS.green;
@@ -1088,13 +1321,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
             width: "100%",
           }),
         );
-        entry.contentBox.visible = true;
+        entry.contentBox.visible = false;
       }
     }
     if (entry.contentBox.visible) {
       entry.contentVisible = true;
-      const cur = String(entry.headerLabel.content);
+      const cur = getTextContent(entry.headerLabel.content);
       entry.headerLabel.content = cur.replace(/\u25b8$/, "\u25bc");
+    } else {
+      entry.contentVisible = false;
+      const cur = getTextContent(entry.headerLabel.content);
+      entry.headerLabel.content = cur.replace(/\u25bc$/, "\u25b8");
     }
   }
 
@@ -1303,7 +1540,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       id: nextId(),
       diff: diffContent,
       view: "unified",
-      syntaxStyle,
+      syntaxStyle: codeSyntaxStyle,
       showLineNumbers: true,
       fg: COLORS.white,
       lineNumberFg: COLORS.dim,
@@ -1370,7 +1607,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       id: nextId(),
       content,
       filetype: lang,
-      syntaxStyle,
+      syntaxStyle: codeSyntaxStyle,
       width: "100%",
       selectable: true,
     });
@@ -1544,14 +1781,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (content) {
           content.visible = !content.visible;
           headerLabel.content = content.visible
-            ? "thinking... \u25bc"
-            : "thinking... \u25b8";
+            ? "Reasoning... \u25bc"
+            : "Reasoning... \u25b8";
         }
       },
     });
     const headerLabel = new TextRenderable(renderer, {
       id: nextId(),
-      content: "thinking... \u25b8",
+      content: "Reasoning... \u25b8",
       fg: COLORS.link,
     });
     hdr.add(headerLabel);
@@ -1589,7 +1826,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
             .getChildren()
             .find((c) => c instanceof TextRenderable);
           if (label && label instanceof TextRenderable) {
-            label.content = "thinking... \u25b8";
+            label.content = "Reasoning... \u25b8";
             label.fg = COLORS.link;
           }
         }
@@ -1673,7 +1910,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
                 if (hdr) {
                   const label = hdr.getChildren().find((c) => c instanceof TextRenderable);
                   if (label && label instanceof TextRenderable) {
-                    label.content = "thinking... \u25bc";
+                    label.content = "Reasoning... \u25bc";
                     label.fg = COLORS.link;
                   }
                 }
@@ -1728,6 +1965,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
 
       case "tool": {
+        if (event.toolName === "deploy_parallel_subs") {
+          const marker = typeof event.result === "string" ? (() => { try { return JSON.parse(event.result); } catch { return null; } })() : event.result;
+          if (marker && typeof marker === "object" && (marker as any).type === "parallel_deploy" && Array.isArray((marker as any).queries)) {
+            subManager.deploy((marker as any).queries).catch((error) => addInfoLine(`  subagents failed: ${error instanceof Error ? error.message : String(error)}`, COLORS.red));
+          }
+        }
         if (toolGroup && event.toolCallId && pendingToolEntries.has(event.toolCallId)) {
           const idx = pendingToolEntries.get(event.toolCallId)!;
           pendingToolEntries.delete(event.toolCallId);
@@ -1797,7 +2040,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           .getChildren()
           .find((c) => c instanceof TextRenderable);
         if (label && label instanceof TextRenderable) {
-          label.content = "\u25b8 thinking...";
+          label.content = "\u25b8 Reasoning...";
           label.fg = COLORS.link;
         }
       }
@@ -1900,6 +2143,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
               const linkBox = new BoxRenderable(renderer, {
                 id: nextId(),
                 focusable: true,
+                width: displayPath.length,
+                height: 1,
                 onMouseDown: () => {
                   const storedDiff = storedDiffs.get(displayPath);
                   if (storedDiff) {
@@ -2195,7 +2440,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (hdr) {
         const label = hdr.getChildren().find((c) => c instanceof TextRenderable);
         if (label && label instanceof TextRenderable) {
-          label.content = "thinking... \u25b8";
+          label.content = "Reasoning... \u25b8";
           label.fg = COLORS.link;
         }
       }
@@ -2208,7 +2453,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         grp = getOrCreateToolGroup(tc.name);
         const summary = summarizeToolArgs(tc.name, tc.args, cwd);
         const entry = addToolGroupEntry(tc.name, summary, tc.args);
-        entry.result = typeof tc.result === "string" ? tc.result : tc.result ? JSON.stringify(tc.result, null, 2) : "";
+        entry.result = extractResultText(tc.result);
         entry.isError = !!tc.isError;
         entry.durationMs = tc.durationMs;
         populateToolEntryContent(entry, tc.name, tc.args, entry.result, !!tc.isError, tc.durationMs);
@@ -2247,6 +2492,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ["/skills", "List skills"],
           ["/mcp", "List MCP servers"],
           ["/tools", "List registered tools"],
+          ["/subagents", "List subagents"],
+          ["/autorun", "Always allow a tool or bash pattern"],
+          ["/sudo", "Dangerously allow every tool"],
+          ["/permissions", "Show permission rules"],
           ["/plan", "Toggle plan mode"],
           ["/copy", "Copy session transcript"],
           ["/undo", "Undo last change"],
@@ -2400,6 +2649,77 @@ export async function startTui(options: TuiOptions): Promise<void> {
         showResultPanel("/tools", rows);
         break;
       }
+      case "/subagents": {
+        const rows = state.subAgents.length === 0
+          ? [{ content: "  no subagents", fg: COLORS.dim }]
+          : state.subAgents.map((sub) => ({ content: `  ${sub.id.padEnd(6)} ${sub.status.padEnd(9)} ${sub.query}`, fg: sub.status === "running" ? COLORS.pink : sub.status === "done" ? COLORS.green : COLORS.red }));
+        showResultPanel("/subagents", rows);
+        break;
+      }
+      case "/autorun": {
+        const rest = raw.slice(cmd.length).trim();
+        if (!rest) {
+          const entries = getAutorunEntries();
+          const rows: Array<{ content: string; fg?: string; bold?: boolean }> = [
+            { content: "  usage: /autorun <tool> [pattern]", fg: COLORS.gray },
+            { content: "  example: /autorun bash npm test", fg: COLORS.dim },
+          ];
+          if (entries.length) {
+            rows.push({ content: "", fg: COLORS.dim });
+            for (const entry of entries) rows.push({ content: `  ${entry.tool}${entry.pattern ? ` ${entry.pattern}` : ""}`, fg: COLORS.pink });
+          }
+          showResultPanel("/autorun", rows);
+          break;
+        }
+        const [tool, ...patternParts] = rest.split(/\s+/);
+        const pattern = patternParts.join(" ") || undefined;
+        showConfirm("Always Allow", [
+          { content: `  tool: ${tool}`, fg: COLORS.white },
+          { content: `  pattern: ${pattern ?? "any args"}`, fg: COLORS.gray },
+          { content: "  Enter/Ctrl+C to confirm · Escape to cancel", fg: COLORS.dim },
+        ], (confirmed) => {
+          if (!confirmed) return;
+          setAutorun(cwd, tool, "allow", pattern);
+          showResultPanel("/autorun", [{ content: `  always allowing ${tool}${pattern ? ` when args contain: ${pattern}` : ""}`, fg: COLORS.pink }]);
+          updateStatus();
+        });
+        break;
+      }
+      case "/sudo": {
+        if (isAllowAll()) {
+          setAllowAll(cwd, false);
+          showResultPanel("/sudo", [{ content: "  sudo disabled", fg: COLORS.green }]);
+          updateStatus();
+          break;
+        }
+        showConfirm("Sudo Mode", [
+          { content: "  DANGER: allow every tool without prompts", fg: COLORS.red },
+          { content: "  This includes bash, write, edit, rename, undo.", fg: COLORS.yellow },
+          { content: "  Enter/Ctrl+C to enable · Escape to cancel", fg: COLORS.dim },
+        ], (confirmed) => {
+          if (!confirmed) return;
+          setAllowAll(cwd, true);
+          showResultPanel("/sudo", [{ content: "  sudo enabled: all tools allowed", fg: COLORS.pink }]);
+          updateStatus();
+        });
+        updateStatus();
+        break;
+      }
+      case "/permissions": {
+        const rows: Array<{ content: string; fg?: string; bold?: boolean }> = [];
+        rows.push({ content: "  rules from .lavalamp/rules.json merge after defaults", fg: COLORS.dim });
+        for (const rule of permissionRules.length ? permissionRules : getDefaultRules()) {
+          rows.push({ content: `  ${rule.action.padEnd(5)} ${rule.tool}${rule.argPattern ? ` (${rule.argPattern})` : ""}`, fg: rule.action === "allow" ? COLORS.green : rule.action === "deny" ? COLORS.red : COLORS.yellow });
+        }
+        const entries = getAutorunEntries();
+        if (entries.length) {
+          rows.push({ content: "", fg: COLORS.dim });
+          rows.push({ content: "  autorun:", fg: COLORS.pink, bold: true });
+          for (const entry of entries) rows.push({ content: `  ${entry.action.padEnd(5)} ${entry.tool}`, fg: COLORS.pink });
+        }
+        showResultPanel("/permissions", rows);
+        break;
+      }
       case "/copy": {
         const transcript = state.messages
           .map((m) => {
@@ -2449,7 +2769,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (viewerOverlay.visible) return;
     if (key.ctrl && key.name === "c") {
-      if (confirmBox.visible) {
+      if (permissionBox.visible) {
+        hidePermissionBox('deny');
+      } else if (confirmBox.visible) {
         hideConfirm(true);
       } else if (state.processing) {
         handleInterrupt();
@@ -2465,6 +2787,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
       return;
     }
     if (key.name === "escape") {
+      if (permissionBox.visible) {
+        hidePermissionBox('deny');
+        key.stopPropagation();
+        return;
+      }
       if (confirmBox.visible) {
         hideConfirm(false);
         key.stopPropagation();
@@ -2488,6 +2815,31 @@ export async function startTui(options: TuiOptions): Promise<void> {
       const now = Date.now();
       if (now - state.lastEscape < 500) inputField.setText("");
       state.lastEscape = now;
+      key.stopPropagation();
+      return;
+    }
+    if (permissionBox.visible) {
+      if (key.name === "y" || key.name === "return") {
+        hidePermissionBox('allow');
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "n") {
+        hidePermissionBox('deny');
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "a") {
+        hidePermissionBox('always');
+        key.stopPropagation();
+        return;
+      }
+      key.stopPropagation();
+      return;
+    }
+    if (key.name === "q" && subBox.visible && state.subAgents.some((sub) => sub.status === "running")) {
+      const first = state.subAgents.find((sub) => sub.status === "running");
+      if (first) subManager.kill(first.id);
       key.stopPropagation();
       return;
     }
