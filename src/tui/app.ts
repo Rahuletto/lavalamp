@@ -260,10 +260,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
   root.add(taskStatusBar);
 
   const SPINNER_FRAMES = [
-    "░░░░░░",
-    "░░░░░░",
-    "░░░░░░",
-    "░░░░░░",
     "▓░░░░░",
     "▒▓░░░░",
     "░▒▓░░░",
@@ -276,11 +272,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   function startSpinner() {
+    if (spinnerTimer) clearInterval(spinnerTimer);
     spinnerFrame = 0;
     updateStatus();
     spinnerTimer = setInterval(() => {
       spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
       updateStatus();
+      renderer.requestRender();
     }, 80);
   }
 
@@ -530,6 +528,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
   queueBox.add(queueBody);
   root.add(queueBox);
 
+  function withModeTag(prompt: string, planMode = state.planMode): string {
+    if (prompt.startsWith("<<PLAN_MODE>>") || prompt.startsWith("<<BUILD_MODE>>")) return prompt;
+    return `${planMode ? "<<PLAN_MODE>>" : "<<BUILD_MODE>>"} ${prompt}`;
+  }
+
+  function visiblePrompt(prompt: string): string {
+    return prompt.replace(/^<<(?:PLAN|BUILD)_MODE>>\s*/, "");
+  }
+
   function refreshQueuePanel() {
     for (const child of queueBody.getChildren()) child.destroy();
     const steerCount = state.steerPending.filter((s) => s.length > 0).length;
@@ -540,7 +547,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     for (const prompt of state.steerPending) {
       if (!prompt) continue;
-      const preview = prompt.length > 60 ? prompt.slice(0, 57) + "..." : prompt;
+      const display = visiblePrompt(prompt);
+      const preview = display.length > 60 ? display.slice(0, 57) + "..." : display;
       queueBody.add(
         new TextRenderable(renderer, {
           id: nextId(),
@@ -551,9 +559,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
       );
     }
     for (let i = 0; i < state.queuePending.length; i++) {
-      const preview = state.queuePending[i].length > 60
-        ? state.queuePending[i].slice(0, 57) + "..."
-        : state.queuePending[i];
+      const display = visiblePrompt(state.queuePending[i]);
+      const preview = display.length > 60
+        ? display.slice(0, 57) + "..."
+        : display;
       queueBody.add(
         new TextRenderable(renderer, {
           id: nextId(),
@@ -646,7 +655,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   subManager.onAllComplete = (summary) => {
     refreshSubPanel();
     const followUp = `The parallel research has completed. Here are the findings:\n\n${summary}\n\nPlease analyze these results and continue with your task.`;
-    if (state.processing) state.queuePending.push(followUp);
+    if (state.processing) state.queuePending.push(withModeTag(followUp));
     else sendPrompt(followUp);
     refreshQueuePanel();
   };
@@ -782,6 +791,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         return;
       }
       if (raw.startsWith("/")) {
+        if (raw === "/plan") inputField.setText("");
         handleSlashCommand(raw);
         return;
       }
@@ -801,16 +811,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
         return;
       }
       if (state.processing) {
-        state.steerPending.push(raw);
+        state.steerPending.push(withModeTag(raw));
         addInfoLine("  (steer queued)", COLORS.dim);
         refreshQueuePanel();
         requestScroll();
         return;
       }
-      const lastUser = [...state.messages].reverse().find((m) => m.role === "user");
-      const wasPlan = lastUser && lastUser.content.startsWith("<<PLAN_MODE>>");
-      const prefixTag = state.planMode ? "<<PLAN_MODE>> " : (wasPlan ? "<<BUILD_MODE>> " : "");
-      sendPrompt(prefixTag + raw);
+      sendPrompt(raw);
     },
     onContentChange: () => {
       const text = inputField.plainText;
@@ -1183,15 +1190,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
 
     if (state.processing) {
-      const q =
-        state.queuePending.length > 0
-          ? ` | queued: ${state.queuePending.length}`
-          : "";
       statusSpinner.content = `${SPINNER_FRAMES[spinnerFrame]} `;
       statusSpinner.fg = accent();
       statusSpinner.visible = true;
-      statusText.content = `processing...${q}${subCount ? ` | ${subCount} subagents running` : ""}${autorun} (Enter: steer, Tab: queue)`;
-      statusText.fg = autorun ? COLORS.pink : COLORS.gray;
+      statusText.content = "";
     } else if (state.queuePending.length > 0) {
       statusSpinner.content = "";
       statusSpinner.visible = false;
@@ -1208,6 +1210,19 @@ export async function startTui(options: TuiOptions): Promise<void> {
       statusSpinner.visible = false;
       statusText.content = "";
     }
+  }
+
+  function applyModeVisuals() {
+    updatePromptChar();
+    updateHeader();
+    updateStatus();
+    inputField.focus();
+    renderer.requestRender();
+  }
+
+  function setPlanMode(enabled: boolean) {
+    state.planMode = enabled;
+    applyModeVisuals();
   }
 
   function hideLavaLamp() {
@@ -2192,7 +2207,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
     state.processing = true;
     state.historyIndex = -1;
     savedInput = "";
-    state.commandHistory.push(prompt);
+    prompt = withModeTag(prompt);
+    state.commandHistory.push(visiblePrompt(prompt));
     hideResultPanel();
     hideConfirm(false);
     startSpinner();
@@ -2408,7 +2424,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   let planStatusTimeout: ReturnType<typeof setTimeout> | null = null;
   function togglePlanMode() {
-    state.planMode = !state.planMode;
+    setPlanMode(!state.planMode);
+    hideCompletions();
     if (state.planMode) {
       planStatusLine.content =
         "  plan mode enabled  |  Agent can only read, search, research, and plan  |  Press Shift+Tab, Ctrl+P or /plan to exit";
@@ -2422,9 +2439,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       planStatusLine.visible = true;
       showResultPanel("/plan", [{ content: "  build mode enabled (plan mode disabled)", fg: COLORS.accent }]);
     }
-    updatePromptChar();
-    updateHeader();
-    updateStatus();
+    applyModeVisuals();
     requestScroll();
 
     if (planStatusTimeout) {
@@ -2433,6 +2448,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     planStatusTimeout = setTimeout(() => {
       planStatusLine.visible = false;
       requestScroll();
+      renderer.requestRender();
     }, 5000);
   }
 
@@ -2469,16 +2485,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (messages) {
       currentSessionId = chosen.id;
       state.messages = messages;
-      
-      const lastUser = [...messages].reverse().find((m) => m.role === "user");
-      if (lastUser && lastUser.content.startsWith("<<PLAN_MODE>>")) {
-        state.planMode = true;
-      } else {
-        state.planMode = false;
-      }
-      updateHeader();
-      updatePromptChar();
-      updateStatus();
+      setPlanMode(false);
       
       renderAllMessages();
     }
@@ -3017,7 +3024,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (state.processing) {
         const raw = inputField.plainText.trim();
         if (raw) {
-          state.queuePending.push(raw);
+          state.queuePending.push(withModeTag(raw));
           inputField.setText("");
           addInfoLine(
             `  (queued #${state.queuePending.length})`,
@@ -3111,14 +3118,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (messages) {
         currentSessionId = options.resumeSessionId;
         state.messages = messages;
-        
-        const lastUser = [...messages].reverse().find((m) => m.role === "user");
-        if (lastUser && lastUser.content.startsWith("<<PLAN_MODE>>")) {
-          state.planMode = true;
-          updateHeader();
-          updatePromptChar();
-          updateStatus();
-        }
+        setPlanMode(false);
         
         renderAllMessages();
       } else {
