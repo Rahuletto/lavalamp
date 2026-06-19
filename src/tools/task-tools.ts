@@ -35,8 +35,21 @@ export function createTaskTools(store: TaskStore) {
     }),
 
     defineTool({
+      name: 'start_task',
+      description: 'Mark a task as in-progress (being worked on) by its ID.',
+      parameters: idSchema,
+      execute: async (args) => {
+        const task = store.get(args.id);
+        if (!task) throw new Error(`Task #${args.id} not found`);
+        task.status = 'in_progress';
+        task.updatedAt = new Date().toISOString();
+        return `Started task #${task.id}: ${task.title}`;
+      },
+    }),
+
+    defineTool({
       name: 'complete_task',
-      description: 'Mark a task as completed by its ID.',
+      description: 'Mark a task as completed by its ID. Crosses it off the list.',
       parameters: idSchema,
       execute: async (args) => {
         const task = store.complete(args.id);
