@@ -743,8 +743,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
   function createPrefixLine(): TextRenderable {
     return new TextRenderable(renderer, {
       id: nextId(),
-      content: "\u2503",
-      fg: COLORS.blue,
+      content: "┃",
+      fg: accent(),
       attributes: TextAttributes.BOLD,
       width: 2,
       height: 1,
@@ -807,7 +807,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         requestScroll();
         return;
       }
-      sendPrompt(state.planMode ? `<<PLAN_MODE>> ${raw}` : raw);
+      const lastUser = [...state.messages].reverse().find((m) => m.role === "user");
+      const wasPlan = lastUser && lastUser.content.startsWith("<<PLAN_MODE>>");
+      const prefixTag = state.planMode ? "<<PLAN_MODE>> " : (wasPlan ? "<<BUILD_MODE>> " : "");
+      sendPrompt(prefixTag + raw);
     },
     onContentChange: () => {
       const text = inputField.plainText;
@@ -947,7 +950,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let completing = false;
   let completionList: string[] = [];
   let completionIndex = 0;
-  let completionType: "slash" | "autorun-tool" | "at" | "hash" | null = null;
+  let completionType: "slash" | "autorun-tool" | "at" | "hash" | "session" | null = null;
   let completionBaseCol = 0;
   let savedInput = "";
   let fileCache: string[] | null = null;
@@ -1008,6 +1011,25 @@ export async function startTui(options: TuiOptions): Promise<void> {
         return;
       }
     }
+    const sessionMatch = before.match(/(?:\$\{|\$)([^\s}]*)$/);
+    if (sessionMatch) {
+      completionType = "session";
+      completionBaseCol = before.lastIndexOf("$");
+      const sessions = listSessions();
+      const query = sessionMatch[1].replace(/^{/, "").toLowerCase();
+      const matchedSessions = sessions.filter(
+        (s) => s.id.toLowerCase().includes(query) || s.name.toLowerCase().includes(query)
+      );
+      completionList = matchedSessions.map((s) => s.id);
+      completionIndex = 0;
+      if (completionList.length > 0) {
+        completing = true;
+        renderCompletions();
+      } else {
+        hideCompletions();
+      }
+      return;
+    }
     const atMatch = before.match(/@([^\s]*)$/);
     if (atMatch) {
       completionType = "at";
@@ -1060,23 +1082,32 @@ export async function startTui(options: TuiOptions): Promise<void> {
         height: 1,
         backgroundColor: sel ? (accent() + "20") : undefined,
       });
+      let displayText = ` ${completionList[i]}`;
+      let typeText = "";
+      if (completionType === "session") {
+        const sess = listSessions().find(s => s.id === completionList[i]);
+        if (sess) {
+          displayText = ` ${sess.name}`;
+          typeText = sess.id;
+        }
+      }
       row.add(
         new TextRenderable(renderer, {
           id: nextId(),
-          content: ` ${completionList[i]}`,
+          content: displayText,
           fg: sel ? accent() : COLORS.gray,
           attributes: sel ? TextAttributes.BOLD : TextAttributes.NONE,
           flexGrow: 1,
           overflow: "hidden",
         }),
       );
-      if (completionType === "slash" || completionType === "autorun-tool") {
+      if (completionType === "slash" || completionType === "autorun-tool" || completionType === "session") {
         row.add(
           new TextRenderable(renderer, {
             id: nextId(),
-            content: completionType === "slash" ? SLASH_COMMAND_DESCRIPTIONS[completionList[i]] ?? "" : "tool",
+            content: completionType === "slash" ? SLASH_COMMAND_DESCRIPTIONS[completionList[i]] ?? "" : completionType === "session" ? typeText : "tool",
             fg: COLORS.dim,
-            width: 22,
+            width: 26,
             overflow: "hidden",
           }),
         );
@@ -1107,6 +1138,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
       const before = inputField.plainText;
       const prefix = before.slice(0, completionBaseCol);
       inputField.setText(prefix + selected + " ");
+    } else if (completionType === "session") {
+      const before = inputField.plainText;
+      const prefix = before.slice(0, completionBaseCol);
+      inputField.setText(prefix + `$${selected} `);
     } else {
       const before = inputField.plainText;
       const triggerIdx = completionBaseCol;
@@ -1126,6 +1161,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function updatePromptChar() {
     inputField.cursorColor = accent();
+    for (const child of inputPrefixBox.getChildren()) {
+      if (child instanceof TextRenderable) {
+        child.fg = accent();
+      }
+    }
   }
 
   function updateStatus() {
@@ -2265,7 +2305,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         updateStatus();
         drainPending();
       },
-    });
+    }, currentSessionId);
   }
 
   function drainPending() {
@@ -2366,23 +2406,34 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
+  let planStatusTimeout: ReturnType<typeof setTimeout> | null = null;
   function togglePlanMode() {
     state.planMode = !state.planMode;
     if (state.planMode) {
       planStatusLine.content =
-        "  plan mode enabled  |  Agent can only read, search, research, and plan  |  Press Shift+Tab or /plan to exit";
+        "  plan mode enabled  |  Agent can only read, search, research, and plan  |  Press Shift+Tab, Ctrl+P or /plan to exit";
       planStatusLine.fg = COLORS.planAccent;
       planStatusLine.visible = true;
+      showResultPanel("/plan", [{ content: "  plan mode enabled", fg: COLORS.planAccent }]);
     } else {
       planStatusLine.content =
         "  build mode enabled  |  Agent can read, write, edit, and run commands";
       planStatusLine.fg = accent();
       planStatusLine.visible = true;
+      showResultPanel("/plan", [{ content: "  build mode enabled (plan mode disabled)", fg: COLORS.accent }]);
     }
     updatePromptChar();
     updateHeader();
     updateStatus();
     requestScroll();
+
+    if (planStatusTimeout) {
+      clearTimeout(planStatusTimeout);
+    }
+    planStatusTimeout = setTimeout(() => {
+      planStatusLine.visible = false;
+      requestScroll();
+    }, 5000);
   }
 
   let sessionPickerActive = false;
@@ -2563,7 +2614,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         rows.push({ content: "  Keys:", fg: COLORS.white, bold: true });
         for (const [key, desc] of [
           ["Tab", "Autocomplete"],
-          ["Shift+Tab", "Toggle plan mode"],
+          ["Shift+Tab / Ctrl+P", "Toggle plan mode"],
           ["Enter", "Steer or Submit"],
           ["Ctrl+C", "Interrupt / exit"],
           ["Escape", "Clear / interrupt"],
@@ -2951,7 +3002,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         return;
       }
     }
-    if (key.name === "tab" && key.shift) {
+    if ((key.name === "tab" && key.shift) || (key.ctrl && key.name === "p")) {
       togglePlanMode();
       key.stopPropagation();
       return;
@@ -2996,7 +3047,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (!key.ctrl && !key.meta && key.name && key.name.length === 1) {
       queueMicrotask(() => {
         const val = inputField.plainText;
-        if (val.match(/(\/|#)\S*$/) || val.match(/@\S*$/)) {
+        if (val.match(/(\/|#)\S*$/) || val.match(/@\S*$/) || val.match(/\$\S*$/)) {
           triggerCompletion();
         } else if (completing) {
           hideCompletions();
@@ -3006,7 +3057,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (key.name === "backspace" && completing) {
       queueMicrotask(() => {
         const val = inputField.plainText;
-        if (!val.match(/(\/|#)\S*$/) && !val.match(/@\S*$/)) hideCompletions();
+        if (!val.match(/(\/|#)\S*$/) && !val.match(/@\S*$/) && !val.match(/\$\{\S*$/) && !val.match(/\$\S*$/)) hideCompletions();
         else triggerCompletion();
       });
     }

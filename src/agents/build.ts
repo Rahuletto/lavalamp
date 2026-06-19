@@ -2,7 +2,7 @@ import { createAgent, registerProvider } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession, createSessionsTool, createSessionContextTool,
+  startSession, createSessionsTool, createSessionContextTool, createPullSessionTool,
   getMemoryContext, createMemoryTools,
 } from '../sessions';
 import {
@@ -110,6 +110,8 @@ export default createAgent((ctx) => {
     '- Explain your reasoning and trade-offs for each step.',
     '- When done, summarize the full plan. The user will approve before you execute.',
     '',
+    'If a message starts with <<BUILD_MODE>> (or does not start with <<PLAN_MODE>>), you are in build/execution mode. You must use write, edit, bash, and other tools to implement the changes outlined in the plan.',
+    '',
     '## Skills',
     'Skills are specialized instruction files that load on demand. You have these bundled skills:',
     '',
@@ -150,6 +152,7 @@ export default createAgent((ctx) => {
     '- `history` → show recorded changes in this session',
     '- `sessions` → list recent sessions',
     '- `session_context` → get details of a specific session',
+    '- `pull_session` → pull full conversation history of a specific past session. When the user mentions a session ID using the prefix $, e.g. $session_12345, use this tool to retrieve its messages and work with it as context.',
     '- `memory_read` → read persistent project memory',
     '- `memory_append` → add entry to project memory',
     '- `memory_write` → overwrite project memory',
@@ -182,6 +185,7 @@ export default createAgent((ctx) => {
       createHistoryTool(tracker),
       createSessionsTool(),
       createSessionContextTool(),
+      createPullSessionTool(),
       ...createMemoryTools(workspaceRoot).map((t: any) =>
         ['memory_write', 'memory_append'].includes(t.name) ? gate(t) : t,
       ),
