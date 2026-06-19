@@ -12,11 +12,36 @@ export const ALL_SLASH_COMMANDS = [
   "/skills",
   "/mcp",
   "/tools",
+  "/subagents",
   "/plan",
+  "/autorun",
+  "/sudo",
+  "/permissions",
   "/copy",
   "/undo",
   "/quit",
 ];
+
+export const SLASH_COMMAND_DESCRIPTIONS: Record<string, string> = {
+  "/help": "show help",
+  "/clear": "new session",
+  "/compact": "shrink context",
+  "/sessions": "switch session",
+  "/memory": "show memory",
+  "/model": "show model",
+  "/workspace": "show workspace",
+  "/skills": "list skills",
+  "/mcp": "list mcp",
+  "/tools": "list tools",
+  "/subagents": "list subagents",
+  "/plan": "toggle plan",
+  "/autorun": "always allow tool",
+  "/sudo": "allow everything",
+  "/permissions": "show rules",
+  "/copy": "copy transcript",
+  "/undo": "undo change",
+  "/quit": "exit app",
+};
 
 export const LAVA_LAMP_FRAMES = [
   [
@@ -116,7 +141,24 @@ export const syntaxStyle = SyntaxStyle.fromStyles({
   variable: { fg: "#FFA657" },
   property: { fg: "#79C0FF" },
   constant: { fg: "#79C0FF" },
+  "markup.heading.1": { fg: COLORS.accent, bold: true },
+  "markup.heading.2": { fg: COLORS.accent, bold: true },
+  "markup.heading.3": { fg: "#CC7A5C", bold: true },
   "markup.heading": { fg: "#58A6FF", bold: true },
   "markup.list": { fg: "#FF7B72" },
-  "markup.raw": { fg: "#A5D6FF" },
+  "markup.raw": { fg: COLORS.yellow, bg: "#333333" },
+});
+
+export const codeSyntaxStyle = SyntaxStyle.fromStyles({
+  default: { fg: "#9616FF" },
+  string: { fg: "#0A95FF" },
+  keyword: { fg: "#FF500A", bold: true },
+  comment: { fg: "#52100050" },
+  function: { fg: "#9616FF" },
+  number: { fg: "#79b8ff" },
+  operator: { fg: "#52100050" },
+  type: { fg: "#9616FF" },
+  variable: { fg: "#9616FF" },
+  property: { fg: "#79b8ff" },
+  constant: { fg: "#79b8ff" },
 });
