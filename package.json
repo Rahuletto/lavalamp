@@ -16,6 +16,7 @@
     "@flue/cli": "^1.0.0-beta.1",
     "@flue/runtime": "^1.0.0-beta.2",
     "@oh-my-pi/hashline": "^16.0.6",
+    "@opentui/core": "^0.4.1",
     "valibot": "^1.4.1"
   },
   "engines": {
