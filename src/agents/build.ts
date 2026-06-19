@@ -10,6 +10,7 @@ import {
   createRenameTool,
   createUndoTool,
   createHistoryTool,
+  createDeployParallelSubsTool,
 } from '../tools';
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
@@ -20,6 +21,8 @@ import { createDoomLoopTool } from '../tools/doom-loop';
 import { createRipgrepTool } from '../tools/ripgrep';
 import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
+import { wrapToolExecute } from '../permissions/middleware';
+import { loadAutorun } from '../permissions/autorun';
 
 function registerProviders(env: Record<string, string>) {
   try {
@@ -54,6 +57,22 @@ export default createAgent((ctx) => {
   const tracker = new ChangeTracker();
   const taskStore = new TaskStore();
 
+  // Load autorun/permission state server-side so the middleware can check it
+  loadAutorun(workspaceRoot);
+
+  /**
+   * Wrap a tool's execute with permission gating.
+   * Tools with action: 'ask' will send an IPC permission_request to the TUI.
+   */
+  function gate(tool: any): any {
+    const orig = tool.execute;
+    if (typeof orig !== 'function') return tool;
+    return {
+      ...tool,
+      execute: wrapToolExecute(tool.name, orig, workspaceRoot),
+    };
+  }
+
   const session = startSession(
     ctx.payload?.prompt ?? 'interactive',
     workspaceRoot,
@@ -70,6 +89,8 @@ export default createAgent((ctx) => {
     '## Core rules',
     '- Always `read` a file before editing it.',
     '- Use `ripgrep` (not `grep`) for all codebase searches — it is faster and supports full regex.',
+    '- You may use `bash` with read-only `sed -n` commands to inspect precise file ranges when needed.',
+    '- Use `deploy_parallel_subs` when independent research can run in parallel (up to 3 focused queries).',
     '- Use `read` with offset/limit to read specific chunks of large files instead of the entire file.',
     '- Edits use hashline format: [path#tag] header + SWAP/DEL/INS operations with +body lines.',
     '- Ranges are TIGHT: cover only lines that change. Use SWAP.BLK for whole functions/blocks.',
@@ -145,6 +166,7 @@ export default createAgent((ctx) => {
     '- `delete_task` → remove a task',
     '- `skip_task` → cancel a task',
     '- `list_tasks` → list all tasks',
+    '- `deploy_parallel_subs` → deploy up to 3 parallel research agents for independent investigation',
   ];
 
   if (memoryContext) {
@@ -155,19 +177,22 @@ export default createAgent((ctx) => {
     model,
     instructions: instructions.join('\n'),
     tools: [
-      createRenameTool(tracker),
-      createUndoTool(tracker),
+      gate(createRenameTool(tracker)),
+      gate(createUndoTool(tracker)),
       createHistoryTool(tracker),
       createSessionsTool(),
       createSessionContextTool(),
-      ...createMemoryTools(workspaceRoot),
+      ...createMemoryTools(workspaceRoot).map((t: any) =>
+        ['memory_write', 'memory_append'].includes(t.name) ? gate(t) : t,
+      ),
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
       createCodebaseSearchTool({ root: workspaceRoot, resolve: (p: string) => `${workspaceRoot}/${p}`, assertAccessible: () => {}, assertInside: () => {}, isInside: () => true } as any),
-      createOracleTool(),
-      createDoomLoopTool(),
+      gate(createOracleTool()),
+      gate(createDoomLoopTool()),
       createRipgrepTool(workspaceRoot),
+      gate(createDeployParallelSubsTool()),
       ...createTaskTools(taskStore),
     ],
     sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
