@@ -22,6 +22,16 @@ export interface Task {
   status: 'pending' | 'in_progress' | 'completed' | 'skipped';
 }
 
+export interface SubAgent {
+  id: string;
+  query: string;
+  status: 'running' | 'done' | 'failed' | 'timed_out' | 'killed';
+  result?: string;
+  error?: string;
+  startTime: number;
+  pid?: number;
+}
+
 export interface AppState {
   messages: Message[];
   input: string;
@@ -40,6 +50,7 @@ export interface AppState {
   cwd: string;
   model?: string;
   tasks: Task[];
+  subAgents: SubAgent[];
 }
 
 export function createInitialState(cwd: string, model?: string): AppState {
@@ -61,5 +72,6 @@ export function createInitialState(cwd: string, model?: string): AppState {
     cwd,
     model,
     tasks: [],
+    subAgents: [],
   };
 }
