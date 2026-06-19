@@ -66,7 +66,7 @@ export function createRipgrepTool(cwd: string) {
         }
 
         if (exitCode === 2) {
-          return `ripgrep error: ${stderr.trim() || 'exited with code 2'}`;
+          throw new Error(`ripgrep error: ${stderr.trim() || 'exited with code 2'}`);
         }
 
         const lines = output.trim().split('\n');
@@ -100,7 +100,7 @@ export function createRipgrepTool(cwd: string) {
 
         return [header, ...stripped].join('\n') + footer;
       } catch (err) {
-        return `ripgrep failed: ${err instanceof Error ? err.message : String(err)}. Is ripgrep installed? (brew install ripgrep)`;
+        throw new Error(`ripgrep failed: ${err instanceof Error ? err.message : String(err)}. Is ripgrep installed? (brew install ripgrep)`);
       }
     },
   });

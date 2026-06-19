@@ -15,6 +15,10 @@ export function summarizeToolArgs(
   cwd: string,
 ): string {
   switch (name) {
+    case "deploy_parallel_subs": {
+      const queries = Array.isArray(args.queries) ? args.queries : [];
+      return `${queries.length} quer${queries.length === 1 ? "y" : "ies"}`;
+    }
     case "bash": {
       const cmd =
         typeof args.command === "string"
@@ -87,6 +91,11 @@ export function summarizeToolResult(
   const str = parsed && typeof parsed === "string" ? parsed : raw;
 
   switch (name) {
+    case "deploy_parallel_subs": {
+      const marker = parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+      const queries = Array.isArray(marker?.queries) ? marker.queries : [];
+      return `${queries.length || "parallel"} research agent${queries.length === 1 ? "" : "s"} deployed`;
+    }
     case "read": {
       const fp =
         typeof args.file_path === "string"
