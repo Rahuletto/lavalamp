@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "tool": "bash",
+      "action": "allow",
+      "timestamp": 1781891024718
+    }
+  ],
+  "allowAll": true
+}
