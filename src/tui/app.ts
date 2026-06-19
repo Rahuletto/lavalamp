@@ -8,6 +8,7 @@ import {
   DiffRenderable,
   CodeRenderable,
   TextAttributes,
+  defaultTextareaKeyBindings,
 } from "@opentui/core";
 import { t, green, dim, bold, fg, type StyledText } from "@opentui/core";
 import type { KeyEvent, CliRenderer } from "@opentui/core";
@@ -705,13 +706,22 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   const MAX_INPUT_HEIGHT = 6;
+  const inputSeparatorTop = new TextRenderable(renderer, {
+    id: "input-separator-top",
+    content: "─".repeat(500),
+    fg: COLORS.dim,
+    width: "100%",
+    height: 1,
+    selectable: false,
+  });
+
   const inputRow = new BoxRenderable(renderer, {
     id: "input-row",
     flexDirection: "row",
     width: "100%",
     height: 1,
-    paddingTop: 1,
-    paddingBottom: 1,
+    paddingTop: 0,
+    paddingBottom: 0,
     paddingLeft: 1,
     paddingRight: 1,
   });
@@ -731,6 +741,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       attributes: TextAttributes.BOLD,
       width: 2,
       height: 1,
+      selectable: false,
     });
   }
 
@@ -745,6 +756,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     cursorColor: COLORS.accent,
     wrapMode: "word",
     keyBindings: [
+      ...defaultTextareaKeyBindings.filter(
+        (b) => b.name !== "return" && b.name !== "kpenter" && b.name !== "linefeed"
+      ),
       { name: "return", action: "submit" },
       { name: "return", shift: true, action: "newline" },
     ],
@@ -823,7 +837,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
   });
   inputRow.add(inputPrefixBox);
   inputRow.add(inputField);
+  root.add(inputSeparatorTop);
   root.add(inputRow);
+
+  const inputSeparatorBottom = new TextRenderable(renderer, {
+    id: "input-separator-bottom",
+    content: "─".repeat(500),
+    fg: COLORS.dim,
+    width: "100%",
+    height: 1,
+    selectable: false,
+  });
+  root.add(inputSeparatorBottom);
 
   const statusBar = new BoxRenderable(renderer, {
     id: "status-bar",
@@ -854,7 +879,22 @@ export async function startTui(options: TuiOptions): Promise<void> {
     visible: false,
   });
 
-  const mainTuiChildren = [header, messagesScroll, completionBox, taskStatusBar, resultBox, confirmBox, permissionBox, queueBox, taskBox, subBox, inputRow, statusBar];
+  const mainTuiChildren = [
+    header,
+    messagesScroll,
+    completionBox,
+    taskStatusBar,
+    resultBox,
+    confirmBox,
+    permissionBox,
+    queueBox,
+    taskBox,
+    subBox,
+    inputSeparatorTop,
+    inputRow,
+    inputSeparatorBottom,
+    statusBar,
+  ];
 
   function hideMainTui() {
     for (const child of mainTuiChildren) {
@@ -2287,7 +2327,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     let savedSessionId: string | null = null;
     if (hasMessages) {
       const sessionName = nameSession(state.messages);
-      savedSessionId = saveSession(state.messages, sessionName);
+      savedSessionId = saveSession(state.messages, sessionName, currentSessionId);
       currentSessionId = savedSessionId;
     }
     stopSpinner();
@@ -2340,28 +2380,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     sessionPickerActive = true;
 
     renderPicker();
-
-    sessionPickerOffKey = renderer.keyInput.on("keypress", (event: KeyEvent) => {
-      if (!sessionPickerActive) {
-        if (sessionPickerOffKey) { sessionPickerOffKey(); sessionPickerOffKey = null; }
-        return;
-      }
-      if (event.name === "up" || (event.name === "k" && !event.ctrl)) {
-        sessionPickerSelected = Math.max(0, sessionPickerSelected - 1);
-        renderPicker();
-        event.stopPropagation();
-      } else if (event.name === "down" || (event.name === "j" && !event.ctrl)) {
-        sessionPickerSelected = Math.min(sessionPickerSessions.length - 1, sessionPickerSelected + 1);
-        renderPicker();
-        event.stopPropagation();
-      } else if (event.name === "return") {
-        event.stopPropagation();
-        resumeSession(sessionPickerSelected);
-      } else if (event.name === "escape") {
-        event.stopPropagation();
-        closeSessionPicker();
-      }
-    });
   }
 
   function resumeSession(index: number) {
@@ -2378,7 +2396,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function closeSessionPicker() {
     sessionPickerActive = false;
-    if (sessionPickerOffKey) { sessionPickerOffKey(); sessionPickerOffKey = null; }
     hideResultPanel();
   }
 
@@ -2520,7 +2537,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       case "/clear": {
         const sessionName = nameSession(state.messages);
         if (state.messages.length > 0) {
-          saveSession(state.messages, sessionName);
+          saveSession(state.messages, sessionName, currentSessionId);
         }
         for (const child of [...messagesScroll.getChildren()]) {
           if (child.id !== "lava-lamp-box") child.destroy();
@@ -2768,6 +2785,46 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (viewerOverlay.visible) return;
+    if (sessionPickerActive) {
+      if (key.name === "up" || (key.name === "k" && !key.ctrl)) {
+        sessionPickerSelected = Math.max(0, sessionPickerSelected - 1);
+        renderPicker();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "down" || (key.name === "j" && !key.ctrl)) {
+        sessionPickerSelected = Math.min(sessionPickerSessions.length - 1, sessionPickerSelected + 1);
+        renderPicker();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "return") {
+        resumeSession(sessionPickerSelected);
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "escape") {
+        closeSessionPicker();
+        key.stopPropagation();
+        return;
+      }
+    }
+    if (key.meta && key.name === "c") {
+      const textToCopy = inputField.getSelectedText() || inputField.plainText;
+      if (textToCopy) {
+        try {
+          if (process.platform === "darwin") {
+            Bun.spawnSync(["pbcopy"], { stdin: Buffer.from(textToCopy) });
+          } else if (process.platform === "linux") {
+            Bun.spawnSync(["xclip", "-selection", "clipboard"], { stdin: Buffer.from(textToCopy) });
+          } else if (process.platform === "win32") {
+            Bun.spawnSync(["clip"], { stdin: Buffer.from(textToCopy) });
+          }
+        } catch {}
+      }
+      key.stopPropagation();
+      return;
+    }
     if (key.ctrl && key.name === "c") {
       if (permissionBox.visible) {
         hidePermissionBox('deny');
@@ -2927,7 +2984,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     let savedId: string | null = null;
     if (state.messages.length > 0) {
       const sessionName = nameSession(state.messages);
-      savedId = saveSession(state.messages, sessionName);
+      savedId = saveSession(state.messages, sessionName, currentSessionId);
     }
     try {
       renderer.destroy();

@@ -14,22 +14,38 @@ function ensureSessionsDir() {
 
 export function nameSession(messages: Message[]): string {
   const firstUser = messages.find((m) => m.role === "user");
-  if (!firstUser) return "empty";
-  const text = firstUser.content
-    .replace(/^\/\w+\s*/, "")
-    .replace(/[#@][^\s]*/g, "")
+  if (!firstUser) return "Empty Session";
+  
+  let text = firstUser.content
+    .replace(/^<<PLAN_MODE>>\s*/, "") // Strip plan mode tag
+    .replace(/^\/\w+\s*/, "")        // Strip slash commands (e.g., /ask)
+    .replace(/[#@][^\s]*/g, "")      // Strip autocomplete prefixes/skills
+    .replace(/\s+/g, " ")            // Normalize spacing
     .trim();
-  const slug = text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40);
-  return slug || "chat";
+
+  if (!text) return "Chat Session";
+
+  // Capitalize first letter
+  text = text.charAt(0).toUpperCase() + text.slice(1);
+
+  // Truncate to a reasonable length, avoiding word cutoff if possible
+  const maxLength = 45;
+  if (text.length > maxLength) {
+    const truncated = text.slice(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(" ");
+    if (lastSpace > maxLength * 0.7) {
+      text = truncated.slice(0, lastSpace) + "...";
+    } else {
+      text = truncated + "...";
+    }
+  }
+
+  return text;
 }
 
-export function saveSession(messages: Message[], name: string): string {
+export function saveSession(messages: Message[], name: string, existingId?: string): string {
   ensureSessionsDir();
-  const id = `session_${Date.now()}`;
+  const id = existingId || `session_${Date.now()}`;
   const file = path.join(SESSIONS_DIR, `${id}.json`);
   fs.writeFileSync(
     file,
