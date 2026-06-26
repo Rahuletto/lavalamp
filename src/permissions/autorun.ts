@@ -13,7 +13,7 @@ const autorunMap = new Map<string, AutorunEntry>();
 let allowAll = false;
 
 function getAutorunPath(cwd: string): string {
-  return join(cwd, '.lavalamp', 'autorun.json');
+  return join(cwd, '.agents', 'autorun.json');
 }
 
 export function loadAutorun(cwd: string): void {
@@ -38,7 +38,7 @@ export function loadAutorun(cwd: string): void {
 }
 
 export function saveAutorun(cwd: string): void {
-  const dirPath = join(cwd, '.lavalamp');
+  const dirPath = join(cwd, '.agents');
   const autorunPath = getAutorunPath(cwd);
   if (!existsSync(dirPath)) {
     mkdirSync(dirPath, { recursive: true });

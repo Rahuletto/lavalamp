@@ -21,7 +21,7 @@ export interface SessionRecord {
   tokensUsed?: number;
 }
 
-const SESSIONS_DIR = join(homedir(), '.lavalamp', 'sessions');
+const SESSIONS_DIR = join(homedir(), '.agents', 'sessions');
 
 function ensureDir() {
   mkdirSync(SESSIONS_DIR, { recursive: true });

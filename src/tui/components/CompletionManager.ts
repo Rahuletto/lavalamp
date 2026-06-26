@@ -29,6 +29,7 @@ export class CompletionManager {
   private completionBaseCol = 0;
   private fileCache: string[] | null = null;
   private skillCache: string[] | null = null;
+  private emptyMessage: string | null = null;
 
   constructor(private readonly ctx: CompletionContext) {}
 
@@ -96,11 +97,13 @@ export class CompletionManager {
       );
       this.completionList = matchedSessions.map((s) => s.id);
       this.completionIndex = 0;
+      this.emptyMessage = sessions.length === 0 ? 'No saved sessions' : 'No matching sessions';
       if (this.completionList.length > 0) {
         this.completing = true;
         this.render();
       } else {
-        this.hide();
+        this.completing = true;
+        this.render();
       }
       return;
     }
@@ -108,34 +111,30 @@ export class CompletionManager {
     if (atMatch) {
       this.completionType = 'at';
       this.completionBaseCol = before.lastIndexOf('@');
+      const files = this.getFiles();
       this.completionList = fuzzySearch(
         (atMatch[1] ?? '').toLowerCase(),
-        this.getFiles(),
+        files,
       ).map((r) => r.item);
       this.completionIndex = 0;
-      if (this.completionList.length > 0) {
-        this.completing = true;
-        this.render();
-      } else {
-        this.hide();
-      }
+      this.emptyMessage = files.length === 0 ? 'No files in project' : 'No matching files';
+      this.completing = true;
+      this.render();
       return;
     }
     const hashMatch = /(?:^|\s)#([^\s]*)$/.exec(before);
     if (hashMatch) {
       this.completionType = 'hash';
       this.completionBaseCol = before.lastIndexOf('#');
+      const skills = this.getSkills();
       this.completionList = fuzzySearch(
         (hashMatch[1] ?? '').toLowerCase(),
-        this.getSkills(),
+        skills,
       ).map((r) => r.item);
       this.completionIndex = 0;
-      if (this.completionList.length > 0) {
-        this.completing = true;
-        this.render();
-      } else {
-        this.hide();
-      }
+      this.emptyMessage = skills.length === 0 ? 'No skills installed' : 'No matching skills';
+      this.completing = true;
+      this.render();
       return;
     }
     if (this.completing) {
@@ -153,6 +152,29 @@ export class CompletionManager {
       width: '100%',
     });
     this.ctx.completionScroll.add(spacer);
+
+    if (this.completionList.length === 0 && this.emptyMessage !== null && this.emptyMessage.length > 0) {
+      const row = new BoxRenderable(this.ctx.renderer, {
+        flexDirection: 'row',
+        height: 1,
+        id: this.ctx.nextId(),
+        width: '100%',
+      });
+      row.add(
+        new TextRenderable(this.ctx.renderer, {
+          content: `  ${this.emptyMessage}`,
+          fg: COLORS.dim,
+          flexGrow: 1,
+          id: this.ctx.nextId(),
+        }),
+      );
+      this.ctx.completionScroll.add(row);
+      this.ctx.completionBox.visible = true;
+      this.ctx.inputSeparatorTop.visible = false;
+      this.ctx.renderer.requestRender();
+      return;
+    }
+
     for (let i = 0; i < this.completionList.length; i++) {
       const sel = i === this.completionIndex;
       const row = new BoxRenderable(this.ctx.renderer, {
@@ -212,6 +234,7 @@ export class CompletionManager {
 
   hide(): void {
     this.completing = false;
+    this.emptyMessage = null;
     this.ctx.completionBox.visible = false;
     this.ctx.inputSeparatorTop.visible = true;
     for (const child of this.ctx.completionScroll.getChildren()) {

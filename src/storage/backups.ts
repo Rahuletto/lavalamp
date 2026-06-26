@@ -6,7 +6,7 @@ export class BackupEngine {
   private readonly backupDir: string;
 
   constructor(private readonly workspaceRoot: string) {
-    this.backupDir = path.join(workspaceRoot, '.lavalamp', 'backups');
+    this.backupDir = path.join(workspaceRoot, '.agents', 'backups');
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
     }
@@ -24,7 +24,7 @@ export class BackupEngine {
       if (
         file.includes('node_modules') ||
         file.includes('.git') ||
-        file.includes('.lavalamp') ||
+        file.includes('.agents') ||
         file.includes('dist') ||
         file.includes('build')
       ) {

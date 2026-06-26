@@ -101,7 +101,7 @@ export function matchRules(
 }
 
 export function loadRules(cwd: string): PermissionRule[] {
-  const rulesPath = join(cwd, '.lavalamp', 'rules.json');
+  const rulesPath = join(cwd, '.agents', 'rules.json');
   if (!existsSync(rulesPath)) {
     return [...DEFAULT_RULES];
   }
@@ -116,7 +116,7 @@ export function loadRules(cwd: string): PermissionRule[] {
 }
 
 export function saveRules(cwd: string, rules: PermissionRule[]): void {
-  const dirPath = join(cwd, '.lavalamp');
+  const dirPath = join(cwd, '.agents');
   const rulesPath = join(dirPath, 'rules.json');
   if (!existsSync(dirPath)) {
     mkdirSync(dirPath, { recursive: true });

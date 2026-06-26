@@ -4,7 +4,7 @@ import type { Message } from './state';
 
 const SESSIONS_DIR = path.join(
   process.env.HOME ?? '~',
-  '.lavalamp',
+  '.agents',
   'sessions',
 );
 
@@ -81,12 +81,14 @@ export function listSessions(): {
       const data = JSON.parse(
         fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'),
       );
-      sessions.push({
-        id: data.id,
-        messageCount: (data.messages ?? []).length,
-        name: data.name ?? f.replace('.json', ''),
-        savedAt: data.savedAt ?? 0,
-      });
+      if (typeof data.id === 'string' && data.id.length > 0) {
+        sessions.push({
+          id: data.id,
+          messageCount: (data.messages ?? []).length,
+          name: data.name ?? f.replace('.json', ''),
+          savedAt: data.savedAt ?? 0,
+        });
+      }
     } catch {}
   }
   sessions.sort((a, b) => b.savedAt - a.savedAt);

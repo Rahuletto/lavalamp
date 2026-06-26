@@ -88,6 +88,9 @@ export default createAgent((ctx) => {
   const instructions = [
     'You are lavalamp — a coding assistant that operates on real files in the workspace.',
     '',
+    '## Language',
+    '- ALWAYS respond in English. Never use any other language, regardless of what the user writes in.',
+    '',
     '## Core rules',
     '- Always `read` a file before editing it.',
     '- Use `ripgrep` (not `grep`) for all codebase searches — it is faster and supports full regex.',

@@ -7,7 +7,7 @@ export interface SteeringRule {
 }
 
 export function steerPrompt(prompt: string, workspaceRoot: string): string {
-  const configPath = path.join(workspaceRoot, '.lavalamp', 'steering.json');
+  const configPath = path.join(workspaceRoot, '.agents', 'steering.json');
   if (!fs.existsSync(configPath)) {
     // Write a default empty file if it doesn't exist yet
     try {

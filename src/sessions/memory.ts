@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
-const MEMORY_DIR = join(homedir(), '.lavalamp', 'memory');
+const MEMORY_DIR = join(homedir(), '.agents', 'memory');
 
 function workspaceHash(cwd: string): string {
   return createHash('sha256').update(cwd).digest('hex').slice(0, 12);

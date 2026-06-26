@@ -20,6 +20,7 @@ export interface KeybindingsContext {
   viewerOverlay: { visible: boolean };
 
   // Callbacks for controller actions
+  handleSubmit: () => void;
   togglePlanMode: () => void;
   withModeTag: (prompt: string) => string;
   addInfoLine: (line: string, fg: string) => void;
@@ -41,6 +42,7 @@ export function handleKeyPress(key: KeyEvent, ctx: KeybindingsContext): void {
     subBox,
     subManager,
     viewerOverlay,
+    handleSubmit,
     togglePlanMode,
     withModeTag,
     addInfoLine,
@@ -240,6 +242,16 @@ export function handleKeyPress(key: KeyEvent, ctx: KeybindingsContext): void {
     completion.accept();
     key.stopPropagation();
     return;
+  }
+
+  // Return key to submit message
+  if (key.name === 'return' && !key.shift && !store.processing) {
+    const text = inputField.plainText.trim();
+    if (text) {
+      handleSubmit();
+      key.stopPropagation();
+      return;
+    }
   }
 
   // Ctrl+D on empty input to exit TUI

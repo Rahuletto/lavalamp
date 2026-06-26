@@ -138,7 +138,12 @@ export class FlueProcess {
           if (/^\d+;\d+[A-Z]/.test(trimmed)) {
             continue;
           }
-          process.stderr.write(`  ${trimmed}\n`);
+          if (trimmed.startsWith('{') || trimmed.startsWith('}')) {
+            continue;
+          }
+          if (/^\w+:/.test(trimmed) || trimmed.startsWith('[')) {
+            continue;
+          }
         }
       });
     }
@@ -161,7 +166,12 @@ export class FlueProcess {
           if (/^\d+;\d+[A-Z]/.test(trimmed)) {
             continue;
           }
-          process.stderr.write(`  ${trimmed}\n`);
+          if (trimmed.startsWith('{') || trimmed.startsWith('}')) {
+            continue;
+          }
+          if (/^\w+:/.test(trimmed) || trimmed.startsWith('[')) {
+            continue;
+          }
         }
       });
     }
@@ -243,7 +253,7 @@ export class FlueProcess {
     this.child.on('message', (raw: Record<string, unknown>) => {
       // Handle permission requests from the server
       if (raw.type === 'permission_request') {
-        if (this.onPermissionRequest !== null) {
+        if (this.onPermissionRequest != null) {
           this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
         }
         return;
@@ -254,25 +264,25 @@ export class FlueProcess {
       }
 
       if (raw.type === 'started') {
-        if (callbacks.onStarted !== null) { callbacks.onStarted(); }
+        if (callbacks.onStarted != null) { callbacks.onStarted(); }
         return;
       }
 
       if (raw.type === 'event') {
-        if (callbacks.onEvent !== null) { callbacks.onEvent(raw.event as FlueEvent); }
+        if (callbacks.onEvent != null) { callbacks.onEvent(raw.event as FlueEvent); }
         return;
       }
 
       if (raw.type === 'result') {
         this.pending.delete(requestId);
-        if (callbacks.onResult !== null) { callbacks.onResult(raw.result as FlueResult); }
+        if (callbacks.onResult != null) { callbacks.onResult(raw.result as FlueResult); }
         return;
       }
 
       if (raw.type === 'error') {
         this.pending.delete(requestId);
         const err = raw.error as { message?: string; details?: string };
-        if (callbacks.onError !== null) {
+        if (callbacks.onError != null) {
           callbacks.onError(
             new Error(err.message ?? err.details ?? 'Unknown error'),
           );
@@ -327,7 +337,7 @@ export class FlueProcess {
 
   private rejectAll(error: Error) {
     for (const [id, cbs] of this.pending) {
-      if (cbs.onError !== null) { cbs.onError(error); }
+      if (cbs.onError != null) { cbs.onError(error); }
       this.pending.delete(id);
     }
   }

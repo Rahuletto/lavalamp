@@ -17,7 +17,7 @@ function walkFiles(
         if (
           file.name === 'node_modules' ||
           file.name === '.git' ||
-          file.name === '.lavalamp' ||
+          file.name === '.agents' ||
           file.name === 'dist' ||
           file.name === 'build'
         ) {

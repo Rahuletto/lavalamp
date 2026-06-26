@@ -1,6 +1,6 @@
 import { matchRules, loadRules } from './rules';
 import type { PermissionRule, PermissionAction } from './rules';
-import { getMatchingAutorun, isAllowAll } from './autorun';
+import { getMatchingAutorun, isAllowAll, setAutorun } from './autorun';
 
 export interface PermissionRequest {
   type: 'permission_request';
@@ -119,6 +119,9 @@ export async function requestPermission(
     pending.set(requestId, {
       resolve: (resp) => {
         clearTimeout(timeout);
+        if (resp.alwaysAllow) {
+          setAutorun(cwd, toolName, 'allow');
+        }
         origResolve(resp);
       },
     });

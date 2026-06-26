@@ -5,7 +5,7 @@ import * as fs from 'node:fs';
 export async function pasteImageFromClipboard(
   workspaceRoot: string,
 ): Promise<string | null> {
-  const attachmentsDir = path.join(workspaceRoot, '.lavalamp', 'attachments');
+  const attachmentsDir = path.join(workspaceRoot, '.agents', 'attachments');
   if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
   }

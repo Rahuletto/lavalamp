@@ -82,9 +82,7 @@ function isAuthError(err: Error): boolean {
   return /\b401\b/.test(err.message);
 }
 
-function accent(): string {
-  return COLORS.accent;
-}
+
 
 function hexToAnsi(hex: string): string {
   const value = hex.replace('#', '');
@@ -110,7 +108,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const state = store.getState();
   const backupEngine = new BackupEngine(options.cwd);
   const backupHistory: string[] = [];
-  const attachedImages: string[] = [];
+  const attachedImages: { tag: string; path: string }[] = [];
+  let imageCounter = 0;
+
+  function accent(): string {
+    return state.planMode ? COLORS.planAccent : COLORS.accent;
+  }
 
   const {cwd} = options;
   let idCounter = 0;
@@ -280,17 +283,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
   });
   completionBox.add(completionScroll);
   root.add(completionBox);
-
-  const completion = new CompletionManager({
-    accent: (): string => accent(),
-    completionBox,
-    completionScroll,
-    cwd,
-    inputField, // same
-    inputSeparatorTop, // will be resolved/passed later or accessed since javascript resolves variables dynamically within scope, or we can instantiate completion below. Let's declare it at the bottom.
-    nextId,
-    renderer,
-  });
 
   const lavaLampBox = new BoxRenderable(renderer, {
     alignItems: 'center',
@@ -666,8 +658,21 @@ export async function startTui(options: TuiOptions): Promise<void> {
   });
   inputRow.add(inputPrefixBox);
   inputRow.add(inputField);
+  root.add(confirmBoxMgr.box);
+  root.add(permissionBoxMgr.box);
   root.add(inputSeparatorTop);
   root.add(inputRow);
+
+  const completion = new CompletionManager({
+    accent: (): string => accent(),
+    completionBox,
+    completionScroll,
+    cwd,
+    inputField,
+    inputSeparatorTop,
+    nextId,
+    renderer,
+  });
 
   const inputSeparatorBottom = new TextRenderable(renderer, {
     content: '─'.repeat(500),
@@ -783,9 +788,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
-  function hideCompletions() {
-    completion.hide();
-  }
 
   function updateStatus() {
     refreshSubPanel();
@@ -841,9 +843,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     const targetAgent = enabled ? 'plan' : 'build';
     state.planMode = enabled;
     applyModeVisuals();
-    const oldProcessing = state.processing;
-    state.processing = true;
-    updateStatus();
     flue.setAgentName(targetAgent);
     try {
       await flue.restart();
@@ -852,9 +851,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
         `  Error restarting agent: ${(error as Error).message}`,
         COLORS.red,
       );
-    } finally {
-      state.processing = oldProcessing;
-      updateStatus();
     }
   }
 
@@ -1359,7 +1355,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function printUsage(result: FlueResult) {
     const u = result.usage;
-    const m = result.model !== null ? `${result.model.provider}/${result.model.id}` : '';
+    if (u == null) {return;}
+    const m = result.model != null ? `${result.model.provider}/${result.model.id}` : '';
     addInfoLine(
       `  ${u.totalTokens} tok | $${u.cost.total.toFixed(4)} | ${m}`,
       COLORS.dim,
@@ -1369,7 +1366,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
   async function _sendPrompt(prompt: string) {
     state.processing = true;
     state.historyIndex = -1;
-    savedInput = '';
     prompt = withModeTag(prompt);
     state.commandHistory.push(visiblePrompt(prompt));
     hideResultPanel();
@@ -1377,9 +1373,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     startSpinner();
 
     hideLavaLamp();
-    addUserLine(prompt);
+    addUserLine(visiblePrompt(prompt));
     state.messages.push({
-      content: prompt,
+      content: visiblePrompt(prompt),
       id: nextId(),
       role: 'user',
       timestamp: Date.now(),
@@ -1397,14 +1393,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (attachedImages.length > 0) {
       for (const img of attachedImages) {
         addInfoLine(
-          '  [spectacle] Describing clipboard image via Workers AI...',
+          `  [spectacle] Describing clipboard image via Workers AI...`,
           COLORS.dim,
         );
         try {
-          const desc = await describeImageWithSpectacle(img);
-          imageDescriptionContext += `\n\n[ATTACHED IMAGE DETAILS: ${img}]\n${desc}`;
+          const desc = await describeImageWithSpectacle(img.path);
+          imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag}: ${img.path}]\n${desc}`;
         } catch (error: unknown) {
-          imageDescriptionContext += `\n\n[ATTACHED IMAGE ERROR: ${error instanceof Error ? error.message : String(error)}]`;
+          imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag} ERROR: ${error instanceof Error ? error.message : String(error)}]`;
         }
       }
       attachedImages.length = 0; // Clear after processing
@@ -1567,7 +1563,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     state.queuePending = [];
     refreshQueuePanel();
     state.historyIndex = -1;
-    savedInput = '';
     inputField.setText('');
     if (currentAssistantMd) {
       messagesScroll.remove(currentAssistantMd);
@@ -1656,40 +1651,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
-  let planStatusTimeout: ReturnType<typeof setTimeout> | null = null;
-  function togglePlanMode() {
-    hideCompletions();
-    if (state.planMode) {
-      planStatusLine.content =
-        '  plan mode enabled  |  Agent can only read, search, research, and plan  |  Press Shift+Tab, Ctrl+P or /plan to exit';
-      planStatusLine.fg = COLORS.planAccent;
-      planStatusLine.visible = true;
-      showResultPanel('/plan', [
-        { content: '  plan mode enabled', fg: COLORS.planAccent },
-      ]);
-    } else {
-      planStatusLine.content =
-        '  build mode enabled  |  Agent can read, write, edit, and run commands';
-      planStatusLine.fg = accent();
-      planStatusLine.visible = true;
-      showResultPanel('/plan', [
-        {
-          content: '  build mode enabled (plan mode disabled)',
-          fg: COLORS.accent,
-        },
-      ]);
-    }
-    applyModeVisuals();
-    requestScroll();
 
-    if (planStatusTimeout) {
-      clearTimeout(planStatusTimeout);
-    }
-    planStatusTimeout = setTimeout(() => {
-      planStatusLine.visible = false;
-      requestScroll();
-      renderer.requestRender();
-    }, 5000);
+  function togglePlanMode() {
+    setPlanMode(!state.planMode).catch(() => {});
   }
 
   let sessionPickerActive = false;
@@ -2111,7 +2075,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       case '/permissions': {
         const rows: { content: string; fg?: string; bold?: boolean }[] = [
           {
-            content: '  rules from .lavalamp/rules.json merge after defaults',
+            content: '  rules from .agents/rules.json merge after defaults',
             fg: COLORS.dim,
           },
         ];
@@ -2200,14 +2164,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
       case '/paste-image': {
         const imgPath = await pasteImageFromClipboard(cwd);
         if (imgPath !== null && imgPath !== '') {
-          attachedImages.push(imgPath);
-          showResultPanel('/paste-image', [
-            {
-              content: '  Successfully attached clipboard image:',
-              fg: COLORS.green,
-            },
-            { content: `  ${imgPath}`, fg: COLORS.link },
-          ]);
+          imageCounter++;
+          const tag = `[Image ${imageCounter}]`;
+          attachedImages.push({ tag, path: imgPath });
+          inputField.insertText(tag);
         } else {
           showResultPanel('/paste-image', [
             { content: '  No image found in clipboard', fg: COLORS.yellow },
@@ -2231,6 +2191,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
     confirmBox: confirmBoxMgr,
     handleExit,
     handleInterrupt,
+    handleSubmit: () => {
+      const text = inputField.plainText.trim();
+      if (!text) {return;}
+      inputField.setText('');
+      if (typeof inputField.onContentChange === 'function') {
+        inputField.onContentChange();
+      }
+      _sendPrompt(text).catch(() => {});
+    },
     inputField,
     permissionBox: permissionBoxMgr,
     queuePanelRefresh: refreshQueuePanel,
@@ -2251,11 +2220,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
       pasteImageFromClipboard(cwd)
         .then((imgPath) => {
           if (imgPath !== null && imgPath !== '') {
-            attachedImages.push(imgPath);
-            addInfoLine(
-              `  [spectacle] Attached pasted clipboard image: ${stripCwd(imgPath, cwd)}`,
-              COLORS.green,
-            );
+            imageCounter++;
+            const tag = `[Image ${imageCounter}]`;
+            attachedImages.push({ tag, path: imgPath });
+            inputField.insertText(tag);
             renderer.requestRender();
           }
         })

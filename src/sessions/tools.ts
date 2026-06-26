@@ -5,7 +5,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const SESSIONS_DIR = join(homedir(), '.lavalamp', 'sessions');
+const SESSIONS_DIR = join(homedir(), '.agents', 'sessions');
 
 export function createSessionsTool() {
   return defineTool({

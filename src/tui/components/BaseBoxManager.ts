@@ -50,7 +50,6 @@ export abstract class BaseBoxManager<T = boolean> {
 
     this.box.add(this.title);
     this.box.add(this.body);
-    ctx.root.add(this.box);
   }
 
   isVisible(): boolean {

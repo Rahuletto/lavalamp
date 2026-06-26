@@ -12,7 +12,7 @@ export class VectorDb {
   private readonly db: Database;
 
   constructor(private readonly workspaceRoot: string) {
-    const dir = path.join(workspaceRoot, '.lavalamp');
+    const dir = path.join(workspaceRoot, '.agents');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
