@@ -19,7 +19,9 @@ export const ALL_SLASH_COMMANDS = [
   "/copy",
   "/undo",
   "/quit",
+  "/paste-image",
 ];
+
 
 export const SLASH_COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/help": "show help",
@@ -39,7 +41,9 @@ export const SLASH_COMMAND_DESCRIPTIONS: Record<string, string> = {
   "/copy": "copy transcript",
   "/undo": "undo change",
   "/quit": "exit app",
+  "/paste-image": "paste clipboard image",
 };
+
 
 export const LAVA_LAMP_FRAMES = [
   [

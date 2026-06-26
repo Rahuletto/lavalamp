@@ -76,6 +76,11 @@ export class FlueProcess {
     private agentName: string = 'build',
   ) {}
 
+  setAgentName(name: string) {
+    this.agentName = name;
+  }
+
+
   get isProcessing(): boolean {
     return this.pending.size > 0;
   }

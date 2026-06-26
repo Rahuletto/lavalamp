@@ -11,7 +11,15 @@ import {
   createUndoTool,
   createHistoryTool,
   createDeployParallelSubsTool,
+  createLoadSkillTool,
+  createCodebaseSemanticSearchTool,
+  createLspTools,
+  createQueryExpertTool,
 } from '../tools';
+
+
+
+
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
@@ -197,6 +205,10 @@ export default createAgent((ctx) => {
       gate(createDoomLoopTool()),
       createRipgrepTool(workspaceRoot),
       gate(createDeployParallelSubsTool()),
+      createLoadSkillTool(workspaceRoot),
+      createCodebaseSemanticSearchTool(workspaceRoot),
+      ...createLspTools(workspaceRoot),
+      createQueryExpertTool(workspaceRoot),
       ...createTaskTools(taskStore),
     ],
     sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),

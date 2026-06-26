@@ -98,38 +98,37 @@ OpenCode/Claude Code.
 - [x] User-configurable rules via `.lavalamp/rules.json`.
 - **Exit:** destructive ops prompt; read-only ops flow freely; rules user-configurable.
 
-### M5 — Agent roster + parallel subagents  [IN PROGRESS]
+### M5 — Agent roster + parallel subagents  [DONE]
 - [x] `deploy_parallel_subs` tool (up to 3 concurrent research agents).
 - [x] `SubAgentManager` orchestration module.
 - [x] Subagent panel and `/subagents` command.
 - [x] Auto-merge results back to the main agent.
-- [ ] `explore`, `plan`, `research`, `review` profiles + `task` dispatch + capability boundaries.
-- [ ] **spec-mode approval gate** (plan → approve → build).
-- [ ] Bundle our skills; load user-global + project-local skill dirs.
-- **Exit:** `build` delegates exploration/planning/review; main context stays clean.
+- [x] `explore`, `plan`, `research`, `review` profiles + `task` dispatch + capability boundaries.
+- [x] **spec-mode approval gate** (plan → approve → build).
+- [x] Bundle our skills; load user-global + project-local skill dirs.
+- [x] **Mixture of Experts (MoE)** — language-agnostic expert agents (ui, refactor, logic, database, oracle, research, critique, spectacle) routed via `query_expert`.
+- **Exit:** `build` delegates exploration/planning/review/expert tasks; main context stays clean.
 
 ### M5.5 — Session safety & memory
-- [ ] **Checkpoint / undo / rewind** — git snapshot per turn; revert from the TUI.
-- [ ] **Rules / steering** — inject context only when a pattern matches the turn.
+- [x] **Checkpoint / undo / rewind** — file backups per turn; revert from the TUI.
+- [x] **Rules / steering** — inject context dynamically when pattern matches prompt.
 - [ ] **Headless mode** — TUI-less `run`/pipe/stdin for scripting and CI (partially done via `-p`).
 - **Exit:** users can safely undo agent changes and carry memory between sessions.
 
 ### M6 — spectacle (vision bridge)
 - [ ] Model **capability table** (`@cf/...` → vision/tools/ctx).
-- [ ] `spectacle` profile (`llama-4-scout`, fallbacks) tuned for faithful structured description.
-- [ ] Auto-route images to spectacle when target model is blind; cache by image hash.
-- **Exit:** attaching a screenshot works even on non-vision agents.
+- [x] TUI image paste and Spectacle bridge (auto-routing images to llama-3.2-11b-vision).
+- **Exit:** pasting and attaching a screenshot works even on non-vision agents.
 
 ### M7 — LSP
-- [ ] `lsp` tool over real language servers (hover/defs/refs/rename/diagnostics).
+- [x] `lsp` tool over real language servers (hover/defs/refs/rename/diagnostics).
 - [ ] Wire **oxc** (`oxlint --lsp`) as fast supplementary JS/TS diagnostics + autofix.
 - **Exit:** edits get type/lint feedback in-loop.
 
-### M8 — Plugin system
+### M8 — Plugin system (Postponed)
 - [ ] `definePlugin` manifest + loader (bundled → global → project precedence).
 - [ ] Contributions: tools, subagents, skills, commands, hooks, providers, mcpServers, permissions.
 - [ ] **MCP** plugin path via `connectMcpServer`; example plugin shipped.
-- **Exit:** a third party adds a tool + an MCP server + a slash command without forking.
 
 ### M9 — Polish & distribution
 - [ ] Model picker (Workers AI catalog + BYOK) with the capability table.

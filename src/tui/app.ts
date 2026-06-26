@@ -62,6 +62,13 @@ import {
   setAutorun,
 } from "../permissions/autorun";
 import { getDefaultRules, loadRules } from "../permissions/rules";
+import { BackupEngine } from "../storage/backups";
+import { steerPrompt } from "../storage/steering";
+import { pasteImageFromClipboard } from "../storage/clipboard";
+import { describeImageWithSpectacle } from "../storage/spectacle";
+
+
+
 
 export interface TuiOptions {
   serverPath: string;
@@ -111,6 +118,11 @@ function styleBashCommand(cmd: string): StyledText {
 
 export async function startTui(options: TuiOptions): Promise<void> {
   const state = createInitialState(options.cwd, options.model);
+  const backupEngine = new BackupEngine(options.cwd);
+  const backupHistory: string[] = [];
+  const attachedImages: string[] = [];
+
+
   const flue = new FlueProcess(
     options.serverPath,
     options.cwd,
@@ -586,6 +598,65 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
+  // ── SpecApprovalBox ────────────────────────────────────────────────
+  const specApprovalBox = new BoxRenderable(renderer, {
+    id: "spec-approval-box",
+    flexDirection: "column",
+    width: "100%",
+    flexShrink: 0,
+    borderStyle: "single",
+    borderColor: COLORS.planAccent,
+    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    visible: false,
+  });
+  const specApprovalTitle = new TextRenderable(renderer, {
+    id: "spec-approval-title",
+    content: " Approve Plan?",
+    fg: COLORS.planAccent,
+    attributes: TextAttributes.BOLD,
+    width: "100%",
+    height: 1,
+  });
+  const specApprovalBody = new BoxRenderable(renderer, {
+    id: "spec-approval-body",
+    flexDirection: "column",
+    width: "100%",
+  });
+  specApprovalBox.add(specApprovalTitle);
+  specApprovalBox.add(specApprovalBody);
+  root.add(specApprovalBox);
+
+  let specApprovalResolve: ((choice: boolean) => void) | null = null;
+
+  function showSpecApprovalBox(resolve: (choice: boolean) => void) {
+    for (const child of specApprovalBody.getChildren()) child.destroy();
+    specApprovalBody.add(
+      new TextRenderable(renderer, {
+        id: nextId(),
+        content: "  Press [y] to Approve & switch to Build Mode, or [n] to continue planning.",
+        fg: COLORS.gray,
+        width: "100%",
+      })
+    );
+    specApprovalBox.visible = true;
+    specApprovalResolve = resolve;
+    requestScroll();
+    renderer.requestRender();
+  }
+
+  function hideSpecApprovalBox(choice: boolean) {
+    specApprovalBox.visible = false;
+    for (const child of specApprovalBody.getChildren()) child.destroy();
+    if (specApprovalResolve) {
+      const resolve = specApprovalResolve;
+      specApprovalResolve = null;
+      resolve(choice);
+    }
+    requestScroll();
+    renderer.requestRender();
+  }
+
+
   const queueBox = new BoxRenderable(renderer, {
     id: "queue-box",
     flexDirection: "column",
@@ -1017,6 +1088,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     resultBox,
     confirmBox,
     permissionBox,
+    specApprovalBox,
     queueBox,
     taskBox,
     subBox,
@@ -1302,9 +1374,24 @@ export async function startTui(options: TuiOptions): Promise<void> {
     renderer.requestRender();
   }
 
-  function setPlanMode(enabled: boolean) {
+  async function setPlanMode(enabled: boolean) {
+    const targetAgent = enabled ? "plan" : "build";
     state.planMode = enabled;
     applyModeVisuals();
+    if (flue) {
+      const oldProcessing = state.processing;
+      state.processing = true;
+      updateStatus();
+      flue.setAgentName(targetAgent);
+      try {
+        await flue.restart();
+      } catch (err) {
+        addInfoLine(`  Error restarting agent: ${(err as Error).message}`, COLORS.red);
+      } finally {
+        state.processing = oldProcessing;
+        updateStatus();
+      }
+    }
   }
 
   function hideLavaLamp() {
@@ -2426,7 +2513,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     );
   }
 
-  function sendPrompt(prompt: string) {
+  async function sendPrompt(prompt: string) {
     state.processing = true;
     state.historyIndex = -1;
     savedInput = "";
@@ -2446,10 +2533,31 @@ export async function startTui(options: TuiOptions): Promise<void> {
     });
     updateStatus();
 
+    try {
+      const ts = await backupEngine.createBackup();
+      backupHistory.push(ts);
+    } catch {}
+
     clearResponseAccumulators();
 
+    let imageDescriptionContext = "";
+    if (attachedImages.length > 0) {
+      for (const img of attachedImages) {
+        addInfoLine("  [spectacle] Describing clipboard image via Workers AI...", COLORS.dim);
+        try {
+          const desc = await describeImageWithSpectacle(img);
+          imageDescriptionContext += `\n\n[ATTACHED IMAGE DETAILS: ${img}]\n${desc}`;
+        } catch (e: any) {
+          imageDescriptionContext += `\n\n[ATTACHED IMAGE ERROR: ${e.message}]`;
+        }
+      }
+      attachedImages.length = 0; // Clear after processing
+    }
+
+    const steeredPrompt = steerPrompt(prompt, cwd) + imageDescriptionContext;
+
     flue.prompt(
-      prompt,
+      steeredPrompt,
       {
         onEvent: (event) => {
           handleEvent(event);
@@ -2473,6 +2581,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
               toolCalls: accToolCalls.length > 0 ? accToolCalls : undefined,
               timestamp: Date.now(),
             });
+
+            if (state.planMode) {
+              showSpecApprovalBox(async (approved) => {
+                if (approved) {
+                  await setPlanMode(false);
+                  sendPrompt("Plan approved. Proceed with implementation of all tasks.");
+                }
+              });
+            }
 
             const filePaths = extractFilePaths(currentAssistantText, cwd);
             if (filePaths.length > 0) {
@@ -3204,6 +3321,16 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ]);
           break;
         }
+        const lastBackup = backupHistory.pop();
+        let restoreMsg = "";
+        if (lastBackup) {
+          try {
+            backupEngine.restoreBackup(lastBackup);
+            restoreMsg = " and restored workspace files";
+          } catch (e: any) {
+            restoreMsg = ` (failed to restore backup: ${e.message})`;
+          }
+        }
         let removedCount = 0;
         while (state.messages.length > 0 && removedCount < 2) {
           state.messages.pop();
@@ -3212,7 +3339,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         renderAllMessages();
         showResultPanel("/undo", [
           {
-            content: `  removed last ${removedCount} messages`,
+            content: `  removed last ${removedCount} messages${restoreMsg}`,
             fg: COLORS.dim,
           },
         ]);
@@ -3221,6 +3348,21 @@ export async function startTui(options: TuiOptions): Promise<void> {
       case "/quit":
         handleExit();
         break;
+      case "/paste-image": {
+        const imgPath = await pasteImageFromClipboard(cwd);
+        if (imgPath) {
+          attachedImages.push(imgPath);
+          showResultPanel("/paste-image", [
+            { content: "  Successfully attached clipboard image:", fg: COLORS.green },
+            { content: `  ${imgPath}`, fg: COLORS.link },
+          ]);
+        } else {
+          showResultPanel("/paste-image", [
+            { content: "  No image found in clipboard", fg: COLORS.yellow },
+          ]);
+        }
+        break;
+      }
       default:
         showResultPanel(cmd, [
           { content: `  unknown command: ${cmd}`, fg: COLORS.yellow },
@@ -3232,6 +3374,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   renderer.keyInput.on("keypress", (key: KeyEvent) => {
     if (viewerOverlay.visible) return;
+    if ((key.ctrl || key.meta) && key.name === "v") {
+      pasteImageFromClipboard(cwd).then((imgPath) => {
+        if (imgPath) {
+          attachedImages.push(imgPath);
+          addInfoLine(`  [spectacle] Attached pasted clipboard image: ${stripCwd(imgPath, cwd)}`, COLORS.green);
+          renderer.requestRender();
+        }
+      }).catch(() => {});
+    }
     if (sessionPickerActive) {
       if (key.name === "up" || (key.name === "k" && !key.ctrl)) {
         sessionPickerSelected = Math.max(0, sessionPickerSelected - 1);
@@ -3333,6 +3484,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     if (key.name === "return" && confirmBox.visible && confirmAcceptReturn) {
       hideConfirm(true);
+      key.stopPropagation();
+      return;
+    }
+    if (specApprovalBox.visible) {
+      if (key.name === "y" || key.name === "return") {
+        hideSpecApprovalBox(true);
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === "n" || key.name === "escape") {
+        hideSpecApprovalBox(false);
+        key.stopPropagation();
+        return;
+      }
       key.stopPropagation();
       return;
     }

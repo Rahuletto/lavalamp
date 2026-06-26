@@ -290,10 +290,7 @@ diff viewer, code viewer, vim keybindings, autocomplete, plan mode, session mana
 Permission engine with PermissionBox UI, bidirectional IPC gating, sandbox-level
 wrapping, autorun/sudo, and user-configurable rules.
 
-**M5 in progress.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, and
-auto-merge follow-up are implemented. Dedicated explore/plan/research/review profiles
-and spec-mode approval gate remain.
+**M5 and M5.5 complete.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, auto-merge, explore/plan/research/review profiles, spec-mode approval gate, file-level backups/reverts, context steering, skill loading, and a language-agnostic Mixture of Experts (MoE) routing system (ui, refactor, logic, database, oracle, research, critique, spectacle) are fully implemented.
 
-**Remaining milestones:** Finish multi-agent roster (M5),
-checkpoint/undo via git (M5.5), spectacle vision bridge (M6), LSP (M7), plugin system
-(M8), model picker + AI Gateway (M9).
+**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), plugin system (M8), model picker + AI Gateway (M9).
+
