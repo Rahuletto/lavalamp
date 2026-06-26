@@ -17,7 +17,7 @@ export async function pasteImageFromClipboard(
     if (process.platform === 'darwin') {
       // Sniff clipboard info first
       const check = spawnSync('osascript', ['-e', 'clipboard info']);
-      const checkOut = check.stdout?.toString() ?? '';
+      const checkOut = check.stdout !== undefined ? check.stdout.toString() : '';
       if (!checkOut.includes('«class PNGf»') && !checkOut.includes('picture')) {
         return null; // No image in clipboard
       }
@@ -37,7 +37,7 @@ export async function pasteImageFromClipboard(
         Add-Type -AssemblyName System.Windows.Forms;
         if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
           $img = [System.Windows.Forms.Clipboard]::GetImage();
-          $img.Save('${destPath.replaceAll(/\\/g, String.raw`\\`)}', [System.Drawing.Imaging.ImageFormat]::Png);
+          $img.Save('${destPath.replaceAll('\\', String.raw`\\`)}', [System.Drawing.Imaging.ImageFormat]::Png);
         }
       `;
       const res = spawnSync('powershell', ['-Command', psScript]);
@@ -59,7 +59,7 @@ export async function pasteImageFromClipboard(
       ]);
       if (
         resXclip.status === 0 &&
-        resXclip.stdout &&
+        resXclip.stdout !== undefined &&
         resXclip.stdout.length > 0
       ) {
         fs.writeFileSync(destPath, resXclip.stdout);
@@ -67,7 +67,7 @@ export async function pasteImageFromClipboard(
       }
       // Check for wl-paste
       const resWl = spawnSync('wl-paste', ['-t', 'image/png']);
-      if (resWl.status === 0 && resWl.stdout && resWl.stdout.length > 0) {
+      if (resWl.status === 0 && resWl.stdout !== undefined && resWl.stdout.length > 0) {
         fs.writeFileSync(destPath, resWl.stdout);
         return destPath;
       }

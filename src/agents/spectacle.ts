@@ -1,16 +1,11 @@
 import { createAgent } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
-import { startSession } from '../sessions';
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
 
-  const session = startSession(
-    ctx.payload?.prompt ?? 'interactive',
-    workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
-  );
+  
 
   const model = resolveModelWithFallback(
     BUILD_MODEL,
@@ -29,7 +24,7 @@ export default createAgent((ctx) => {
 
   return {
     compaction: {
-      keepRecentTokens: 8_000,
+      keepRecentTokens: 8000,
       reserveTokens: 20_000,
     },
     cwd: workspaceRoot,

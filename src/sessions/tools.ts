@@ -54,19 +54,19 @@ export function createPullSessionTool() {
         return `No session found with ID "${id}".`;
       }
       try {
-        const data = JSON.parse(readFileSync(filePath, 'utf-8'));
+        const data = JSON.parse(readFileSync(filePath, 'utf8')) as { messages?: { role?: string; content?: string }[] };
         const messages = data.messages ?? [];
         if (messages.length === 0) {
           return `Session "${id}" has no messages.`;
         }
         return messages
-          .map((m: any) => {
+          .map((m: { role?: string; content?: string }) => {
             const prefix = m.role === 'user' ? 'User' : 'Assistant';
             return `[${prefix}]: ${m.content}`;
           })
           .join('\n\n');
-      } catch (e: any) {
-        return `Error loading session: ${e.message}`;
+      } catch (error: unknown) {
+        return `Error loading session: ${(error as Error).message}`;
       }
     },
     name: 'pull_session',

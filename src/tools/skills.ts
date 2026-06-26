@@ -20,7 +20,7 @@ export function createLoadSkillTool(workspaceRoot: string) {
       ];
 
       for (const dir of dirs) {
-        if (!dir) continue;
+        if (!dir) {continue;}
         const skillMd = path.join(dir, 'SKILL.md');
         if (fs.existsSync(skillMd)) {
           const content = fs.readFileSync(skillMd, 'utf8');

@@ -20,7 +20,7 @@ function loadGitignore(dir: string): string[] {
       .readFileSync(path.join(dir, '.gitignore'), 'utf8')
       .split('\n')
       .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
+      .filter((l) => l.length > 0 && !l.startsWith('#'));
   } catch {
     return [];
   }
@@ -33,7 +33,7 @@ function matchGitignore(name: string, pattern: string): boolean {
   }
   if (p.includes('*')) {
     return new RegExp(
-      '^' + p.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$',
+      `^${  p.replaceAll('.', String.raw`\.`).replaceAll('*', '.*')  }$`,
     ).test(name);
   }
   return name === p || name.startsWith(`${p}/`);

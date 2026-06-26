@@ -1,8 +1,8 @@
 import { createAgent, registerProvider } from '@flue/runtime';
+import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession,
   createSessionsTool,
   createSessionContextTool,
   createPullSessionTool,
@@ -32,26 +32,26 @@ import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
 import { wrapToolExecute } from '../permissions/middleware';
 import { loadAutorun } from '../permissions/autorun';
+import { loadCredentials } from '../auth/credentials';
 
 function registerProviders(env: Record<string, string>) {
   try {
-    const { loadCredentials } = require('../auth/credentials');
     const creds = loadCredentials();
-    if (creds) {
+    if (creds !== null) {
       registerProvider('cloudflare-workers-ai', {
         apiKey: creds.apiToken,
         baseUrl: `https://api.cloudflare.com/client/v4/accounts/${creds.accountId}/ai/v1`,
       });
     }
-  } catch {}
+  } catch { /* credentials not available */ }
 
-  if (env.ANTHROPIC_API_KEY) {
+  if (env.ANTHROPIC_API_KEY !== undefined) {
     registerProvider('anthropic', { apiKey: env.ANTHROPIC_API_KEY });
   }
-  if (env.OPENAI_API_KEY) {
+  if (env.OPENAI_API_KEY !== undefined) {
     registerProvider('openai', { apiKey: env.OPENAI_API_KEY });
   }
-  if (env.OPENROUTER_API_KEY) {
+  if (env.OPENROUTER_API_KEY !== undefined) {
     registerProvider('openrouter', {
       apiKey: env.OPENROUTER_API_KEY,
       baseUrl: 'https://openrouter.ai/api/v1',
@@ -66,36 +66,24 @@ export default createAgent((ctx) => {
   const tracker = new ChangeTracker();
   const taskStore = new TaskStore();
 
-  // Load autorun/permission state server-side so the middleware can check it
-  loadAutorun(workspaceRoot);
+  loadAutorun(workspaceRoot as string);
 
-  /**
-   * Wrap a tool's execute with permission gating.
-   * Tools with action: 'ask' will send an IPC permission_request to the TUI.
-   */
-  function gate(tool: any): any {
+  function gate(tool: ToolDefinition): ToolDefinition {
     const orig = tool.execute;
     if (typeof orig !== 'function') {
       return tool;
     }
-    return {
-      ...tool,
-      execute: wrapToolExecute(tool.name, orig, workspaceRoot),
-    };
+    return Object.assign({}, tool, { execute: wrapToolExecute(tool.name, orig as (args: Record<string, unknown>) => Promise<unknown>, workspaceRoot as string) as ToolDefinition['execute'] });
   }
 
-  const session = startSession(
-    ctx.payload?.prompt ?? 'interactive',
-    workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
-  );
+  
 
   const model = resolveModelWithFallback(
     BUILD_MODEL,
     ctx.env as Record<string, string>,
   );
 
-  const memoryContext = getMemoryContext(workspaceRoot);
+  const memoryContext = getMemoryContext(workspaceRoot as string);
 
   const instructions = [
     'You are lavalamp — a coding assistant that operates on real files in the workspace.',
@@ -186,13 +174,13 @@ export default createAgent((ctx) => {
     '- `deploy_parallel_subs` → deploy up to 3 parallel research agents for independent investigation',
   ];
 
-  if (memoryContext) {
+  if (memoryContext !== null) {
     instructions.push('', memoryContext);
   }
 
   return {
     compaction: {
-      keepRecentTokens: 8_000,
+      keepRecentTokens: 8000,
       reserveTokens: 20_000,
     },
     cwd: workspaceRoot,
@@ -207,27 +195,27 @@ export default createAgent((ctx) => {
       createSessionsTool(),
       createSessionContextTool(),
       createPullSessionTool(),
-      ...createMemoryTools(workspaceRoot).map((t: any) =>
+      ...createMemoryTools(workspaceRoot as string).map((t: ToolDefinition) =>
         ['memory_write', 'memory_append'].includes(t.name) ? gate(t) : t,
       ),
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
       createCodebaseSearchTool({
-        root: workspaceRoot,
-        resolve: (p: string) => `${workspaceRoot}/${p}`,
         assertAccessible: () => {},
         assertInside: () => {},
         isInside: () => true,
-      } as any),
+        resolve: (p: string) => `${workspaceRoot}/${p}`,
+        root: workspaceRoot,
+      } as Parameters<typeof createCodebaseSearchTool>[0]),
       gate(createOracleTool()),
       gate(createDoomLoopTool()),
-      createRipgrepTool(workspaceRoot),
+      createRipgrepTool(workspaceRoot as string),
       gate(createDeployParallelSubsTool()),
-      createLoadSkillTool(workspaceRoot),
-      createCodebaseSemanticSearchTool(workspaceRoot),
-      ...createLspTools(workspaceRoot),
-      createQueryExpertTool(workspaceRoot),
+      createLoadSkillTool(workspaceRoot as string),
+      createCodebaseSemanticSearchTool(workspaceRoot as string),
+      ...createLspTools(workspaceRoot as string),
+      createQueryExpertTool(workspaceRoot as string),
       ...createTaskTools(taskStore),
     ],
   };

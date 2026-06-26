@@ -63,7 +63,7 @@ export function endSession(sessionId: string, summary?: string) {
   }
   const session: SessionRecord = JSON.parse(readFileSync(filePath, 'utf8'));
   session.endedAt = new Date().toISOString();
-  if (summary) {
+  if (summary !== undefined) {
     session.summary = summary;
   }
   writeFileSync(filePath, JSON.stringify(session, null, 2));
@@ -101,16 +101,16 @@ export function getSession(sessionId: string): SessionRecord | null {
   if (!existsSync(filePath)) {
     const files = readdirSync(SESSIONS_DIR).filter((f) => f.endsWith('.json'));
     const match = files.find((f) => f.startsWith(sessionId));
-    if (!match) {
+    if (match === undefined) {
       return null;
     }
-    return JSON.parse(readFileSync(join(SESSIONS_DIR, match), 'utf8'));
+    return JSON.parse(readFileSync(join(SESSIONS_DIR, match), 'utf8')) as SessionRecord;
   }
-  return JSON.parse(readFileSync(filePath, 'utf8'));
+  return JSON.parse(readFileSync(filePath, 'utf8')) as SessionRecord;
 }
 
 export function formatSessionSummary(s: SessionRecord): string {
-  const dur = s.endedAt
+  const dur = s.endedAt !== undefined
     ? `${Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 1000)}s`
     : 'active';
   const lines = [
@@ -125,7 +125,7 @@ export function formatSessionSummary(s: SessionRecord): string {
   if (s.filesChanged.length > 0) {
     lines.push(`    ${s.filesChanged.join('\n    ')}`);
   }
-  if (s.summary) {
+  if (s.summary !== undefined) {
     lines.push(`  Summary:  ${s.summary}`);
   }
   return lines.join('\n');

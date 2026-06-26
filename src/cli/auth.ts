@@ -12,8 +12,8 @@ async function main() {
         console.log(
           `[lavalamp] Logged in as account ${creds.accountId.slice(0, 8)}...`,
         );
-      } catch (error: any) {
-        console.error(`[lavalamp] Login failed: ${error.message}`);
+      } catch (error: unknown) {
+        console.error(`[lavalamp] Login failed: ${(error as Error).message}`);
         process.exit(1);
       }
       break;
@@ -39,6 +39,7 @@ async function main() {
       break;
     }
 
+    case undefined: { throw new Error('Not implemented yet: undefined case') }
     default: {
       console.error('Usage: lavalamp {login|logout|status}');
       process.exit(1);
@@ -46,4 +47,4 @@ async function main() {
   }
 }
 
-main();
+await main();

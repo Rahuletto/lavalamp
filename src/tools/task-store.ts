@@ -8,7 +8,7 @@ export interface Task {
 }
 
 export class TaskStore {
-  #tasks: Task[] = [];
+  readonly #tasks: Task[] = [];
   #nextId = 1;
 
   create(title: string, description?: string): Task {

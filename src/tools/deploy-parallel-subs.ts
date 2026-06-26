@@ -15,10 +15,10 @@ export function createDeployParallelSubsTool() {
         return { error: 'At least one query is required' };
       }
       return {
-        type: 'parallel_deploy',
+        message: `${queries.length} research agent(s) deployed`,
         queries,
         status: 'deployed',
-        message: `${queries.length} research agent(s) deployed`,
+        type: 'parallel_deploy',
       };
     },
     name: 'deploy_parallel_subs',

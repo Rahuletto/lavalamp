@@ -1,8 +1,7 @@
-import { createAgent, registerProvider } from '@flue/runtime';
+import { createAgent } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession,
   createSessionsTool,
   createSessionContextTool,
   createPullSessionTool,
@@ -15,11 +14,7 @@ import { createLoadSkillTool } from '../tools/skills';
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
 
-  const session = startSession(
-    ctx.payload?.prompt ?? 'interactive',
-    workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
-  );
+  
 
   const model = resolveModelWithFallback(
     BUILD_MODEL,
@@ -44,7 +39,7 @@ export default createAgent((ctx) => {
 
   return {
     compaction: {
-      keepRecentTokens: 8_000,
+      keepRecentTokens: 8000,
       reserveTokens: 20_000,
     },
     cwd: workspaceRoot,
@@ -59,7 +54,7 @@ export default createAgent((ctx) => {
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
-      createLoadSkillTool(workspaceRoot),
+      createLoadSkillTool(workspaceRoot as string),
     ],
   };
 });

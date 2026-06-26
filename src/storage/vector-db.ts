@@ -9,9 +9,9 @@ export interface ChunkResult {
 }
 
 export class VectorDb {
-  private db: Database;
+  private readonly db: Database;
 
-  constructor(private workspaceRoot: string) {
+  constructor(private readonly workspaceRoot: string) {
     const dir = path.join(workspaceRoot, '.lavalamp');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -164,7 +164,7 @@ export async function fetchEmbeddings(
     );
   }
 
-  const result = (await response.json()) as any;
+  const result = (await response.json()) as { success: boolean; result: { data: number[][] }; errors: unknown[] };
   if (!result.success) {
     throw new Error(
       `Cloudflare AI Embeddings failed: ${JSON.stringify(result.errors)}`,

@@ -5,29 +5,17 @@ import {
   TextareaRenderable,
   ScrollBoxRenderable,
   MarkdownRenderable,
-  DiffRenderable,
-  CodeRenderable,
   TextAttributes,
   defaultTextareaKeyBindings,
 } from '@opentui/core';
-import { t, green, dim, bold, fg, type StyledText } from '@opentui/core';
 import type { KeyEvent, CliRenderer } from '@opentui/core';
-import * as fs from 'fs';
-import * as path from 'path';
-import {
-  FlueProcess,
-  type FlueEvent,
-  type FlueResult,
-  type PermissionRequestMsg,
-} from './ipc';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { FlueProcess } from './ipc';
+import type { FlueEvent, FlueResult, PermissionRequestMsg } from './ipc';
 import { SubAgentManager } from './subs';
 import { COLORS } from './theme';
-import {
-  type AppState,
-  type Message,
-  type ToolCall,
-  createInitialState,
-} from './state';
+import type { Message } from './state';
 import { AppStateStore } from './storage/Store';
 import { handleKeyPress } from './events/Keybindings';
 import { ConfirmBoxManager } from './components/ConfirmBox';
@@ -39,13 +27,10 @@ import { TaskPanelManager } from './components/TaskPanel';
 import { MessageRenderer } from './components/Messages';
 import { ToolUiManager } from './components/ToolUi';
 import {
-  ALL_SLASH_COMMANDS,
-  SLASH_COMMAND_DESCRIPTIONS,
   LAVA_LAMP_FRAMES,
   syntaxStyle,
-  codeSyntaxStyle,
 } from './art';
-import { walkFiles, discoverSkills, fuzzySearch } from './discover';
+import { discoverSkills } from './discover';
 import {
   nameSession,
   saveSession,
@@ -55,13 +40,8 @@ import {
 import {
   stripCwd,
   summarizeToolArgs,
-  summarizeToolResult,
-  looksLikeDiff,
   extractResultText,
-  detectLanguage,
   extractFilePaths,
-  generateSyntheticDiff,
-  EXT_LANG_MAP,
 } from './tools';
 import { clearCredentials } from '../auth/credentials';
 import { login } from '../auth/login';
@@ -89,39 +69,40 @@ export interface TuiOptions {
 
 function shortenPath(p: string): string {
   const home = process.env.HOME ?? '';
-  if (home && p.startsWith(home)) return '~' + p.slice(home.length);
+  if (home && p.startsWith(home)) {return `~${  p.slice(home.length)}`;}
   return p;
 }
 
-function getTextContent(val: any): string {
-  if (typeof val === 'string') return val;
-  if (val && typeof val === 'object' && Array.isArray(val.chunks)) {
-    return val.chunks.map((c: any) => c.text || '').join('');
-  }
-  return String(val);
+
+function visiblePrompt(prompt: string): string {
+  return prompt.replace(/^<<(?:PLAN|BUILD)_MODE>>\s*/, '');
 }
 
-function styleBashCommand(cmd: string): StyledText {
-  const parts = cmd.split(/(\s+)/);
-  const styled: (string | ReturnType<typeof dim> | ReturnType<typeof bold>)[] =
-    [];
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (/^\s+$/.test(part)) {
-      styled.push(part);
-    } else if (i === 0 || (!part.startsWith('-') && i <= 1)) {
-      styled.push(bold(part));
-    } else if (part.startsWith('-')) {
-      styled.push(fg('#79C0FF')(part));
-    } else if (part.startsWith('"') || part.startsWith("'")) {
-      styled.push(fg('#A5D6FF')(part));
-    } else {
-      styled.push(dim(part));
-    }
-  }
-  const strings = Array(styled.length + 1).fill('') as any;
-  strings.raw = strings;
-  return t(strings, ...styled) as StyledText;
+function isAuthError(err: Error): boolean {
+  return /\b401\b/.test(err.message);
+}
+
+function accent(): string {
+  return COLORS.accent;
+}
+
+function hexToAnsi(hex: string): string {
+  const value = hex.replace('#', '');
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  return `\u001B[38;2;${r};${g};${b}m`;
+}
+
+function formatAge(ts: number): string {
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60_000);
+  if (min < 1) {return 'just now';}
+  if (min < 60) {return `${min}m ago`;}
+  const hr = Math.floor(min / 60);
+  if (hr < 24) {return `${hr}h ago`;}
+  const d = Math.floor(hr / 24);
+  return `${d}d ago`;
 }
 
 export async function startTui(options: TuiOptions): Promise<void> {
@@ -131,38 +112,32 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const backupHistory: string[] = [];
   const attachedImages: string[] = [];
 
-  const cwd = options.cwd;
+  const {cwd} = options;
   let idCounter = 0;
   function nextId(): string {
     return `el-${++idCounter}`;
   }
   let destroyed = false;
-  const root = {
+  let root = {
     // stub to avoid error if accessed before renderer is initialized, though root will be reassigned
     add() {},
     remove() {},
-  } as any;
+  } as { add: (...args: unknown[]) => void; remove: (...args: unknown[]) => void };
   const boxCtx = {
+    nextId,
     get renderer() {
       return renderer;
     },
     get root() {
       return renderer.root;
     },
-    nextId,
   };
-  const confirmBoxMgr = new ConfirmBoxManager(boxCtx);
-  const permissionBoxMgr = new PermissionBoxManager({
-    ...boxCtx,
-    cwd: options.cwd,
-  });
 
   const flue = new FlueProcess(
     options.serverPath,
     options.cwd,
     options.agentName ?? 'build',
   );
-  const cwd = options.cwd;
   loadAutorun(cwd);
   const permissionRules = loadRules(cwd);
   const subManager = new SubAgentManager(
@@ -172,25 +147,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
   );
   let currentSessionId = `session_${Date.now()}`;
 
-  // Wire permission request handling from the server child process
-  flue.onPermissionRequest = async (request: PermissionRequestMsg) => {
-    const choice = await permissionBoxMgr.show(request);
-    if (choice === 'always') {
-      setAutorun(cwd, request.toolName, 'allow');
-      flue.sendPermissionResponse(request.requestId, 'allow', true);
-      updateStatus();
-    } else {
-      flue.sendPermissionResponse(
-        request.requestId,
-        choice === 'allow' ? 'allow' : 'deny',
-      );
-    }
-  };
-
   const renderer: CliRenderer = await createCliRenderer({
     exitOnCtrlC: false,
-    screenMode: 'alternate-screen',
-    useMouse: true,
     exitSignals: [
       'SIGTERM',
       'SIGQUIT',
@@ -211,54 +169,80 @@ export async function startTui(options: TuiOptions): Promise<void> {
       subManager.killAll();
       flue.shutdown().catch(() => {});
     },
+    screenMode: 'alternate-screen',
+    useMouse: true,
   });
 
-  const root = renderer.root;
+  ({ root } = renderer);
+
+  const confirmBoxMgr = new ConfirmBoxManager(boxCtx);
+  const permissionBoxMgr = new PermissionBoxManager({
+    cwd: options.cwd,
+    nextId: boxCtx.nextId,
+    get renderer() { return boxCtx.renderer; },
+    get root() { return boxCtx.root; },
+  });
+
+  // Wire permission request handling from the server child process
+  flue.onPermissionRequest = (request: PermissionRequestMsg) => {
+    (async () => {
+      const choice = await permissionBoxMgr.show(request);
+      if (choice === 'always') {
+        setAutorun(cwd, request.toolName, 'allow');
+        flue.sendPermissionResponse(request.requestId, 'allow', true);
+        updateStatus();
+      } else {
+        flue.sendPermissionResponse(
+          request.requestId,
+          choice === 'allow' ? 'allow' : 'deny',
+        );
+      }
+    })().catch(() => {});
+  };
   root.flexDirection = 'column';
   root.width = '100%';
   root.height = '100%';
 
-  let destroyed = false;
   let scrollPending = false;
   let userHasScrolledUp = false;
   let lastScrollTop = 0;
 
   function requestScroll() {
-    if (destroyed) return;
-    if (userHasScrolledUp) return;
-    if (scrollPending) return;
+    if (destroyed) {return;}
+    if (userHasScrolledUp) {return;}
+    if (scrollPending) {return;}
     scrollPending = true;
     queueMicrotask(() => {
-      if (!destroyed) messagesScroll.scrollBy(1000);
+      if (!destroyed) {messagesScroll.scrollBy(1000);}
       scrollPending = false;
     });
   }
 
   const header = new BoxRenderable(renderer, {
-    id: 'header',
     flexDirection: 'row',
-    width: '100%',
     height: 2,
+    id: 'header',
     padding: { left: 1, right: 1 },
     paddingBottom: 1,
+    width: '100%',
   });
   const headerTitle = new TextRenderable(renderer, {
-    id: 'header-title',
+    attributes: TextAttributes.BOLD,
     content: 'lavalamp',
     fg: COLORS.accent,
-    attributes: TextAttributes.BOLD,
+    id: 'header-title',
     selectable: false,
   });
   header.add(headerTitle);
   root.add(header);
 
   const messagesScroll = new ScrollBoxRenderable(renderer, {
-    id: 'messages',
-    width: '100%',
     flexGrow: 1,
-    stickyScroll: false,
-    scrollY: true,
+    id: 'messages',
     padding: { left: 1, right: 1 },
+    scrollY: true,
+    stickyScroll: false,
+    width: '100%',
   });
   root.add(messagesScroll);
 
@@ -267,60 +251,60 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (currentScrollTop < lastScrollTop) {
       userHasScrolledUp = true;
     } else {
-      const scrollHeight = messagesScroll.scrollHeight;
+      const {scrollHeight} = messagesScroll;
       const atBottom = scrollHeight - currentScrollTop < 50;
-      if (atBottom) userHasScrolledUp = false;
+      if (atBottom) {userHasScrolledUp = false;}
     }
     lastScrollTop = currentScrollTop;
   });
 
   const completionBox = new BoxRenderable(renderer, {
-    id: 'completion-box',
-    flexDirection: 'column',
-    width: '100%',
-    flexShrink: 0,
-    maxHeight: 10,
-    visible: false,
     border: true,
     borderColor: COLORS.border,
     borderStyle: 'single',
+    flexDirection: 'column',
+    flexShrink: 0,
+    id: 'completion-box',
+    maxHeight: 10,
     paddingLeft: 1,
     paddingRight: 1,
+    visible: false,
+    width: '100%',
   });
   const completionScroll = new ScrollBoxRenderable(renderer, {
-    id: 'completion-scroll',
-    width: '100%',
     flexGrow: 1,
-    scrollY: true,
+    id: 'completion-scroll',
     maxHeight: 10,
+    scrollY: true,
+    width: '100%',
   });
   completionBox.add(completionScroll);
   root.add(completionBox);
 
   const completion = new CompletionManager({
-    renderer,
-    cwd,
+    accent: (): string => accent(),
     completionBox,
     completionScroll,
-    inputSeparatorTop, // will be resolved/passed later or accessed since javascript resolves variables dynamically within scope, or we can instantiate completion below. Let's declare it at the bottom.
+    cwd,
     inputField, // same
-    accent: () => accent(),
+    inputSeparatorTop, // will be resolved/passed later or accessed since javascript resolves variables dynamically within scope, or we can instantiate completion below. Let's declare it at the bottom.
     nextId,
+    renderer,
   });
 
   const lavaLampBox = new BoxRenderable(renderer, {
-    id: 'lava-lamp-box',
-    flexDirection: 'column',
-    width: '100%',
-    flexGrow: 1,
-    justifyContent: 'center',
     alignItems: 'center',
+    flexDirection: 'column',
+    flexGrow: 1,
+    id: 'lava-lamp-box',
+    justifyContent: 'center',
     visible: true,
+    width: '100%',
   });
   const lavaLampText = new TextRenderable(renderer, {
-    id: 'lava-lamp-text',
     content: LAVA_LAMP_FRAMES[0].join('\n'),
     fg: COLORS.accent,
+    id: 'lava-lamp-text',
     selectable: false,
   });
   lavaLampBox.add(lavaLampText);
@@ -328,23 +312,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   let lavaLampFrame = 0;
   const lavaLampTimer = setInterval(() => {
-    if (destroyed) return;
+    if (destroyed) {return;}
     lavaLampFrame = (lavaLampFrame + 1) % LAVA_LAMP_FRAMES.length;
     lavaLampText.content = LAVA_LAMP_FRAMES[lavaLampFrame].join('\n');
   }, 600);
 
   const taskStatusBar = new BoxRenderable(renderer, {
-    id: 'task-status-bar',
     flexDirection: 'row',
-    width: '100%',
     height: 1,
+    id: 'task-status-bar',
     padding: { left: 1 },
     visible: false,
+    width: '100%',
   });
   const taskStatusText = new TextRenderable(renderer, {
-    id: 'task-status-text',
     content: '',
     fg: COLORS.green,
+    id: 'task-status-text',
   });
   taskStatusBar.add(taskStatusText);
   root.add(taskStatusBar);
@@ -362,7 +346,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   function startSpinner() {
-    if (spinnerTimer) clearInterval(spinnerTimer);
+    if (spinnerTimer) {clearInterval(spinnerTimer);}
     spinnerFrame = 0;
     updateStatus();
     spinnerTimer = setInterval(() => {
@@ -381,45 +365,45 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   const resultTitle = new TextRenderable(renderer, {
-    id: nextId(),
+    attributes: TextAttributes.BOLD,
     content: '',
     fg: COLORS.white,
-    attributes: TextAttributes.BOLD,
-    width: '100%',
     height: 1,
+    id: nextId(),
+    width: '100%',
   });
   const resultScroll = new ScrollBoxRenderable(renderer, {
-    id: 'result-scroll',
-    width: '100%',
     flexGrow: 1,
-    scrollY: true,
+    id: 'result-scroll',
     maxHeight: 18,
+    scrollY: true,
+    width: '100%',
   });
   const resultBox = new BoxRenderable(renderer, {
-    id: 'result-box',
     flexDirection: 'column',
-    width: '100%',
     flexShrink: 0,
+    id: 'result-box',
     maxHeight: 20,
     visible: false,
+    width: '100%',
   });
   resultBox.add(resultTitle);
   resultBox.add(resultScroll);
   root.add(resultBox);
 
   const resultPanelMgr = new ResultPanelManager({
-    renderer,
-    nextId,
-    resultBox,
-    resultTitle,
-    resultScroll,
-    messagesScroll,
     inputField: { focus: () => inputField.focus() },
+    messagesScroll,
+    nextId,
+    renderer,
+    resultBox,
+    resultScroll,
+    resultTitle,
   });
 
   function showResultPanel(
     title: string,
-    rows: Array<{ content: string; fg?: string; bold?: boolean }>,
+    rows: { content: string; fg?: string; bold?: boolean }[],
   ) {
     resultPanelMgr.show(title, rows);
   }
@@ -434,7 +418,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function showConfirm(
     title: string,
-    rows: Array<{ content: string; fg?: string }>,
+    rows: { content: string; fg?: string }[],
     resolve: (choice: boolean) => void,
     timeoutMs = 2000,
     acceptReturn = false,
@@ -456,26 +440,26 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   // ── SpecApprovalBox ────────────────────────────────────────────────
   const specApprovalBox = new BoxRenderable(renderer, {
-    id: 'spec-approval-box',
-    flexDirection: 'column',
-    width: '100%',
-    flexShrink: 0,
-    borderStyle: 'single',
     borderColor: COLORS.planAccent,
-    padding: { left: 1, right: 1, top: 0, bottom: 0 },
+    borderStyle: 'single',
+    flexDirection: 'column',
+    flexShrink: 0,
+    id: 'spec-approval-box',
+    padding: { bottom: 0, left: 1, right: 1, top: 0 },
     visible: false,
+    width: '100%',
   });
   const specApprovalTitle = new TextRenderable(renderer, {
-    id: 'spec-approval-title',
+    attributes: TextAttributes.BOLD,
     content: ' Approve Plan?',
     fg: COLORS.planAccent,
-    attributes: TextAttributes.BOLD,
-    width: '100%',
     height: 1,
+    id: 'spec-approval-title',
+    width: '100%',
   });
   const specApprovalBody = new BoxRenderable(renderer, {
-    id: 'spec-approval-body',
     flexDirection: 'column',
+    id: 'spec-approval-body',
     width: '100%',
   });
   specApprovalBox.add(specApprovalTitle);
@@ -485,13 +469,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let specApprovalResolve: ((choice: boolean) => void) | null = null;
 
   function showSpecApprovalBox(resolve: (choice: boolean) => void) {
-    for (const child of specApprovalBody.getChildren()) child.destroy();
+    for (const child of specApprovalBody.getChildren()) {child.destroy();}
     specApprovalBody.add(
       new TextRenderable(renderer, {
-        id: nextId(),
         content:
           '  Press [y] to Approve & switch to Build Mode, or [n] to continue planning.',
         fg: COLORS.gray,
+        id: nextId(),
         width: '100%',
       }),
     );
@@ -503,7 +487,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function hideSpecApprovalBox(choice: boolean) {
     specApprovalBox.visible = false;
-    for (const child of specApprovalBody.getChildren()) child.destroy();
+    for (const child of specApprovalBody.getChildren()) {child.destroy();}
     if (specApprovalResolve) {
       const resolve = specApprovalResolve;
       specApprovalResolve = null;
@@ -517,17 +501,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const subPanelMgr = new SubPanelManager(boxCtx);
   const subBox = subPanelMgr.box;
 
-  function withModeTag(prompt: string, planMode = state.planMode): string {
+  function withModeTag(prompt: string, overridePlanMode?: boolean): string {
+    const planMode = overridePlanMode ?? state.planMode;
     if (
       prompt.startsWith('<<PLAN_MODE>>') ||
       prompt.startsWith('<<BUILD_MODE>>')
     )
-      return prompt;
+      {return prompt;}
     return `${planMode ? '<<PLAN_MODE>>' : '<<BUILD_MODE>>'} ${prompt}`;
-  }
-
-  function visiblePrompt(prompt: string): string {
-    return prompt.replace(/^<<(?:PLAN|BUILD)_MODE>>\s*/, '');
   }
 
   function refreshQueuePanel() {
@@ -551,8 +532,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   subManager.onAllComplete = (summary) => {
     refreshSubPanel();
     const followUp = `The parallel research has completed. Here are the findings:\n\n${summary}\n\nPlease analyze these results and continue with your task.`;
-    if (state.processing) state.queuePending.push(withModeTag(followUp));
-    else sendPrompt(followUp);
+    if (state.processing) {state.queuePending.push(withModeTag(followUp));}
     refreshQueuePanel();
   };
 
@@ -571,126 +551,82 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (action === 'create' && title) {
       const newId =
         state.tasks.length > 0
-          ? Math.max(...state.tasks.map((t) => t.id)) + 1
+          ? Math.max(...state.tasks.map((task) => task.id)) + 1
           : 1;
-      state.tasks.push({ id: newId, title, status: 'pending' });
+      state.tasks.push({ id: newId, status: 'pending', title });
     } else if (action === 'complete') {
-      const task = state.tasks.find((t) => t.id === id);
-      if (task) task.status = 'completed';
+      const task = state.tasks.find((tk) => tk.id === id);
+      if (task) {task.status = 'completed';}
     } else if (action === 'skip') {
-      const task = state.tasks.find((t) => t.id === id);
-      if (task) task.status = 'skipped';
+      const task = state.tasks.find((tk) => tk.id === id);
+      if (task) {task.status = 'skipped';}
     } else if (action === 'edit') {
-      const task = state.tasks.find((t) => t.id === id);
-      if (task && title) task.title = title;
+      const task = state.tasks.find((tk) => tk.id === id);
+      if (task && title) {task.title = title;}
     } else if (action === 'delete') {
-      state.tasks = state.tasks.filter((t) => t.id !== id);
+      state.tasks = state.tasks.filter((tk) => tk.id !== id);
     } else if (action === 'start' || action === 'in_progress') {
-      const task = state.tasks.find((t) => t.id === id);
-      if (task) task.status = 'in_progress';
+      const task = state.tasks.find((tk) => tk.id === id);
+      if (task) {task.status = 'in_progress';}
     }
     refreshTaskPanel();
   }
 
   const MAX_INPUT_HEIGHT = 6;
   const inputSeparatorTop = new TextRenderable(renderer, {
-    id: 'input-separator-top',
     content: '─'.repeat(500),
     fg: COLORS.border,
-    width: '100%',
     height: 1,
+    id: 'input-separator-top',
     selectable: false,
+    width: '100%',
   });
 
   const inputRow = new BoxRenderable(renderer, {
-    id: 'input-row',
     flexDirection: 'row',
-    width: '100%',
     height: 1,
-    paddingTop: 0,
+    id: 'input-row',
     paddingBottom: 0,
     paddingLeft: 1,
     paddingRight: 1,
+    paddingTop: 0,
+    width: '100%',
   });
 
   const inputPrefixBox = new BoxRenderable(renderer, {
-    id: 'input-prefix',
     flexDirection: 'column',
-    width: 2,
     height: 1,
+    id: 'input-prefix',
+    width: 2,
   });
 
   function createPrefixLine(): TextRenderable {
     return new TextRenderable(renderer, {
-      id: nextId(),
+      attributes: TextAttributes.BOLD,
       content: '┃',
       fg: accent(),
-      attributes: TextAttributes.BOLD,
-      width: 2,
       height: 1,
+      id: nextId(),
       selectable: false,
+      width: 2,
     });
   }
 
   inputPrefixBox.add(createPrefixLine());
 
   const inputField = new TextareaRenderable(renderer, {
-    id: 'input',
+    cursorColor: COLORS.accent,
     flexGrow: 1,
     height: 1,
-    placeholder: 'Type your message...',
-    textColor: COLORS.white,
-    cursorColor: COLORS.accent,
-    wrapMode: 'word',
+    id: 'input',
     keyBindings: [
       ...defaultTextareaKeyBindings.filter(
         (b) =>
           b.name !== 'return' && b.name !== 'kpenter' && b.name !== 'linefeed',
       ),
-      { name: 'return', action: 'submit' },
-      { name: 'return', shift: true, action: 'newline' },
+      { action: 'submit', name: 'return' },
+      { action: 'newline', name: 'return', shift: true },
     ],
-    onSubmit: () => {
-      if (sessionPickerActive) {
-        resumeSession(sessionPickerSelected);
-        return;
-      }
-      if (confirmBox.visible || resultBox.visible) return;
-      const raw = inputField.plainText.trim();
-      inputField.setText('');
-      if (!raw) {
-        if (state.processing) state.steerPending.push('');
-        return;
-      }
-      if (raw.startsWith('/')) {
-        if (raw === '/plan') inputField.setText('');
-        handleSlashCommand(raw);
-        return;
-      }
-      const skillMatch = raw.match(/^#([\w-]+)(?:\s+(.+))?$/);
-      if (skillMatch) {
-        const [, name, p] = skillMatch;
-        sendPrompt(
-          p
-            ? `Activate the skill "${name}" and then: ${p}`
-            : `Activate the skill "${name}" and tell me what it does.`,
-        );
-        return;
-      }
-      if (raw.startsWith('!')) {
-        const c = raw.slice(1).trim();
-        if (c) sendPrompt(`Run shell command: ${c}`);
-        return;
-      }
-      if (state.processing) {
-        state.steerPending.push(withModeTag(raw));
-        addInfoLine('  (steer queued)', COLORS.dim);
-        refreshQueuePanel();
-        requestScroll();
-        return;
-      }
-      sendPrompt(raw);
-    },
     onContentChange: () => {
       const text = inputField.plainText;
       const lines = text.split('\n');
@@ -713,7 +649,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const kids = inputPrefixBox.getChildren();
         while (kids.length > targetHeight) {
           const last = kids.pop();
-          if (last) last.destroy();
+          if (last) {last.destroy();}
         }
       }
 
@@ -723,6 +659,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         inputPrefixBox.height = targetHeight;
       }
     },
+    onSubmit: () => {},
+    placeholder: 'Type your message...',
+    textColor: COLORS.white,
+    wrapMode: 'word',
   });
   inputRow.add(inputPrefixBox);
   inputRow.add(inputField);
@@ -730,45 +670,45 @@ export async function startTui(options: TuiOptions): Promise<void> {
   root.add(inputRow);
 
   const inputSeparatorBottom = new TextRenderable(renderer, {
-    id: 'input-separator-bottom',
     content: '─'.repeat(500),
     fg: COLORS.border,
-    width: '100%',
     height: 1,
+    id: 'input-separator-bottom',
     selectable: false,
+    width: '100%',
   });
   root.add(inputSeparatorBottom);
 
   const statusBar = new BoxRenderable(renderer, {
-    id: 'status-bar',
     flexDirection: 'row',
-    width: '100%',
     height: 1,
+    id: 'status-bar',
     padding: { left: 1, right: 1 },
+    width: '100%',
   });
   const statusSpinner = new TextRenderable(renderer, {
-    id: 'status-spinner',
     content: '',
     fg: COLORS.accent,
+    id: 'status-spinner',
     selectable: false,
   });
   const statusText = new TextRenderable(renderer, {
-    id: 'status-text',
     content: '',
     fg: COLORS.gray,
     flexGrow: 1,
+    id: 'status-text',
     selectable: false,
   });
   const statusMode = new TextRenderable(renderer, {
-    id: 'status-mode',
     content: '',
     fg: COLORS.planAccent,
+    id: 'status-mode',
     selectable: false,
   });
   const statusPath = new TextRenderable(renderer, {
-    id: 'status-path',
     content: '',
     fg: COLORS.gray,
+    id: 'status-path',
     selectable: false,
   });
   statusBar.add(statusSpinner);
@@ -778,11 +718,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
   root.add(statusBar);
 
   const viewerOverlay = new BoxRenderable(renderer, {
-    id: 'viewer-overlay',
     flexDirection: 'column',
-    width: '100%',
     height: '100%',
+    id: 'viewer-overlay',
     visible: false,
+    width: '100%',
   });
 
   const mainTuiChildren = [
@@ -807,7 +747,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     for (const child of mainTuiChildren) {
       root.remove(child);
     }
-    if (!viewerOverlay.getParent()) root.add(viewerOverlay);
+    if (viewerOverlay.getParent() === null) {root.add(viewerOverlay);}
     viewerOverlay.visible = true;
   }
 
@@ -820,24 +760,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   const planStatusLine = new TextRenderable(renderer, {
-    id: 'plan-status',
     content: '',
     fg: COLORS.planAccent,
+    id: 'plan-status',
     visible: false,
   });
   messagesScroll.add(planStatusLine);
 
-  function triggerCompletion() {
-    completion.trigger();
-  }
-
-  function hideCompletions() {
-    completion.hide();
-  }
-
-  function acceptCompletion() {
-    completion.accept();
-  }
 
   function updateHeader() {
     headerTitle.content = state.planMode ? 'lavalamp [PLAN]' : 'lavalamp';
@@ -852,6 +781,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         child.fg = accent();
       }
     }
+  }
+
+  function hideCompletions() {
+    completion.hide();
   }
 
   function updateStatus() {
@@ -880,17 +813,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
       statusSpinner.visible = false;
       statusText.content = `queued: ${state.queuePending.length} messages${subCount ? ` | ${subCount} subagents running` : ''}${sudo}`;
       statusText.fg = COLORS.yellow;
-    } else if (subCount > 0) {
-      statusSpinner.content =
-        subCount > 0 ? `${SPINNER_FRAMES[spinnerFrame]} ` : '';
-      statusSpinner.fg = accent();
-      statusSpinner.visible = true;
-      statusText.content = `${subCount} subagents running${sudo}`;
-      statusText.fg = sudo ? COLORS.pink : COLORS.gray;
     } else {
-      statusSpinner.content = '';
-      statusSpinner.visible = false;
-      statusText.content = sudo ? sudo.replace(' | ', '') : '';
+      const isSubsRunning = subCount > 0;
+      if (isSubsRunning) {
+        statusSpinner.content = `${SPINNER_FRAMES[spinnerFrame]} `;
+        statusSpinner.fg = accent();
+        statusSpinner.visible = true;
+        statusText.content = `${subCount} subagents running${sudo}`;
+      } else {
+        statusSpinner.content = '';
+        statusSpinner.visible = false;
+        statusText.content = sudo ? sudo.replace(' | ', '') : '';
+      }
       statusText.fg = sudo ? COLORS.pink : COLORS.gray;
     }
   }
@@ -907,27 +841,25 @@ export async function startTui(options: TuiOptions): Promise<void> {
     const targetAgent = enabled ? 'plan' : 'build';
     state.planMode = enabled;
     applyModeVisuals();
-    if (flue) {
-      const oldProcessing = state.processing;
-      state.processing = true;
+    const oldProcessing = state.processing;
+    state.processing = true;
+    updateStatus();
+    flue.setAgentName(targetAgent);
+    try {
+      await flue.restart();
+    } catch (error) {
+      addInfoLine(
+        `  Error restarting agent: ${(error as Error).message}`,
+        COLORS.red,
+      );
+    } finally {
+      state.processing = oldProcessing;
       updateStatus();
-      flue.setAgentName(targetAgent);
-      try {
-        await flue.restart();
-      } catch (err) {
-        addInfoLine(
-          `  Error restarting agent: ${(err as Error).message}`,
-          COLORS.red,
-        );
-      } finally {
-        state.processing = oldProcessing;
-        updateStatus();
-      }
     }
   }
 
   function hideLavaLamp() {
-    if (lavaLampBox.visible) lavaLampBox.visible = false;
+    if (lavaLampBox.visible) {lavaLampBox.visible = false;}
   }
 
   function summarizeToolArgsShort(
@@ -939,10 +871,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const cmd =
           typeof args.command === 'string'
             ? args.command
-            : typeof args.cmd === 'string'
+            : (typeof args.cmd === 'string'
               ? args.cmd
-              : '';
-        return cmd.length > 50 ? cmd.slice(0, 47) + '...' : cmd;
+              : '');
+        return cmd.length > 50 ? `${cmd.slice(0, 47)  }...` : cmd;
       }
       case 'read':
       case 'write':
@@ -950,9 +882,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const fp =
           typeof args.file_path === 'string'
             ? args.file_path
-            : typeof args.path === 'string'
+            : (typeof args.path === 'string'
               ? args.path
-              : '';
+              : '');
         return stripCwd(fp, cwd);
       }
       case 'fetch_url':
@@ -960,10 +892,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const url =
           typeof args.url === 'string'
             ? args.url
-            : typeof args.query === 'string'
+            : (typeof args.query === 'string'
               ? args.query
-              : '';
-        return url.length > 50 ? url.slice(0, 47) + '...' : url;
+              : '');
+        return url.length > 50 ? `${url.slice(0, 47)  }...` : url;
       }
       case 'ripgrep':
       case 'grep':
@@ -971,20 +903,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const q =
           typeof args.pattern === 'string'
             ? args.pattern
-            : typeof args.query === 'string'
+            : (typeof args.query === 'string'
               ? args.query
-              : '';
-        return q.length > 50 ? q.slice(0, 47) + '...' : q;
+              : '');
+        return q.length > 50 ? `${q.slice(0, 47)  }...` : q;
       }
       default: {
         const entries = Object.entries(args);
-        if (!entries.length) return '';
+        if (entries.length === 0) {return '';}
         const parts: string[] = [];
         for (const [, v] of entries.slice(0, 2)) {
           if (typeof v === 'string')
-            parts.push(v.length > 30 ? v.slice(0, 27) + '...' : v);
+            {parts.push(v.length > 30 ? `${v.slice(0, 27)  }...` : v);}
           else if (typeof v === 'number' || typeof v === 'boolean')
-            parts.push(String(v));
+            {parts.push(String(v));}
         }
         return parts.join(' ');
       }
@@ -994,19 +926,19 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const storedDiffs = new Map<string, { diff: string; filePath: string }>();
 
   const messageRenderer = new MessageRenderer({
-    renderer,
+    hideLavaLamp,
     messagesScroll,
     nextId,
-    hideLavaLamp,
+    renderer,
   });
 
   const toolUiCtx = {
-    renderer,
     cwd,
-    nextId,
     hideLavaLamp,
-    requestScroll,
     messagesScroll,
+    nextId,
+    renderer,
+    requestScroll,
     storedDiffs,
   };
   const toolUiMgr = new ToolUiManager(toolUiCtx);
@@ -1023,7 +955,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     taskStatusText.content = '';
   }
 
-  let userMessageCount = 0;
+  let _userMessageCount = 0;
 
   function addUserLine(content: string) {
     messageRenderer.addUser(content);
@@ -1038,7 +970,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function populateToolEntryContent(
-    entry: any,
+    entry: { content?: string; label?: string },
     toolName: string,
     args: Record<string, unknown>,
     resultStr: string,
@@ -1057,7 +989,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function closeViewer(offKey: () => void) {
     offKey();
-    for (const child of [...viewerOverlay.getChildren()]) {
+    for (const child of viewerOverlay.getChildren()) {
       child.destroy();
     }
     showMainTui();
@@ -1124,18 +1056,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let currentThinkingText = '';
   let streamingThinking = false;
   let streamedAnyText = false;
-  let lastToolBlockId: string | null = null;
+  let _lastToolBlockId: string | null = null;
   const pendingToolEntries = new Map<string, number>();
   let currentAssistantText = '';
   let accThinking = '';
-  let accToolCalls: Array<{
+  let accToolCalls: {
     id: string;
     name: string;
     args: Record<string, unknown>;
     result?: unknown;
     isError?: boolean;
     durationMs?: number;
-  }> = [];
+  }[] = [];
   let accCurrentTool: {
     id: string;
     name: string;
@@ -1154,12 +1086,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (!currentAssistantMd) {
           hideLavaLamp();
           currentAssistantMd = new MarkdownRenderable(renderer, {
-            id: nextId(),
+            conceal: true,
             content: '',
+            id: nextId(),
+            streaming: true,
             syntaxStyle,
             width: '100%',
-            streaming: true,
-            conceal: true,
           });
           messagesScroll.add(currentAssistantMd);
         }
@@ -1178,12 +1110,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ) ||
           /^\}\s*\d+\s*\|/m.test(delta) ||
           /^\d+\s*\|/m.test(delta);
-        if (noisyFlueLog) break;
+        if (noisyFlueLog) {break;}
         if (!streamingThinking) {
           streamingThinking = true;
           hideLavaLamp();
           const children = messagesScroll.getChildren();
-          const last = children[children.length - 1];
+          const last = children.at(-1);
           if (last && last instanceof BoxRenderable) {
             const hasThinking = last.getRenderable('thinking-content');
             if (hasThinking) {
@@ -1202,7 +1134,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
                   .getChildren()
                   .find((c) => c instanceof TextRenderable);
                 if (label && label instanceof TextRenderable) {
-                  label.content = 'Reasoning... \u25bc';
+                  label.content = 'Reasoning... \u25BC';
                   label.fg = COLORS.link;
                 }
               }
@@ -1223,7 +1155,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           const contentEl =
             currentThinkingBlock.getRenderable('thinking-content');
           if (contentEl && contentEl instanceof TextRenderable)
-            contentEl.content = currentThinkingText;
+            {contentEl.content = currentThinkingText;}
         }
         break;
       }
@@ -1245,21 +1177,24 @@ export async function startTui(options: TuiOptions): Promise<void> {
           name === 'skip_task'
         ) {
           const action = name.replace('_task', '');
-          handleTaskToolStart({ action, ...args });
+          handleTaskToolStart(Object.assign({}, args, { action }));
         }
 
         const summary = summarizeToolArgs(name, args, cwd);
 
-        const entry = addToolGroupEntry(name, summary, args);
+        const _entry = addToolGroupEntry(name, summary, args);
 
-        state.currentTool = { id: `tool-${Date.now()}`, name, args };
-        lastToolBlockId = `toolgroup-${toolGroup!.entries.length - 1}`;
-        if (event.toolCallId) {
+        state.currentTool = { args, id: `tool-${Date.now()}`, name };
+        const grp = toolUiMgr.getActiveGroup();
+        if (grp !== null) {
+          _lastToolBlockId = `toolgroup-${grp.entries.length - 1}`;
+        }
+        if (event.toolCallId !== null && grp !== null) {
           pendingToolEntries.set(
             event.toolCallId,
-            toolGroup!.entries.length - 1,
+            grp.entries.length - 1,
           );
-          accCurrentTool = { id: event.toolCallId, name, args };
+          accCurrentTool = { args, id: event.toolCallId, name };
         }
         updateTaskStatus(name, args);
         requestScroll();
@@ -1272,91 +1207,100 @@ export async function startTui(options: TuiOptions): Promise<void> {
             typeof event.result === 'string'
               ? (() => {
                   try {
-                    return JSON.parse(event.result);
+                    return JSON.parse(event.result) as unknown;
                   } catch {
                     return null;
                   }
                 })()
               : event.result;
           if (
-            marker &&
-            typeof marker === 'object' &&
-            (marker as any).type === 'parallel_deploy' &&
-            Array.isArray((marker as any).queries)
+            marker !== null &&
+            typeof marker === 'object'
           ) {
-            subManager
-              .deploy((marker as any).queries)
-              .catch((error) =>
-                addInfoLine(
-                  `  subagents failed: ${error instanceof Error ? error.message : String(error)}`,
-                  COLORS.red,
-                ),
-              );
+            const deployMarker = marker as { type: string; queries: string[] };
+            if (deployMarker.type === 'parallel_deploy' && Array.isArray(deployMarker.queries)) {
+              subManager
+                .deploy(deployMarker.queries)
+                .catch((error: unknown) =>
+                  addInfoLine(
+                    `  subagents failed: ${error instanceof Error ? error.message : String(error)}`,
+                    COLORS.red,
+                  ),
+                );
+            }
           }
         }
+        const activeGrp = toolUiMgr.getActiveGroup();
         if (
-          toolGroup &&
-          event.toolCallId &&
+          activeGrp !== null &&
+          event.toolCallId !== null &&
           pendingToolEntries.has(event.toolCallId)
         ) {
-          const idx = pendingToolEntries.get(event.toolCallId)!;
-          pendingToolEntries.delete(event.toolCallId);
-          const entry = toolGroup.entries[idx];
-          if (entry) {
+          const idx = pendingToolEntries.get(event.toolCallId) ?? -1;
+          if (idx < 0) {break;}
+          const entry = activeGrp.entries[idx] as ToolGroupEntry | undefined;
+          if (entry !== null) {
             const resultStr = extractResultText(event.result);
             entry.result = resultStr;
-            entry.isError = !!event.isError;
+            entry.isError = Boolean(event.isError);
             entry.durationMs = event.durationMs;
             populateToolEntryContent(
               entry,
               entry.toolName,
               entry.args,
               resultStr,
-              !!event.isError,
+              Boolean(event.isError),
               event.durationMs,
             );
           }
           if (accCurrentTool && accCurrentTool.id === event.toolCallId) {
             accToolCalls.push({
-              id: accCurrentTool.id,
-              name: accCurrentTool.name,
               args: accCurrentTool.args,
-              result: event.result,
-              isError: !!event.isError,
               durationMs: event.durationMs,
+              id: accCurrentTool.id,
+              isError: Boolean(event.isError),
+              name: accCurrentTool.name,
+              result: event.result,
             });
             accCurrentTool = null;
           }
         }
         state.currentTool = null;
-        lastToolBlockId = null;
+        _lastToolBlockId = null;
         clearTaskStatus();
         requestScroll();
         break;
       }
 
-      case 'compaction_start':
+      case 'compaction_start': {
         addInfoLine('  compacting context...', COLORS.dim);
         requestScroll();
         break;
-      case 'compaction':
+      }
+      case 'compaction': {
         addInfoLine(
           `  compacted: ${event.messagesBefore} -> ${event.messagesAfter} messages`,
           COLORS.dim,
         );
         requestScroll();
         break;
-      case 'log':
+      }
+      case 'log': {
         break;
+      }
       case 'error': {
         const errMsg = event.error ?? event.message ?? 'unknown';
         const cleanMsg =
           typeof errMsg === 'string'
-            ? errMsg.replace(/\s+/g, ' ').slice(0, 200)
+            ? errMsg.replaceAll(/\s+/g, ' ').slice(0, 200)
             : 'unknown error';
         showResultPanel('error', [
           { content: `  ${cleanMsg}`, fg: COLORS.red },
         ]);
+        break;
+      }
+      default: {
+        // unhandled event types are silently ignored
         break;
       }
     }
@@ -1379,7 +1323,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           .getChildren()
           .find((c) => c instanceof TextRenderable);
         if (label && label instanceof TextRenderable) {
-          label.content = '\u25b8 Reasoning...';
+          label.content = '\u25B8 Reasoning...';
           label.fg = COLORS.link;
         }
       }
@@ -1392,7 +1336,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     finalizeAssistantStream();
     state.currentTool = null;
-    lastToolBlockId = null;
+    _lastToolBlockId = null;
     pendingToolEntries.clear();
     streamedAnyText = false;
     requestScroll();
@@ -1405,29 +1349,24 @@ export async function startTui(options: TuiOptions): Promise<void> {
     accCurrentTool = null;
   }
 
-  function isAuthError(err: Error): boolean {
-    return /\b401\b/.test(err.message);
-  }
-
   function formatErrorMessage(err: Error): string {
     const message = err.message.trim();
     if (isAuthError(err)) {
       return 'authentication failed (401). Re-authenticating...';
     }
-    return message.split('\n')[0] || 'Unknown error';
+    return message.split('\n')[0] ?? 'Unknown error';
   }
 
   function printUsage(result: FlueResult) {
-    if (!result?.usage) return;
     const u = result.usage;
-    const m = result.model ? `${result.model.provider}/${result.model.id}` : '';
+    const m = result.model !== null ? `${result.model.provider}/${result.model.id}` : '';
     addInfoLine(
       `  ${u.totalTokens} tok | $${u.cost.total.toFixed(4)} | ${m}`,
       COLORS.dim,
     );
   }
 
-  async function sendPrompt(prompt: string) {
+  async function _sendPrompt(prompt: string) {
     state.processing = true;
     state.historyIndex = -1;
     savedInput = '';
@@ -1440,9 +1379,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     hideLavaLamp();
     addUserLine(prompt);
     state.messages.push({
+      content: prompt,
       id: nextId(),
       role: 'user',
-      content: prompt,
       timestamp: Date.now(),
     });
     updateStatus();
@@ -1464,8 +1403,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
         try {
           const desc = await describeImageWithSpectacle(img);
           imageDescriptionContext += `\n\n[ATTACHED IMAGE DETAILS: ${img}]\n${desc}`;
-        } catch (e: any) {
-          imageDescriptionContext += `\n\n[ATTACHED IMAGE ERROR: ${e.message}]`;
+        } catch (error: unknown) {
+          imageDescriptionContext += `\n\n[ATTACHED IMAGE ERROR: ${error instanceof Error ? error.message : String(error)}]`;
         }
       }
       attachedImages.length = 0; // Clear after processing
@@ -1476,104 +1415,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
     flue.prompt(
       steeredPrompt,
       {
-        onEvent: (event) => {
-          handleEvent(event);
-          if (event.type === 'text_delta')
-            currentAssistantText += event.text ?? event.delta ?? '';
-        },
-        onResult: (result) => {
-          const didStream = streamedAnyText;
-          finalizeStream();
-          state.processing = false;
-
-          if (currentAssistantText && !didStream) {
-            addAssistantMarkdown(currentAssistantText);
-          }
-          if (currentAssistantText || accThinking || accToolCalls.length > 0) {
-            state.messages.push({
-              id: nextId(),
-              role: 'assistant',
-              content: currentAssistantText,
-              thinking: accThinking || undefined,
-              toolCalls: accToolCalls.length > 0 ? accToolCalls : undefined,
-              timestamp: Date.now(),
-            });
-
-            if (state.planMode) {
-              showSpecApprovalBox(async (approved) => {
-                if (approved) {
-                  await setPlanMode(false);
-                  sendPrompt(
-                    'Plan approved. Proceed with implementation of all tasks.',
-                  );
-                }
-              });
-            }
-
-            const filePaths = extractFilePaths(currentAssistantText, cwd);
-            if (filePaths.length > 0) {
-              const fileRow = new BoxRenderable(renderer, {
-                id: nextId(),
-                flexDirection: 'row',
-                width: '100%',
-                flexWrap: 'wrap',
-                gap: 1,
-              });
-              for (const fp of filePaths.slice(0, 8)) {
-                const displayPath = stripCwd(fp, cwd);
-                const linkBox = new BoxRenderable(renderer, {
-                  id: nextId(),
-                  focusable: true,
-                  width: displayPath.length,
-                  height: 1,
-                  onMouseDown: () => {
-                    const storedDiff = storedDiffs.get(displayPath);
-                    const viewerCtx = {
-                      renderer,
-                      overlay: viewerOverlay,
-                      cwd,
-                      nextId,
-                      hideMainTui,
-                      closeViewer,
-                      onReadError: (fp: string) =>
-                        addInfoLine(`  could not read ${fp}`, COLORS.red),
-                    };
-                    if (storedDiff) {
-                      openDiffViewer(viewerCtx, fp, storedDiff.diff);
-                    } else {
-                      openCodeViewer(viewerCtx, fp);
-                    }
-                  },
-                });
-                const linkText = new TextRenderable(renderer, {
-                  id: nextId(),
-                  content: displayPath,
-                  fg: COLORS.link,
-                  attributes: TextAttributes.UNDERLINE,
-                });
-                linkBox.add(linkText);
-                fileRow.add(linkBox);
-              }
-              messagesScroll.add(fileRow);
-            }
-          }
-
-          if (renderer.capabilities?.notifications) {
-            renderer.triggerNotification('Response complete', 'lavalamp');
-          }
-
-          printUsage(result);
-          clearResponseAccumulators();
-          updateStatus();
-          drainPending();
-        },
         onError: (err) => {
           finalizeStream();
           state.processing = false;
           saveSessionSnapshot();
           addInfoLine(`  error: ${formatErrorMessage(err)}`, COLORS.red);
 
-          if (renderer.capabilities?.notifications) {
+          if (renderer.capabilities && renderer.capabilities.notifications) {
             renderer.triggerNotification(
               `Error: ${formatErrorMessage(err)}`,
               'lavalamp',
@@ -1590,13 +1438,101 @@ export async function startTui(options: TuiOptions): Promise<void> {
                 );
                 flue.restart().catch(() => {});
               })
-              .catch((loginErr) => {
+              .catch((error: unknown) => {
                 addInfoLine(
-                  `  login failed: ${loginErr instanceof Error ? loginErr.message : String(loginErr)}`,
+                  `  login failed: ${error instanceof Error ? error.message : String(error)}`,
                   COLORS.red,
                 );
               });
           }
+          clearResponseAccumulators();
+          updateStatus();
+          drainPending();
+        },
+        onEvent: (event) => {
+          handleEvent(event);
+          if (event.type === 'text_delta')
+            {currentAssistantText += event.text ?? event.delta ?? '';}
+        },
+        onResult: (result) => {
+          const didStream = streamedAnyText;
+          finalizeStream();
+          state.processing = false;
+
+          if (currentAssistantText && !didStream) {
+            addAssistantMarkdown(currentAssistantText);
+          }
+          if (currentAssistantText || accThinking || accToolCalls.length > 0) {
+            state.messages.push({
+              content: currentAssistantText,
+              id: nextId(),
+              role: 'assistant',
+              thinking: accThinking || undefined,
+              timestamp: Date.now(),
+              toolCalls: accToolCalls.length > 0 ? accToolCalls : undefined,
+            });
+
+            if (state.planMode) {
+              showSpecApprovalBox((approved) => {
+                if (approved) {
+                  setPlanMode(false).catch(() => {});
+                }
+              });
+            }
+
+            const filePaths = extractFilePaths(currentAssistantText, cwd);
+            if (filePaths.length > 0) {
+              const fileRow = new BoxRenderable(renderer, {
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: 1,
+                id: nextId(),
+                width: '100%',
+              });
+              for (const fp of filePaths.slice(0, 8)) {
+                const displayPath = stripCwd(fp, cwd);
+                const linkBox = new BoxRenderable(renderer, {
+                  focusable: true,
+                  height: 1,
+                  id: nextId(),
+                  onMouseDown: () => {
+                    const storedDiff = storedDiffs.get(displayPath);
+                    const viewerCtx = {
+                      closeViewer,
+                      cwd,
+                      hideMainTui,
+                      nextId,
+                      onReadError: (fp: string) =>
+                        addInfoLine(`  could not read ${fp}`, COLORS.red),
+                      overlay: viewerOverlay,
+                      renderer,
+                    };
+                    if (storedDiff) {
+                      openDiffViewer(viewerCtx, fp, storedDiff.diff);
+                    } else {
+                      openCodeViewer(viewerCtx, fp);
+                    }
+                  },
+                  width: displayPath.length,
+                });
+                const linkText = new TextRenderable(renderer, {
+                  attributes: TextAttributes.UNDERLINE,
+                  content: displayPath,
+                  fg: COLORS.link,
+                  id: nextId(),
+                });
+                linkBox.add(linkText);
+                fileRow.add(linkBox);
+              }
+              messagesScroll.add(fileRow);
+            }
+          }
+
+          if (renderer.capabilities && renderer.capabilities.notifications) {
+            renderer.triggerNotification('Response complete', 'lavalamp');
+          }
+
+          printUsage(result);
           clearResponseAccumulators();
           updateStatus();
           drainPending();
@@ -1608,18 +1544,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function drainPending() {
     if (state.steerPending.length > 0) {
-      const prompt = state.steerPending.shift()!;
+      const prompt = state.steerPending.shift();
+      if (prompt === null) {return;}
       refreshQueuePanel();
       addInfoLine('  (steer)', COLORS.dim);
-      sendPrompt(prompt);
       return;
     }
     if (state.queuePending.length > 0) {
-      const prompt = state.queuePending.shift()!;
+      const prompt = state.queuePending.shift();
+      if (prompt === null) {return;}
       refreshQueuePanel();
       addInfoLine('  (queued)', COLORS.yellow);
-      sendPrompt(prompt);
-      return;
     }
   }
 
@@ -1646,12 +1581,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
       currentThinkingText = '';
       streamingThinking = false;
     }
-    if (toolGroup) {
-      messagesScroll.remove(toolGroup.box);
-      toolGroup.box.destroy();
-      toolGroup = null;
+    const grp = toolUiMgr.getActiveGroup();
+    if (grp !== null) {
+      messagesScroll.remove(grp.box);
+      grp.box.destroy();
+      toolUiMgr.clearActiveGroup();
     }
-    lastToolBlockId = null;
+    _lastToolBlockId = null;
     pendingToolEntries.clear();
     streamedAnyText = false;
     saveSessionSnapshot();
@@ -1661,16 +1597,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
     updateStatus();
   }
 
-  function hexToAnsi(hex: string): string {
-    const value = hex.replace('#', '');
-    const r = parseInt(value.slice(0, 2), 16);
-    const g = parseInt(value.slice(2, 4), 16);
-    const b = parseInt(value.slice(4, 6), 16);
-    return `\x1b[38;2;${r};${g};${b}m`;
-  }
-
   function printExitSummary(sessionId: string) {
-    const reset = '\x1b[0m';
+    const reset = '\u001B[0m';
     const accentColor = hexToAnsi(COLORS.accent);
     const dimColor = hexToAnsi(COLORS.dim);
     const cyanColor = hexToAnsi(COLORS.cyan);
@@ -1688,16 +1616,16 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let savedSessionOnExit: string | null = null;
 
   function saveSessionSnapshot(): string | null {
-    if (savedSessionOnExit) return savedSessionOnExit;
+    if (savedSessionOnExit !== null) {return savedSessionOnExit;}
     if (state.processing) {
       if (currentAssistantText || accThinking || accToolCalls.length > 0) {
         state.messages.push({
+          content: currentAssistantText,
           id: nextId(),
           role: 'assistant',
-          content: currentAssistantText,
           thinking: accThinking || undefined,
-          toolCalls: accToolCalls.length > 0 ? accToolCalls : undefined,
           timestamp: Date.now(),
+          toolCalls: accToolCalls.length > 0 ? accToolCalls : undefined,
         });
       }
       clearResponseAccumulators();
@@ -1715,14 +1643,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function handleExit() {
-    if (exiting) return;
+    if (exiting) {return;}
     exiting = true;
 
     const savedSessionId = saveSessionSnapshot();
     stopSpinner();
     clearInterval(lavaLampTimer);
     renderer.destroy();
-    if (savedSessionId && !exitSummaryPrinted) {
+    if (savedSessionId !== null && !exitSummaryPrinted) {
       exitSummaryPrinted = true;
       printExitSummary(savedSessionId);
     }
@@ -1730,7 +1658,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   let planStatusTimeout: ReturnType<typeof setTimeout> | null = null;
   function togglePlanMode() {
-    setPlanMode(!state.planMode);
     hideCompletions();
     if (state.planMode) {
       planStatusLine.content =
@@ -1767,21 +1694,21 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   let sessionPickerActive = false;
   let sessionPickerSelected = 0;
-  let sessionPickerSessions: Array<{
+  let sessionPickerSessions: {
     id: string;
     name: string;
     savedAt: number;
     messageCount: number;
-  }> = [];
-  let sessionPickerOffKey: (() => void) | null = null;
+  }[] = [];
+  const _sessionPickerOffKey: (() => void) | null = null;
 
   function showSessionPicker(
-    sessions: Array<{
+    sessions: {
       id: string;
       name: string;
       savedAt: number;
       messageCount: number;
-    }>,
+    }[],
   ) {
     sessionPickerSessions = sessions;
     sessionPickerSelected = 0;
@@ -1792,13 +1719,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function resumeSession(index: number) {
     const chosen = sessionPickerSessions[index];
-    if (!chosen) return;
+    if (!chosen) {return;}
     closeSessionPicker();
     const messages = loadSession(chosen.id);
-    if (messages) {
+    if (messages !== null) {
       currentSessionId = chosen.id;
       state.messages = messages;
-      setPlanMode(false);
 
       renderAllMessages();
     }
@@ -1810,38 +1736,27 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function renderPicker() {
-    const rows: Array<{ content: string; fg?: string; bold?: boolean }> = [];
+    const rows: { content: string; fg?: string; bold?: boolean }[] = [];
     for (let i = 0; i < sessionPickerSessions.length; i++) {
       const s = sessionPickerSessions[i];
       const age = formatAge(s.savedAt);
-      const marker = i === sessionPickerSelected ? '\u25b6 ' : '  ';
+      const marker = i === sessionPickerSelected ? '\u25B6 ' : '  ';
       const nameStr = s.name.slice(0, 36);
       rows.push({
+        bold: i === sessionPickerSelected,
         content: `${marker}${nameStr}  ${s.messageCount} msgs  ${age}`,
         fg: i === sessionPickerSelected ? COLORS.white : COLORS.gray,
-        bold: i === sessionPickerSelected,
       });
     }
     showResultPanel('/sessions', rows);
   }
 
-  function formatAge(ts: number): string {
-    const diff = Date.now() - ts;
-    const min = Math.floor(diff / 60000);
-    if (min < 1) return 'just now';
-    if (min < 60) return `${min}m ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr}h ago`;
-    const d = Math.floor(hr / 24);
-    return `${d}d ago`;
-  }
-
   function renderAllMessages() {
-    for (const child of [...messagesScroll.getChildren()]) {
-      if (child.id !== 'lava-lamp-box') child.destroy();
+    for (const child of messagesScroll.getChildren()) {
+      if (child.id !== 'lava-lamp-box') {child.destroy();}
     }
-    if (state.messages.length > 0) lavaLampBox.visible = false;
-    userMessageCount = 0;
+    if (state.messages.length > 0) {lavaLampBox.visible = false;}
+    _userMessageCount = 0;
     for (const msg of state.messages) {
       renderMessage(msg);
     }
@@ -1856,70 +1771,70 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     addInfoLine(` ~`, accent());
 
-    if (msg.thinking) {
+    if (msg.thinking !== null && msg.thinking !== '') {
       const thinkBox = createThinkingBlock();
       const contentEl = thinkBox.getRenderable('thinking-content');
-      if (contentEl && contentEl instanceof TextRenderable) {
+      if (contentEl !== null && contentEl instanceof TextRenderable) {
         contentEl.content = msg.thinking;
         contentEl.visible = false;
       }
       const hdr = thinkBox
         .getChildren()
         .find((c) => c instanceof BoxRenderable);
-      if (hdr) {
+      if (hdr !== null) {
         const label = hdr
           .getChildren()
           .find((c) => c instanceof TextRenderable);
-        if (label && label instanceof TextRenderable) {
-          label.content = 'Reasoning... \u25b8';
+        if (label !== null && label instanceof TextRenderable) {
+          label.content = 'Reasoning... \u25B8';
           label.fg = COLORS.link;
         }
       }
       messagesScroll.add(thinkBox);
     }
 
-    if (msg.toolCalls?.length) {
+    if (msg.toolCalls && msg.toolCalls.length > 0) {
       let grp: ReturnType<typeof getOrCreateToolGroup> | null = null;
       for (const tc of msg.toolCalls) {
         grp = getOrCreateToolGroup(tc.name);
         const summary = summarizeToolArgs(tc.name, tc.args, cwd);
         const entry = addToolGroupEntry(tc.name, summary, tc.args);
         entry.result = extractResultText(tc.result);
-        entry.isError = !!tc.isError;
+        entry.isError = Boolean(tc.isError);
         entry.durationMs = tc.durationMs;
         populateToolEntryContent(
           entry,
           tc.name,
           tc.args,
           entry.result,
-          !!tc.isError,
+          Boolean(tc.isError),
           tc.durationMs,
         );
       }
-      if (grp) finalizeToolGroup();
+      if (grp) {finalizeToolGroup();}
     }
 
     if (msg.content) {
       const md = new MarkdownRenderable(renderer, {
-        id: nextId(),
         content: msg.content,
+        fg: COLORS.white,
+        id: nextId(),
+        padding: { left: 1 },
         syntaxStyle,
         width: '100%',
-        fg: COLORS.white,
-        padding: { left: 1 },
       });
       md.selectable = true;
       messagesScroll.add(md);
     }
   }
 
-  async function handleSlashCommand(raw: string) {
+  async function _handleSlashCommand(raw: string) {
     const cmd = raw.split(/\s+/)[0].toLowerCase();
     switch (cmd) {
       case '/help': {
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
-          [];
-        rows.push({ content: '  Commands:', fg: COLORS.white, bold: true });
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [
+          { bold: true, content: '  Commands:', fg: COLORS.white },
+        ];
         for (const [name, desc] of [
           ['/help', 'Show this help'],
           ['/clear', 'New session'],
@@ -1938,22 +1853,21 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ['/copy', 'Copy session transcript'],
           ['/undo', 'Undo last change'],
           ['/quit', 'Exit'],
-        ] as Array<[string, string]>) {
+        ] as [string, string][]) {
           rows.push({
+            bold: true,
             content: `  ${name.padEnd(14)}${desc}`,
             fg: accent(),
-            bold: true,
           });
         }
-        rows.push({ content: '' });
-        rows.push({ content: '  Keys:', fg: COLORS.white, bold: true });
+        rows.push({ content: '' }, { bold: true, content: '  Keys:', fg: COLORS.white });
         for (const [key, desc] of [
           ['Tab', 'Autocomplete'],
           ['Shift+Tab / Ctrl+P', 'Toggle plan mode'],
           ['Enter', 'Steer or Submit'],
           ['Ctrl+C', 'Interrupt / exit'],
           ['Escape', 'Clear / interrupt'],
-        ] as Array<[string, string]>) {
+        ] as [string, string][]) {
           rows.push({ content: `  ${key.padEnd(14)}${desc}`, fg: COLORS.gray });
         }
         showResultPanel('/help', rows);
@@ -1964,8 +1878,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (state.messages.length > 0) {
           saveSession(state.messages, sessionName, currentSessionId);
         }
-        for (const child of [...messagesScroll.getChildren()]) {
-          if (child.id !== 'lava-lamp-box') child.destroy();
+        for (const child of messagesScroll.getChildren()) {
+          if (child.id !== 'lava-lamp-box') {child.destroy();}
         }
         lavaLampBox.visible = true;
         state.messages = [];
@@ -1995,12 +1909,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const half = Math.ceil(count / 2);
         const kept = state.messages.slice(half);
         state.messages = kept;
-        for (const child of [...messagesScroll.getChildren()]) {
-          if (child.id !== 'lava-lamp-box') child.destroy();
+        for (const child of messagesScroll.getChildren()) {
+          if (child.id !== 'lava-lamp-box') {child.destroy();}
         }
         if (state.messages.length > 0) {
           lavaLampBox.visible = false;
-          for (const msg of state.messages) renderMessage(msg);
+          for (const msg of state.messages) {renderMessage(msg);}
         } else {
           lavaLampBox.visible = true;
         }
@@ -2014,46 +1928,48 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
       case '/memory': {
         const memPath = path.join(cwd, 'AGENTS.md');
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
+        const rows: { content: string; fg?: string; bold?: boolean }[] =
           [];
         try {
-          const content = fs.readFileSync(memPath, 'utf-8');
+          const content = fs.readFileSync(memPath, 'utf8');
           const lines = content.split('\n');
-          rows.push({ content: '  AGENTS.md:', fg: COLORS.white, bold: true });
+          rows.push({ bold: true, content: '  AGENTS.md:', fg: COLORS.white });
           for (const line of lines.slice(0, 30)) {
             rows.push({ content: `  ${line}`, fg: COLORS.gray });
           }
           if (lines.length > 30)
-            rows.push({
+            {rows.push({
               content: `  ... (${lines.length - 30} more lines)`,
               fg: COLORS.dim,
-            });
+            });}
         } catch {
           rows.push({ content: '  no AGENTS.md found', fg: COLORS.dim });
         }
         showResultPanel('/memory', rows);
         break;
       }
-      case '/model':
+      case '/model': {
         showResultPanel('/model', [
           { content: `  model: ${state.model ?? 'default'}`, fg: COLORS.gray },
         ]);
         break;
-      case '/workspace':
+      }
+      case '/workspace': {
         showResultPanel('/workspace', [
           { content: `  workspace: ${cwd}`, fg: COLORS.gray },
         ]);
         break;
+      }
       case '/skills': {
-        const skills = getSkills();
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
+        const skills = discoverSkills(cwd);
+        const rows: { content: string; fg?: string; bold?: boolean }[] =
           [];
         if (skills.length === 0) {
           rows.push({ content: '  no skills found', fg: COLORS.dim });
         } else {
-          rows.push({ content: '  skills:', fg: COLORS.white, bold: true });
+          rows.push({ bold: true, content: '  skills:', fg: COLORS.white });
           for (const s of skills)
-            rows.push({ content: `  #${s}`, fg: accent() });
+            {rows.push({ content: `  #${s}`, fg: accent() });}
         }
         showResultPanel('/skills', rows);
         break;
@@ -2065,12 +1981,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
           'opencode',
           'opencode.json',
         );
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
+        const rows: { content: string; fg?: string; bold?: boolean }[] =
           [];
         try {
-          const raw = fs.readFileSync(mcpConfigPath, 'utf-8');
+          const raw = fs.readFileSync(mcpConfigPath, 'utf8');
           const cfg = JSON.parse(raw);
-          const servers = cfg.mcpServers ?? cfg.mcp ?? {};
+          const servers: Record<string, unknown> = cfg.mcpServers ?? cfg.mcp ?? {};
           const names = Object.keys(servers);
           if (names.length === 0) {
             rows.push({
@@ -2079,20 +1995,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
             });
           } else {
             rows.push({
+              bold: true,
               content: '  MCP servers:',
               fg: COLORS.white,
-              bold: true,
             });
             for (const name of names) {
               const srv = servers[name];
               const cmd = srv.command ?? '';
               const args = Array.isArray(srv.args) ? srv.args.join(' ') : '';
-              rows.push({ content: `  ${name}`, fg: accent(), bold: true });
-              if (cmd)
-                rows.push({
+              rows.push({ bold: true, content: `  ${name}`, fg: accent() });
+              if (typeof cmd === 'string' && cmd.length > 0)
+                {rows.push({
                   content: `    ${cmd} ${args}`.trim(),
                   fg: COLORS.gray,
-                });
+                });}
             }
           }
         } catch {
@@ -2103,13 +2019,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
       case '/tools': {
         const toolsPath = path.join(options.cwd, 'dist', 'server.mjs');
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
+        const rows: { content: string; fg?: string; bold?: boolean }[] =
           [];
         try {
-          const content = fs.readFileSync(toolsPath, 'utf-8');
+          const content = fs.readFileSync(toolsPath, 'utf8');
           const toolMatches = content.matchAll(/name:\s*["']([^"']+)["']/g);
           const toolNames = new Set<string>();
-          for (const m of toolMatches) toolNames.add(m[1]);
+          for (const m of toolMatches) {toolNames.add(m[1]);}
           if (toolNames.size === 0) {
             rows.push({
               content: '  no tools found in harness',
@@ -2117,11 +2033,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
             });
           } else {
             rows.push({
+              bold: true,
               content: '  registered tools:',
               fg: COLORS.white,
-              bold: true,
             });
-            for (const t of [...toolNames].sort()) {
+            for (const t of [...toolNames].toSorted()) {
               rows.push({ content: `  ${t}`, fg: accent() });
             }
           }
@@ -2143,9 +2059,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
                 fg:
                   sub.status === 'running'
                     ? COLORS.pink
-                    : sub.status === 'done'
+                    : (sub.status === 'done'
                       ? COLORS.green
-                      : COLORS.red,
+                      : COLORS.red),
               }));
         showResultPanel('/subagents', rows);
         break;
@@ -2178,7 +2094,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
             },
           ],
           (confirmed) => {
-            if (!confirmed) return;
+            if (!confirmed) {return;}
             setAllowAll(cwd, true);
             showResultPanel('/sudo', [
               { content: '  sudo enabled: all tools allowed', fg: COLORS.pink },
@@ -2193,23 +2109,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
         break;
       }
       case '/permissions': {
-        const rows: Array<{ content: string; fg?: string; bold?: boolean }> =
-          [];
-        rows.push({
-          content: '  rules from .lavalamp/rules.json merge after defaults',
-          fg: COLORS.dim,
-        });
-        for (const rule of permissionRules.length
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [
+          {
+            content: '  rules from .lavalamp/rules.json merge after defaults',
+            fg: COLORS.dim,
+          },
+        ];
+        for (const rule of permissionRules.length > 0
           ? permissionRules
           : getDefaultRules()) {
           rows.push({
-            content: `  ${rule.action.padEnd(5)} ${rule.tool}${rule.argPattern ? ` (${rule.argPattern})` : ''}`,
+            content: `  ${rule.action.padEnd(5)} ${rule.tool}${rule.argPattern !== null ? ` (${rule.argPattern})` : ''}`,
             fg:
               rule.action === 'allow'
                 ? COLORS.green
-                : rule.action === 'deny'
+                : (rule.action === 'deny'
                   ? COLORS.red
-                  : COLORS.yellow,
+                  : COLORS.yellow),
           });
         }
         showResultPanel('/permissions', rows);
@@ -2242,9 +2158,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
         break;
       }
-      case '/plan':
+      case '/plan': {
         togglePlanMode();
         break;
+      }
       case '/undo': {
         if (state.messages.length === 0) {
           showResultPanel('/undo', [
@@ -2254,12 +2171,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
         const lastBackup = backupHistory.pop();
         let restoreMsg = '';
-        if (lastBackup) {
+        if (lastBackup !== null) {
           try {
             backupEngine.restoreBackup(lastBackup);
             restoreMsg = ' and restored workspace files';
-          } catch (e: any) {
-            restoreMsg = ` (failed to restore backup: ${e.message})`;
+          } catch (error: unknown) {
+            restoreMsg = ` (failed to restore backup: ${error instanceof Error ? error.message : String(error)})`;
           }
         }
         let removedCount = 0;
@@ -2276,12 +2193,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
         ]);
         break;
       }
-      case '/quit':
+      case '/quit': {
         handleExit();
         break;
+      }
       case '/paste-image': {
         const imgPath = await pasteImageFromClipboard(cwd);
-        if (imgPath) {
+        if (imgPath !== null && imgPath !== '') {
           attachedImages.push(imgPath);
           showResultPanel('/paste-image', [
             {
@@ -2297,41 +2215,42 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
         break;
       }
-      default:
+      default: {
         showResultPanel(cmd, [
           { content: `  unknown command: ${cmd}`, fg: COLORS.yellow },
         ]);
+      }
     }
   }
 
   inputField.focus();
 
   const keybindingsCtx = {
-    store,
+    addInfoLine,
+    completion,
+    confirmBox: confirmBoxMgr,
+    handleExit,
+    handleInterrupt,
     inputField,
     permissionBox: permissionBoxMgr,
-    confirmBox: confirmBoxMgr,
+    queuePanelRefresh: refreshQueuePanel,
+    requestScroll,
     resultPanel: resultPanelMgr,
-    completion,
+    store,
     subBox: subPanelMgr,
     subManager,
-    viewerOverlay,
     togglePlanMode,
-    withModeTag,
-    addInfoLine,
     updateStatus,
-    requestScroll,
-    handleInterrupt,
-    handleExit,
-    queuePanelRefresh: refreshQueuePanel,
+    viewerOverlay,
+    withModeTag,
   };
 
   renderer.keyInput.on('keypress', (key: KeyEvent) => {
-    if (viewerOverlay.visible) return;
+    if (viewerOverlay.visible) {return;}
     if ((key.ctrl || key.meta) && key.name === 'v') {
       pasteImageFromClipboard(cwd)
         .then((imgPath) => {
-          if (imgPath) {
+          if (imgPath !== null && imgPath !== '') {
             attachedImages.push(imgPath);
             addInfoLine(
               `  [spectacle] Attached pasted clipboard image: ${stripCwd(imgPath, cwd)}`,
@@ -2401,17 +2320,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     try {
       renderer.destroy();
-    } catch {}
+    } catch { /* intentionally ignored */ }
     console.error(`[lavalamp] Fatal: ${err.message}`);
-    if (savedId) {
-      const reset = '\x1b[0m';
-      const accentColor = hexToAnsi(COLORS.accent);
+    if (savedId !== null) {
+      const reset = '\u001B[0m';
       const dimColor = hexToAnsi(COLORS.dim);
       const cyanColor = hexToAnsi(COLORS.cyan);
       const whiteColor = hexToAnsi(COLORS.white);
+      const bannerColor = hexToAnsi(COLORS.accent);
       console.error(
         `\n${dimColor}session:${reset} ${whiteColor}${savedId}${reset}\n` +
-          `${dimColor}continue:${reset} ${cyanColor}lavalamp --continue ${savedId}${reset}\n`,
+          `${bannerColor}continue:${reset} ${cyanColor}lavalamp --continue ${savedId}${reset}\n`,
       );
     }
     process.exit(1);
@@ -2429,12 +2348,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
   updateStatus();
 
   if (options.resumeSession) {
-    if (options.resumeSessionId) {
+    if (options.resumeSessionId !== null) {
       const messages = loadSession(options.resumeSessionId);
-      if (messages) {
+      if (messages !== null) {
         currentSessionId = options.resumeSessionId;
         state.messages = messages;
-        setPlanMode(false);
 
         renderAllMessages();
       } else {

@@ -1,7 +1,6 @@
 import { join, resolve } from 'node:path';
 import { FlueProcess } from './tui/ipc';
 import { startTui } from './tui/app';
-import { login } from './auth';
 
 const workspaceRoot = process.env.LAVALAMP_WORKSPACE ?? process.cwd();
 const model = process.env.LAVALAMP_MODEL;
@@ -45,7 +44,7 @@ async function readStdin(): Promise<string> {
   }
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
-    chunks.push(chunk);
+    chunks.push(Buffer.from(chunk as Uint8Array));
   }
   return Buffer.concat(chunks).toString('utf8').trim();
 }
@@ -81,8 +80,7 @@ if (printIdx !== -1) {
 
     flue.prompt(fullPrompt, {
       onError: (err) => {
-        process.stdout.write(JSON.stringify({ error: err.message }) + '\n');
-        flue.shutdown().then(() => process.exit(1));
+        process.stdout.write(`${JSON.stringify({ error: err.message })  }\n`);
       },
       onEvent: (event) => {
         if (event.type === 'text_delta') {
@@ -90,19 +88,17 @@ if (printIdx !== -1) {
         }
       },
       onResult: (result) => {
-        if (result?.usage) usage = result.usage as Record<string, unknown>;
-        if (result?.model) modelInfo = result.model as Record<string, unknown>;
+        if (result !== undefined && result.usage !== undefined) {usage = result.usage as Record<string, unknown>;}
+        if (result !== undefined && result.model !== undefined) {modelInfo = result.model as Record<string, unknown>;}
         process.stdout.write(
-          JSON.stringify({ text: fullText, usage, model: modelInfo }) + '\n',
+          `${JSON.stringify({ model: modelInfo, text: fullText, usage })  }\n`,
         );
-        flue.shutdown().then(() => process.exit(0));
       },
     });
   } else {
     flue.prompt(fullPrompt, {
       onError: (err) => {
         console.error(`\n  error: ${err.message}`);
-        flue.shutdown().then(() => process.exit(1));
       },
       onEvent: (event) => {
         if (event.type === 'text_delta') {
@@ -110,29 +106,28 @@ if (printIdx !== -1) {
         }
       },
       onResult: (result) => {
-        if (result?.usage) {
+        if (result !== undefined && result.usage !== undefined) {
           const u = result.usage;
-          const modelStr = result.model
+          const modelStr = result.model !== undefined
             ? `${result.model.provider}/${result.model.id}`
             : '';
           console.error(
             `\n  ${u.totalTokens} tok | $${u.cost.total.toFixed(4)} | ${modelStr}`,
           );
         }
-        flue.shutdown().then(() => process.exit(0));
       },
     });
   }
 } else {
-  startTui({
+  await startTui({
     agentName: 'build',
     cwd: workspaceRoot,
     model,
     resumeSession,
     resumeSessionId,
     serverPath,
-  }).catch((error) => {
-    console.error(`[lavalamp] Fatal: ${error.message}`);
+  }).catch((error: unknown) => {
+    console.error(`[lavalamp] Fatal: ${(error as Error).message}`);
     process.exit(1);
   });
 }

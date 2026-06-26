@@ -38,18 +38,18 @@ function walkFiles(
 }
 
 export class CodebaseIndexer {
-  private db: VectorDb;
+  private readonly db: VectorDb;
   private indexingPromise: Promise<void> | null = null;
 
-  constructor(private workspaceRoot: string) {
+  constructor(private readonly workspaceRoot: string) {
     this.db = new VectorDb(workspaceRoot);
   }
 
-  startIndexing(): Promise<void> {
+   async startIndexing(): Promise<void> {
     if (this.indexingPromise) {
       return this.indexingPromise;
     }
-    this.indexingPromise = this.runIndex().catch((error) => {
+    this.indexingPromise = this.runIndex().catch((error: unknown) => {
       console.error('[lavalamp] Indexing error:', error);
     });
     return this.indexingPromise;
@@ -67,7 +67,7 @@ export class CodebaseIndexer {
         creds.accountId,
         creds.apiToken,
       );
-      if (!vectors || vectors.length === 0) {
+      if (vectors.length === 0) {
         return 'Failed to embed query.';
       }
 
@@ -82,8 +82,8 @@ export class CodebaseIndexer {
             `### Match ${i + 1} (${m.filePath} - similarity: ${(m.similarity * 100).toFixed(1)}%)\n\n${m.content}`,
         )
         .join('\n\n---\n\n');
-    } catch (error: any) {
-      return `Semantic search failed: ${error.message}`;
+    } catch (error: unknown) {
+      return `Semantic search failed: ${(error as Error).message}`;
     }
   }
 

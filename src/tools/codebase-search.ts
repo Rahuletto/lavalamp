@@ -48,7 +48,7 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
         if (!match.includes('node_modules') && !match.includes('.git')) {
           results.push(`file: ${match}`);
         }
-        if (results.length >= 20) break;
+        if (results.length >= 20) {break;}
       }
 
       const searchPattern = args.pattern ?? args.query;
@@ -68,7 +68,7 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
               '--glob',
               '!.git',
             ],
-            { stdout: 'pipe', stderr: 'pipe' },
+            { stderr: 'pipe', stdout: 'pipe' },
           );
           output = await new Response(proc.stdout).text();
         } else if (backend === 'grep') {
@@ -82,7 +82,7 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
               '--exclude-dir=node_modules',
               '--exclude-dir=.git',
             ],
-            { stdout: 'pipe', stderr: 'pipe' },
+            { stderr: 'pipe', stdout: 'pipe' },
           );
           output = await new Response(proc.stdout).text();
         } else {
@@ -90,9 +90,9 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
           const glob = new Bun.Glob('**/*');
           for await (const match of glob.scan({ cwd: guard.root })) {
             if (match.includes('node_modules') || match.includes('.git'))
-              continue;
+              {continue;}
             const file = Bun.file(`${guard.root}/${match}`);
-            if (!(await file.exists())) continue;
+            if (!(await file.exists())) {continue;}
             const text = await file.text();
             const lines = text.split('\n');
             for (let i = 0; i < lines.length; i++) {
@@ -101,13 +101,13 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
               }
               regex.lastIndex = 0;
             }
-            if (results.length >= 50) break;
+            if (results.length >= 50) {break;}
           }
         }
 
         if (output.trim()) {
           const lines = output.trim().split('\n').slice(0, 30);
-          results.push(...lines.map((l) => l.replace(guard.root + '/', '')));
+          results.push(...lines.map((l) => l.replace(`${guard.root  }/`, '')));
         }
       } catch {}
 

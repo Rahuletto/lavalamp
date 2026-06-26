@@ -50,7 +50,7 @@ export class WorkspaceGuard {
     const rel = relative(this.root, resolved);
 
     if (rel.startsWith('..') || isAbsolute(rel)) {
-      throw new WorkspaceViolation(resolved, this.root);
+      throw new WorkspaceViolationError(resolved, this.root);
     }
   }
 
@@ -91,13 +91,13 @@ export class WorkspaceGuard {
   }
 }
 
-export class WorkspaceViolation extends Error {
+export class WorkspaceViolationError extends Error {
   constructor(target: string, root: string) {
     super(
       `Access denied: ${target} is outside workspace root (${root}). ` +
         `The agent can only operate inside the assigned workspace.`,
     );
-    this.name = 'WorkspaceViolation';
+    this.name = 'WorkspaceViolationError';
   }
 }
 

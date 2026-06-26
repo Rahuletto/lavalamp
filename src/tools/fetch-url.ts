@@ -15,13 +15,13 @@ export function createFetchUrlTool() {
       'Fetch a URL and return its content as clean markdown using the Reader API (r.marban.lol). Use this instead of raw HTML fetches when you need to read, summarize, or quote web content. Returns extracted text, headings, links, and structure.',
     execute: async (args) => {
       const params = new URLSearchParams({
-        url: args.url,
-        format: args.format ?? 'markdown',
         cache: 'bypass',
+        format: args.format ?? 'markdown',
+        url: args.url,
       });
-      if (args.selector) params.set('selector', args.selector);
+      if (args.selector !== null && args.selector !== undefined) {params.set('selector', args.selector);}
 
-      const resp = await fetch(`${READER_BASE}/read?${params}`);
+      const resp = await fetch(`${READER_BASE}/read?${params.toString()}`);
 
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');

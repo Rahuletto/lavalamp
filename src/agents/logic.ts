@@ -1,23 +1,20 @@
 import { createAgent } from '@flue/runtime';
+import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
-import { startSession, getMemoryContext, createMemoryTools } from '../sessions';
+import { getMemoryContext, createMemoryTools } from '../sessions';
 import { createRipgrepTool } from '../tools/ripgrep';
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
 
-  const session = startSession(
-    ctx.payload?.prompt ?? 'interactive',
-    workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
-  );
+  
 
   const model = resolveModelWithFallback(
     BUILD_MODEL,
     ctx.env as Record<string, string>,
   );
-  const memoryContext = getMemoryContext(workspaceRoot);
+  const memoryContext = getMemoryContext(workspaceRoot as string);
 
   const instructions = [
     'You are the logic expert agent of lavalamp.',
@@ -28,13 +25,13 @@ export default createAgent((ctx) => {
     '- Help debug complicated nested logic, conditional gates, and runtime flows.',
   ];
 
-  if (memoryContext) {
+  if (memoryContext !== null) {
     instructions.push('', memoryContext);
   }
 
   return {
     compaction: {
-      keepRecentTokens: 8_000,
+      keepRecentTokens: 8000,
       reserveTokens: 20_000,
     },
     cwd: workspaceRoot,
@@ -43,10 +40,10 @@ export default createAgent((ctx) => {
     sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
     thinkingLevel: 'medium',
     tools: [
-      ...createMemoryTools(workspaceRoot).filter(
-        (t: any) => t.name === 'memory_read',
+      ...createMemoryTools(workspaceRoot as string).filter(
+        (t: ToolDefinition) => t.name === 'memory_read',
       ),
-      createRipgrepTool(workspaceRoot),
+      createRipgrepTool(workspaceRoot as string),
     ],
   };
 });

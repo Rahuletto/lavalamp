@@ -45,7 +45,7 @@ async function mcpCall(
   }
 
   const data = await resp.json();
-  if (data.error) {
+  if (data.error !== null && data.error !== undefined) {
     throw new Error(
       `MCP error: ${data.error.message ?? JSON.stringify(data.error)}`,
     );
@@ -67,8 +67,9 @@ function parseSseResponse(text: string): unknown {
       if (parsed.result !== undefined) {
         return parsed.result;
       }
-      if (parsed.error) {
-        throw new Error(parsed.error.message ?? JSON.stringify(parsed.error));
+      if (parsed.error !== null && parsed.error !== undefined) {
+        const errObj = parsed.error as Record<string, unknown>;
+        throw new Error(typeof errObj.message === 'string' ? errObj.message : JSON.stringify(errObj));
       }
     } catch {}
   }
@@ -106,25 +107,25 @@ export function createDeepWikiTool() {
 
       const repo = args.repo.trim().replace(/^https?:\/\/github\.com\//, '');
 
-      if (args.question) {
+      if (args.question !== null && args.question !== undefined) {
         const result = await mcpCall('tools/call', {
+          arguments: { question: args.question, repo },
           name: 'ask_question',
-          arguments: { repo, question: args.question },
         });
         return extractText(result);
       }
 
-      if (args.topic) {
+      if (args.topic !== null && args.topic !== undefined) {
         const result = await mcpCall('tools/call', {
-          name: 'read_wiki_contents',
           arguments: { repo, topic: args.topic },
+          name: 'read_wiki_contents',
         });
         return extractText(result);
       }
 
       const result = await mcpCall('tools/call', {
-        name: 'read_wiki_structure',
         arguments: { repo },
+        name: 'read_wiki_structure',
       });
       return extractText(result);
     },
@@ -134,15 +135,20 @@ export function createDeepWikiTool() {
 }
 
 function extractText(result: unknown): string {
-  if (!result || typeof result !== 'object') {
-    return String(result ?? '');
+  if (result === null || result === undefined) {
+    return '';
+  }
+  if (typeof result !== 'object') {
+    if (typeof result === 'string') {return result;}
+    if (typeof result === 'number' || typeof result === 'boolean') {return String(result);}
+    return '';
   }
   const r = result as Record<string, unknown>;
 
   if (Array.isArray(r.content)) {
     return r.content
-      .filter((c: any) => c.type === 'text')
-      .map((c: any) => c.text)
+      .filter((c: Record<string, unknown>) => c.type === 'text')
+      .map((c: Record<string, unknown>) => c.text)
       .join('\n');
   }
 

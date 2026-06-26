@@ -38,7 +38,7 @@ export function createTaskTools(store: TaskStore) {
       description: 'Mark a task as in-progress (being worked on) by its ID.',
       execute: async (args) => {
         const task = store.get(args.id);
-        if (!task) throw new Error(`Task #${args.id} not found`);
+        if (!task) {throw new Error(`Task #${args.id} not found`);}
         task.status = 'in_progress';
         task.updatedAt = new Date().toISOString();
         return `Started task #${task.id}: ${task.title}`;
@@ -73,8 +73,8 @@ export function createTaskTools(store: TaskStore) {
       description: 'Edit a task title or description by its ID.',
       execute: async (args) => {
         const task = store.edit(args.id, {
-          title: args.title,
           description: args.description,
+          title: args.title,
         });
         return `Updated task #${task.id}: ${task.title}${task.description ? ` — ${task.description}` : ''}`;
       },
@@ -97,14 +97,14 @@ export function createTaskTools(store: TaskStore) {
       description:
         'List all tasks with their status. Optionally filter by status: pending, in_progress, completed, skipped.',
       execute: async (args) => {
-        const status = args.status as any;
+        const status = args.status as 'pending' | 'in_progress' | 'completed' | 'skipped' | undefined;
         const tasks = store.list(status);
-        if (tasks.length === 0) return 'No tasks found.';
+        if (tasks.length === 0) {return 'No tasks found.';}
 
         const statusIcon: Record<string, string> = {
-          pending: '[ ]',
-          in_progress: '[>]',
           completed: '[x]',
+          in_progress: '[>]',
+          pending: '[ ]',
           skipped: '[-]',
         };
 

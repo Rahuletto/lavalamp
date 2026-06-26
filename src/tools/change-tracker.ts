@@ -9,7 +9,7 @@ export interface ChangeEntry {
 }
 
 export class ChangeTracker {
-  #stack: ChangeEntry[] = [];
+  readonly #stack: ChangeEntry[] = [];
 
   async record(label: string, paths: string[]): Promise<void> {
     const snapshots: FileSnapshot[] = [];

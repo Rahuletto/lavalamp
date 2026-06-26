@@ -193,9 +193,9 @@ export class CompletionManager {
               this.completionType === 'slash'
                 ? (SLASH_COMMAND_DESCRIPTIONS[this.completionList[i] ?? ''] ??
                   '')
-                : this.completionType === 'session'
+                : (this.completionType === 'session'
                   ? typeText
-                  : 'tool',
+                  : 'tool'),
             fg: COLORS.dim,
             id: this.ctx.nextId(),
             overflow: 'hidden',

@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'child_process';
+import type { ChildProcess } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
@@ -6,13 +6,13 @@ import * as v from 'valibot';
 export class LspClient {
   private child: ChildProcess | null = null;
   private idCounter = 0;
-  private pending = new Map<number, (res: any) => void>();
+  private readonly pending = new Map<number, (res: unknown) => void>();
   private buffer = '';
 
   constructor(
-    private workspaceRoot: string,
-    private command: string,
-    private args: string[],
+    private readonly workspaceRoot: string,
+    private readonly command: string,
+    private readonly args: string[],
   ) {}
 
   async start(): Promise<void> {
@@ -25,10 +25,12 @@ export class LspClient {
       stdio: ['pipe', 'pipe', 'ignore'],
     });
 
-    this.child.stdout?.on('data', (chunk: Buffer) => {
-      this.buffer += chunk.toString('utf8');
-      this.processBuffer();
-    });
+    if (this.child.stdout) {
+      this.child.stdout.on('data', (chunk: Buffer) => {
+        this.buffer += chunk.toString('utf8');
+        this.processBuffer();
+      });
+    }
 
     // Send initialize request
     await this.request('initialize', {
@@ -42,7 +44,7 @@ export class LspClient {
 
   private processBuffer() {
     while (true) {
-      const match = this.buffer.match(/^Content-Length: (\d+)\r\n\r\n/i);
+      const match = /^Content-Length: (\d+)\r\n\r\n/i.exec(this.buffer);
       if (!match) {
         break;
       }
@@ -63,9 +65,10 @@ export class LspClient {
       try {
         const message = JSON.parse(body);
         if (message.id !== undefined) {
-          const callback = this.pending.get(message.id);
+          const id = Number(message.id);
+          const callback = this.pending.get(id);
           if (callback) {
-            this.pending.delete(message.id);
+            this.pending.delete(id);
             callback(message);
           }
         }
@@ -73,7 +76,7 @@ export class LspClient {
     }
   }
 
-  request(method: string, params: any): Promise<any> {
+   async request(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
     return new Promise((resolve) => {
       const id = ++this.idCounter;
       this.pending.set(id, resolve);
@@ -86,7 +89,9 @@ export class LspClient {
       });
 
       const header = `Content-Length: ${Buffer.byteLength(payload, 'utf8')}\r\n\r\n`;
-      this.child?.stdin?.write(header + payload);
+      if (this.child !== null && this.child.stdin !== null) {
+        this.child.stdin.write(header + payload);
+      }
     });
   }
 
@@ -117,17 +122,26 @@ export function createLspTools(workspaceRoot: string) {
       try {
         await tsserver.start();
         const res = await tsserver.request('textDocument/hover', {
+          position: { character: args.character, line: args.line - 1 },
           textDocument: { uri: `file://${workspaceRoot}/${args.filePath}` },
-          position: { line: args.line - 1, character: args.character },
         });
-        if (res.error) return `LSP Error: ${res.error.message}`;
-        if (!res.result || !res.result.contents)
-          return 'No hover information found.';
-        return typeof res.result.contents === 'string'
-          ? res.result.contents
-          : JSON.stringify(res.result.contents);
-      } catch (err: any) {
-        return `LSP hover failed: ${err.message}`;
+        if (res.error !== null && res.error !== undefined) {return `LSP Error: ${(res.error as { message?: string }).message}`;}
+        if (
+          res.result === null ||
+          res.result === undefined ||
+          (Array.isArray(res.result) && res.result.length === 0) ||
+          (typeof res.result === 'object' && res.result !== null && !('contents' in res.result))
+        )
+          {return 'No hover information found.';}
+        const contents = typeof res.result === 'object' && res.result !== null && 'contents' in res.result
+          ? (res.result as Record<string, unknown>).contents
+          : undefined;
+        if (contents === null || contents === undefined) {return 'No hover information found.';}
+        return typeof contents === 'string'
+          ? contents
+          : JSON.stringify(contents);
+      } catch (error: unknown) {
+        return `LSP hover failed: ${error instanceof Error ? error.message : String(error)}`;
       }
     },
     name: 'lsp_hover',
@@ -140,19 +154,20 @@ export function createLspTools(workspaceRoot: string) {
       try {
         await tsserver.start();
         const res = await tsserver.request('textDocument/definition', {
+          position: { character: args.character, line: args.line - 1 },
           textDocument: { uri: `file://${workspaceRoot}/${args.filePath}` },
-          position: { line: args.line - 1, character: args.character },
         });
-        if (res.error) return `LSP Error: ${res.error.message}`;
+        if (res.error !== null && res.error !== undefined) {return `LSP Error: ${(res.error as { message?: string }).message}`;}
         if (
-          !res.result ||
+          res.result === null ||
+          res.result === undefined ||
           (Array.isArray(res.result) && res.result.length === 0)
         ) {
           return 'No definition location found.';
         }
         return JSON.stringify(res.result, null, 2);
-      } catch (err: any) {
-        return `LSP definition failed: ${err.message}`;
+      } catch (error: unknown) {
+        return `LSP definition failed: ${error instanceof Error ? error.message : String(error)}`;
       }
     },
     name: 'lsp_definition',

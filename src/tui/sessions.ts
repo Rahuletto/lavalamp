@@ -53,7 +53,7 @@ export function saveSession(
   existingId?: string,
 ): string {
   ensureSessionsDir();
-  const id = existingId || `session_${Date.now()}`;
+  const id = existingId ?? `session_${Date.now()}`;
   const file = path.join(SESSIONS_DIR, `${id}.json`);
   fs.writeFileSync(
     file,
@@ -97,7 +97,7 @@ export function loadSession(sessionId: string): Message[] | null {
   ensureSessionsDir();
   const file = path.join(SESSIONS_DIR, `${sessionId}.json`);
   try {
-    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const data: { messages?: Message[] } = JSON.parse(fs.readFileSync(file, 'utf8'));
     return data.messages ?? null;
   } catch {
     return null;

@@ -3,9 +3,9 @@ import * as fs from 'node:fs';
 import { Glob } from 'bun';
 
 export class BackupEngine {
-  private backupDir: string;
+  private readonly backupDir: string;
 
-  constructor(private workspaceRoot: string) {
+  constructor(private readonly workspaceRoot: string) {
     this.backupDir = path.join(workspaceRoot, '.lavalamp', 'backups');
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
@@ -79,7 +79,7 @@ export class BackupEngine {
       const folders = fs
         .readdirSync(this.backupDir)
         .map((name) => ({ name, time: Number.parseInt(name, 10) }))
-        .filter((entry) => !isNaN(entry.time))
+        .filter((entry) => !Number.isNaN(entry.time))
         .toSorted((a, b) => b.time - a.time);
 
       // Keep only top 8 backups

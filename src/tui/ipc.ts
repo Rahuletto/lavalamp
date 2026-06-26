@@ -1,5 +1,5 @@
-import { spawn } from 'child_process';
-import type { ChildProcess } from 'child_process';
+import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 
 export interface FlueEvent {
@@ -67,14 +67,14 @@ export type OnPermissionRequest = (request: PermissionRequestMsg) => void;
 export class FlueProcess {
   private child: ChildProcess | null = null;
   private ready = false;
-  private pending = new Map<string, PromptCallbacks>();
+  private readonly pending = new Map<string, PromptCallbacks>();
   private shutdownRequested = false;
   onPermissionRequest?: OnPermissionRequest;
 
   constructor(
-    private serverPath: string,
-    private cwd: string,
-    private agentName: string = 'build',
+    private readonly serverPath: string,
+    private readonly cwd: string,
+    private agentName = 'build',
   ) {}
 
   setAgentName(name: string) {
@@ -86,7 +86,7 @@ export class FlueProcess {
   }
 
   get pid(): number | undefined {
-    return this.child?.pid;
+    return this.child !== null ? this.child.pid : undefined;
   }
 
   sendPermissionResponse(
@@ -110,58 +110,61 @@ export class FlueProcess {
 
     this.child = spawn(process.execPath, [this.serverPath], {
       cwd: this.cwd,
-      env: {
-        ...process.env,
+      env: Object.assign({}, process.env, {
         FLUE_CLI_ID: instanceId,
         FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_TARGET: 'agent',
         FLUE_INTERNAL_CLI_IPC: '1',
         FLUE_MODE: 'local',
-      },
+      }),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
-    this.child.stdout?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      const lines = text.trimEnd().split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          continue;
+    if (this.child.stdout !== null) {
+      this.child.stdout.on('data', (data: Buffer) => {
+        const text = data.toString();
+        const lines = text.trimEnd().split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+          if (/\d+;rgb:/.test(trimmed)) {
+            continue;
+          }
+          if (trimmed.startsWith('ghostty')) {
+            continue;
+          }
+          if (/^\d+;\d+[A-Z]/.test(trimmed)) {
+            continue;
+          }
+          process.stderr.write(`  ${trimmed}\n`);
         }
-        if (/\d+;rgb:/.test(trimmed)) {
-          continue;
-        }
-        if (trimmed.startsWith('ghostty')) {
-          continue;
-        }
-        if (/^\d+;\d+[A-Z]/.test(trimmed)) {
-          continue;
-        }
-        process.stderr.write(`  ${trimmed}\n`);
-      }
-    });
+      });
+    }
 
-    this.child.stderr?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      const lines = text.trimEnd().split('\n');
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-          continue;
+    if (this.child.stderr !== null) {
+      this.child.stderr.on('data', (data: Buffer) => {
+        const text = data.toString();
+        const lines = text.trimEnd().split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) {
+            continue;
+          }
+          if (/\d+;rgb:/.test(trimmed)) {
+            continue;
+          }
+          if (trimmed.startsWith('ghostty')) {
+            continue;
+          }
+          if (/^\d+;\d+[A-Z]/.test(trimmed)) {
+            continue;
+          }
+          process.stderr.write(`  ${trimmed}\n`);
         }
-        if (/\d+;rgb:/.test(trimmed)) {
-          continue;
-        }
-        if (trimmed.startsWith('ghostty')) {
-          continue;
-        }
-        if (/^\d+;\d+[A-Z]/.test(trimmed)) {
-          continue;
-        }
-        process.stderr.write(`  ${trimmed}\n`);
-      }
-    });
+      });
+    }
 
     this.child.on('exit', (code) => {
       if (!this.ready) {
@@ -172,11 +175,11 @@ export class FlueProcess {
     await this.waitForReady(instanceId);
   }
 
-  private waitForReady(instanceId: string): Promise<void> {
+  private  async waitForReady(instanceId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        this.child?.kill('SIGTERM');
+        if (this.child !== null) { this.child.kill('SIGTERM'); }
         reject(new Error('Server did not become ready within 60s'));
       }, 60_000);
 
@@ -205,12 +208,16 @@ export class FlueProcess {
 
       const cleanup = () => {
         clearTimeout(timeout);
-        this.child?.off('message', onMessage);
-        this.child?.off('exit', onExit);
+        if (this.child !== null) {
+          this.child.off('message', onMessage);
+          this.child.off('exit', onExit);
+        }
       };
 
-      this.child?.on('message', onMessage);
-      this.child?.once('exit', onExit);
+      if (this.child !== null) {
+        this.child.on('message', onMessage);
+        this.child.once('exit', onExit);
+      }
     });
   }
 
@@ -236,7 +243,9 @@ export class FlueProcess {
     this.child.on('message', (raw: Record<string, unknown>) => {
       // Handle permission requests from the server
       if (raw.type === 'permission_request') {
-        this.onPermissionRequest?.(raw as unknown as PermissionRequestMsg);
+        if (this.onPermissionRequest !== null) {
+          this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
+        }
         return;
       }
 
@@ -245,27 +254,29 @@ export class FlueProcess {
       }
 
       if (raw.type === 'started') {
-        callbacks.onStarted?.();
+        if (callbacks.onStarted !== null) { callbacks.onStarted(); }
         return;
       }
 
       if (raw.type === 'event') {
-        callbacks.onEvent?.(raw.event as FlueEvent);
+        if (callbacks.onEvent !== null) { callbacks.onEvent(raw.event as FlueEvent); }
         return;
       }
 
       if (raw.type === 'result') {
         this.pending.delete(requestId);
-        callbacks.onResult?.(raw.result as FlueResult);
+        if (callbacks.onResult !== null) { callbacks.onResult(raw.result as FlueResult); }
         return;
       }
 
       if (raw.type === 'error') {
         this.pending.delete(requestId);
         const err = raw.error as { message?: string; details?: string };
-        callbacks.onError?.(
-          new Error(err.message ?? err.details ?? 'Unknown error'),
-        );
+        if (callbacks.onError !== null) {
+          callbacks.onError(
+            new Error(err.message ?? err.details ?? 'Unknown error'),
+          );
+        }
         return;
       }
     });
@@ -294,14 +305,14 @@ export class FlueProcess {
     this.shutdownRequested = true;
 
     this.rejectAll(new Error('Shutting down'));
-    this.child?.kill('SIGTERM');
+    if (this.child !== null) { this.child.kill('SIGTERM'); }
 
     await new Promise<void>((resolve) => {
-      if (!this.child) {
+      if (this.child === null) {
         return resolve();
       }
       const timeout = setTimeout(() => {
-        this.child?.kill('SIGKILL');
+        if (this.child !== null) { this.child.kill('SIGKILL'); }
         resolve();
       }, 5000);
       this.child.once('exit', () => {
@@ -316,7 +327,7 @@ export class FlueProcess {
 
   private rejectAll(error: Error) {
     for (const [id, cbs] of this.pending) {
-      cbs.onError?.(error);
+      if (cbs.onError !== null) { cbs.onError(error); }
       this.pending.delete(id);
     }
   }

@@ -85,18 +85,18 @@ export function resolveModelWithFallback(
   env: Record<string, string>,
 ): string {
   const override = env.LAVALAMP_MODEL;
-  if (override) {
+  if (override !== undefined) {
     return override;
   }
 
   const provider = detectProvider(preferred);
-  if (provider === 'anthropic' && !env.ANTHROPIC_API_KEY) {
+  if (provider === 'anthropic' && env.ANTHROPIC_API_KEY === undefined) {
     console.error(
       `[lavalamp] ANTHROPIC_API_KEY not set, falling back to default model`,
     );
     return BUILD_MODEL;
   }
-  if (provider === 'openai' && !env.OPENAI_API_KEY) {
+  if (provider === 'openai' && env.OPENAI_API_KEY === undefined) {
     console.error(
       `[lavalamp] OPENAI_API_KEY not set, falling back to default model`,
     );

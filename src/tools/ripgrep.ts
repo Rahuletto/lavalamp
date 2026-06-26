@@ -22,31 +22,23 @@ export function createRipgrepTool(cwd: string) {
     execute: async (args) => {
       const rgArgs = ['-n', '--no-heading', '--color=never'];
 
-      if (args.ignoreCase) rgArgs.push('-i');
-      if (args.wholeWord) rgArgs.push('-w');
-      if (args.multiline) rgArgs.push('-U');
-      if (args.context != null) rgArgs.push(`-C${args.context}`);
-      if (args.fileType) rgArgs.push('-t', args.fileType);
+      if (args.ignoreCase) {rgArgs.push('-i');}
+      if (args.wholeWord) {rgArgs.push('-w');}
+      if (args.multiline) {rgArgs.push('-U');}
+      if (args.context !== null) {rgArgs.push(`-C${args.context}`);}
+      if (args.fileType !== null && args.fileType !== undefined) {rgArgs.push('-t', args.fileType);}
 
       const limit = Math.min(args.maxResults ?? MAX_RESULTS, MAX_RESULTS);
-      rgArgs.push('--max-count', String(limit));
+      rgArgs.push('--max-count', String(limit), args.pattern);
 
-      rgArgs.push(args.pattern);
-
-      const searchPath = args.path ? `${cwd}/${args.path}` : cwd;
-      rgArgs.push(searchPath);
-
-      rgArgs.push('--glob', '!node_modules');
-      rgArgs.push('--glob', '!.git');
-      rgArgs.push('--glob', '!dist');
-      rgArgs.push('--glob', '!.next');
-      rgArgs.push('--glob', '!coverage');
+      const searchPath = args.path !== null && args.path !== undefined ? `${cwd}/${args.path}` : cwd;
+      rgArgs.push(searchPath, '--glob', '!node_modules', '--glob', '!.git', '--glob', '!dist', '--glob', '!.next', '--glob', '!coverage');
 
       try {
         const proc = Bun.spawn(['rg', ...rgArgs], {
-          stdout: 'pipe',
-          stderr: 'pipe',
           cwd,
+          stderr: 'pipe',
+          stdout: 'pipe',
         });
 
         const stdout = await new Response(proc.stdout).arrayBuffer();
@@ -76,8 +68,8 @@ export function createRipgrepTool(cwd: string) {
           const truncatedLines: string[] = [];
           let totalBytes = 0;
           for (const line of lines) {
-            const lineBytes = new TextEncoder().encode(line + '\n').byteLength;
-            if (totalBytes + lineBytes > MAX_OUTPUT_BYTES) break;
+            const lineBytes = new TextEncoder().encode(`${line  }\n`).byteLength;
+            if (totalBytes + lineBytes > MAX_OUTPUT_BYTES) {break;}
             truncatedLines.push(line);
             totalBytes += lineBytes;
           }
@@ -86,7 +78,7 @@ export function createRipgrepTool(cwd: string) {
 
         const resultLines = output.trim().split('\n');
         const stripped = resultLines.map((l) =>
-          l.startsWith(cwd + '/') ? l.slice(cwd.length + 1) : l,
+          l.startsWith(`${cwd  }/`) ? l.slice(cwd.length + 1) : l,
         );
 
         const header = `[ripgrep: ${stripped.length} matches]`;
@@ -95,9 +87,9 @@ export function createRipgrepTool(cwd: string) {
           : '';
 
         return [header, ...stripped].join('\n') + footer;
-      } catch (err) {
+      } catch (error) {
         throw new Error(
-          `ripgrep failed: ${err instanceof Error ? err.message : String(err)}. Is ripgrep installed? (brew install ripgrep)`,
+          `ripgrep failed: ${error instanceof Error ? error.message : String(error)}. Is ripgrep installed? (brew install ripgrep)`, { cause: error },
         );
       }
     },

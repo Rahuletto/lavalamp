@@ -3,16 +3,16 @@ import type { FlueEvent } from './ipc';
 import type { SubAgent } from './state';
 
 export class SubAgentManager {
-  private subs = new Map<string, SubAgent & { process: FlueProcess }>();
+  private readonly subs = new Map<string, SubAgent & { process: FlueProcess }>();
   private seq = 0;
 
   onUpdate?: (subs: SubAgent[]) => void;
   onAllComplete?: (summary: string) => void;
 
   constructor(
-    private serverPath: string,
-    private cwd: string,
-    private agentName = 'build',
+    private readonly serverPath: string,
+    private readonly cwd: string,
+    private readonly agentName = 'build',
   ) {}
 
   async deploy(queries: string[]): Promise<void> {
@@ -33,7 +33,7 @@ export class SubAgentManager {
       };
       this.subs.set(id, sub);
       this.emitUpdate();
-      this.run(sub).catch((error) => this.fail(sub, error));
+      this.run(sub).catch((error: unknown) => this.fail(sub, error));
     }
   }
 
@@ -59,7 +59,7 @@ export class SubAgentManager {
   }
 
   list(): SubAgent[] {
-    return [...this.subs.values()].map(({ process, ...sub }) => sub);
+    return [...this.subs.values()].map(({ process: _process, id, query, result, startTime, status, pid, error }) => ({ error, id, pid, query, result, startTime, status }));
   }
 
   isDeploying(): boolean {
@@ -120,11 +120,11 @@ export class SubAgentManager {
     const subs = this.list();
     const summary = subs.every((sub) => sub.status !== 'done')
       ? `## Research Results\n\nAll parallel research agents failed or were stopped.`
-      : `## Research Results\n\n${subs.map((sub, i) => `### Query ${i + 1}: ${sub.query}\n\n${sub.result?.trim() || `(${sub.status}${sub.error ? `: ${sub.error}` : ''})`}`).join('\n\n')}`;
-    this.onAllComplete?.(summary);
+      : `## Research Results\n\n${subs.map((sub, i) => `### Query ${i + 1}: ${sub.query}\n\n${sub.result !== null ? sub.result.trim() : `(${sub.status}${sub.error !== null ? `: ${sub.error}` : ''})`}`).join('\n\n')}`;
+    if (this.onAllComplete !== null) { this.onAllComplete(summary); }
   }
 
   private emitUpdate(): void {
-    this.onUpdate?.(this.list());
+    if (this.onUpdate !== null) { this.onUpdate(this.list()); }
   }
 }

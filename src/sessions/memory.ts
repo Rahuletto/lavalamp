@@ -39,7 +39,7 @@ export function appendMemory(cwd: string, entry: string): void {
 
 export function getMemoryContext(cwd: string): string | null {
   const memory = loadMemory(cwd);
-  if (!memory || memory.trim().length === 0) {
+  if (memory === null || memory.trim().length === 0) {
     return null;
   }
   return `## Project Memory (from previous sessions)\n\n${memory}`;

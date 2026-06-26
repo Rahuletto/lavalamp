@@ -1,8 +1,7 @@
-import { createAgent, registerProvider } from '@flue/runtime';
+import { createAgent } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession,
   createSessionsTool,
   createSessionContextTool,
   createPullSessionTool,
@@ -24,17 +23,13 @@ export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
   const taskStore = new TaskStore();
 
-  const session = startSession(
-    ctx.payload?.prompt ?? 'interactive',
-    workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
-  );
+  
 
   const model = resolveModelWithFallback(
     BUILD_MODEL,
     ctx.env as Record<string, string>,
   );
-  const memoryContext = getMemoryContext(workspaceRoot);
+  const memoryContext = getMemoryContext(workspaceRoot as string);
 
   const instructions = [
     'You are the plan agent of lavalamp.',
@@ -62,13 +57,13 @@ export default createAgent((ctx) => {
     '- `codebase_semantic_search` → search codebase semantically',
   ];
 
-  if (memoryContext) {
+  if (memoryContext !== null) {
     instructions.push('', memoryContext);
   }
 
   return {
     compaction: {
-      keepRecentTokens: 8_000,
+      keepRecentTokens: 8000,
       reserveTokens: 20_000,
     },
     cwd: workspaceRoot,
@@ -80,21 +75,21 @@ export default createAgent((ctx) => {
       createSessionsTool(),
       createSessionContextTool(),
       createPullSessionTool(),
-      ...createMemoryTools(workspaceRoot),
+      ...createMemoryTools(workspaceRoot as string),
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
       createCodebaseSearchTool({
-        root: workspaceRoot,
-        resolve: (p: string) => `${workspaceRoot}/${p}`,
         assertAccessible: () => {},
         assertInside: () => {},
         isInside: () => true,
-      } as any),
+        resolve: (p: string) => `${workspaceRoot}/${p}`,
+        root: workspaceRoot,
+      } as Parameters<typeof createCodebaseSearchTool>[0]),
       createOracleTool(),
-      createRipgrepTool(workspaceRoot),
-      createLoadSkillTool(workspaceRoot),
-      createCodebaseSemanticSearchTool(workspaceRoot),
+      createRipgrepTool(workspaceRoot as string),
+      createLoadSkillTool(workspaceRoot as string),
+      createCodebaseSemanticSearchTool(workspaceRoot as string),
       ...createTaskTools(taskStore),
     ],
   };

@@ -76,7 +76,7 @@ function matchArgPattern(
   args: Record<string, unknown>,
   pattern?: string,
 ): boolean {
-  if (!pattern) {
+  if (pattern === undefined) {
     return true;
   }
   const argsStr = JSON.stringify(args);
@@ -119,7 +119,6 @@ export function saveRules(cwd: string, rules: PermissionRule[]): void {
   const dirPath = join(cwd, '.lavalamp');
   const rulesPath = join(dirPath, 'rules.json');
   if (!existsSync(dirPath)) {
-    const { mkdirSync } = require('node:fs');
     mkdirSync(dirPath, { recursive: true });
   }
   writeFileSync(rulesPath, JSON.stringify({ rules }, null, 2));

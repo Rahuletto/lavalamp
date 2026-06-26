@@ -3,11 +3,11 @@ import * as path from 'node:path';
 
 export function stripCwd(fullPath: string, cwd: string): string {
   if (fullPath.startsWith(cwd)) {
-    return '~' + fullPath.slice(cwd.length);
+    return `~${  fullPath.slice(cwd.length)}`;
   }
   const home = process.env.HOME ?? '';
   if (home && fullPath.startsWith(home)) {
-    return '~' + fullPath.slice(home.length);
+    return `~${  fullPath.slice(home.length)}`;
   }
   return fullPath;
 }
@@ -26,23 +26,27 @@ export function summarizeToolArgs(
       const cmd =
         typeof args.command === 'string'
           ? args.command
-          : typeof args.cmd === 'string'
+          : (typeof args.cmd === 'string'
             ? args.cmd
-            : '';
+            : '');
       return cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
     }
     case 'read': {
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : typeof args.path === 'string'
+          : (typeof args.path === 'string'
             ? args.path
-            : '';
+            : '');
       const rest: string[] = [];
-      if (args.offset !== undefined && args.offset !== null) {
+      if (typeof args.offset === 'number') {
+        rest.push(`offset=${args.offset}`);
+      } else if (typeof args.offset === 'string') {
         rest.push(`offset=${args.offset}`);
       }
-      if (args.limit !== undefined && args.limit !== null) {
+      if (typeof args.limit === 'number') {
+        rest.push(`limit=${args.limit}`);
+      } else if (typeof args.limit === 'string') {
         rest.push(`limit=${args.limit}`);
       }
       return (
@@ -54,9 +58,9 @@ export function summarizeToolArgs(
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : typeof args.path === 'string'
+          : (typeof args.path === 'string'
             ? args.path
-            : '';
+            : '');
       return stripCwd(fp, cwd);
     }
     case 'glob':
@@ -71,7 +75,7 @@ export function summarizeToolArgs(
       const parts: string[] = [];
       for (const [, v] of entries.slice(0, 2)) {
         if (typeof v === 'string') {
-          parts.push(v.length > 30 ? v.slice(0, 27) + '...' : v);
+          parts.push(v.length > 30 ? `${v.slice(0, 27)  }...` : v);
         } else if (typeof v === 'number' || typeof v === 'boolean') {
           parts.push(String(v));
         }
@@ -90,34 +94,34 @@ export function summarizeToolResult(
   const raw =
     typeof result === 'string'
       ? result
-      : result != null
+      : (result !== null
         ? JSON.stringify(result)
-        : '';
-  const parsed = (() => {
+        : '');
+  const parsed: unknown = (() => {
     try {
-      return JSON.parse(raw);
+      return JSON.parse(raw) as unknown;
     } catch {
       return null;
     }
   })();
-  const str = parsed && typeof parsed === 'string' ? parsed : raw;
+  const str = parsed !== null && typeof parsed === 'string' ? parsed : raw;
 
   switch (name) {
     case 'deploy_parallel_subs': {
       const marker =
-        parsed && typeof parsed === 'object'
+        parsed !== null && typeof parsed === 'object'
           ? (parsed as Record<string, unknown>)
           : null;
-      const queries = Array.isArray(marker?.queries) ? marker.queries : [];
-      return `${queries.length || 'parallel'} research agent${queries.length === 1 ? '' : 's'} deployed`;
+      const queries = marker !== null && Array.isArray(marker.queries) ? marker.queries : [];
+      return `${queries.length > 0 ? queries.length : 'parallel'} research agent${queries.length === 1 ? '' : 's'} deployed`;
     }
     case 'read': {
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : typeof args.path === 'string'
+          : (typeof args.path === 'string'
             ? args.path
-            : '';
+            : '');
       const lines = str.split('\n').length;
       return `${stripCwd(fp, cwd)} (${lines} lines)`;
     }
@@ -131,13 +135,13 @@ export function summarizeToolResult(
     case 'write':
     case 'edit':
     case 'patch': {
-      if (parsed && typeof parsed === 'object' && parsed !== null) {
+      if (parsed !== null && typeof parsed === 'object') {
         const p = parsed as Record<string, unknown>;
-        if (p.file_path) {
-          return `wrote ${stripCwd(String(p.file_path), cwd)}`;
+        if (typeof p.file_path === 'string') {
+          return `wrote ${stripCwd(p.file_path, cwd)}`;
         }
-        if (p.path) {
-          return `wrote ${stripCwd(String(p.path), cwd)}`;
+        if (typeof p.path === 'string') {
+          return `wrote ${stripCwd(p.path, cwd)}`;
         }
       }
       return str.slice(0, 60) || 'done';
@@ -146,7 +150,7 @@ export function summarizeToolResult(
       if (Array.isArray(parsed)) {
         return `${parsed.length} files found`;
       }
-      if (Array.isArray(str.match(/\n/))) {
+      if (Array.isArray(/\n/.exec(str))) {
         return `${str.split('\n').length} files`;
       }
       return str.slice(0, 60) || 'no matches';
@@ -207,7 +211,7 @@ export function generateSyntheticDiff(
 }
 
 export function extractResultText(result: unknown): string {
-  if (result == null) {
+  if (result === null) {
     return '';
   }
   if (typeof result === 'string') {
@@ -219,7 +223,7 @@ export function extractResultText(result: unknown): string {
     }
   }
   if (typeof result !== 'object') {
-    return String(result);
+    return String(result as string | number | boolean | symbol | bigint);
   }
   if (Array.isArray(result)) {
     return result.map((item) => extractResultText(item)).join('\n');
@@ -232,11 +236,11 @@ export function extractResultText(result: unknown): string {
     const parts: string[] = [];
     for (const item of obj.content) {
       if (
-        item &&
+        item !== null &&
         typeof item === 'object' &&
-        typeof (item as any).text === 'string'
+        typeof (item as { text: unknown }).text === 'string'
       ) {
-        parts.push((item as any).text);
+        parts.push((item as { text: string }).text);
       }
     }
     if (parts.length > 0) {
@@ -327,9 +331,9 @@ export function extractFilePaths(text: string, cwd: string): string[] {
     const cleaned = m.replace(/[`,\s]*$/, '');
     const full = cleaned.startsWith('~')
       ? (process.env.HOME ?? '') + cleaned.slice(1)
-      : cleaned.startsWith('./') || cleaned.startsWith('../')
+      : (cleaned.startsWith('./') || cleaned.startsWith('../')
         ? path.resolve(cwd, cleaned)
-        : cleaned;
+        : cleaned);
     if (fs.existsSync(full)) {
       found.add(full);
     }

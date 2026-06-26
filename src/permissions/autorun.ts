@@ -41,7 +41,6 @@ export function saveAutorun(cwd: string): void {
   const dirPath = join(cwd, '.lavalamp');
   const autorunPath = getAutorunPath(cwd);
   if (!existsSync(dirPath)) {
-    const { mkdirSync } = require('node:fs');
     mkdirSync(dirPath, { recursive: true });
   }
   const entries = [...autorunMap.values()];
@@ -54,13 +53,13 @@ export function setAutorun(
   action: PermissionAction,
   pattern?: string,
 ): void {
-  const key = pattern ? `${tool}:${pattern}` : tool;
+  const key = pattern !== undefined ? `${tool}:${pattern}` : tool;
   autorunMap.set(key, { action, pattern, timestamp: Date.now(), tool });
   saveAutorun(cwd);
 }
 
 export function clearAutorun(cwd: string, tool?: string): void {
-  if (tool) {
+  if (tool !== undefined) {
     autorunMap.delete(tool);
   } else {
     autorunMap.clear();
@@ -95,7 +94,7 @@ export function getMatchingAutorun(
     if (entry.tool !== tool) {
       continue;
     }
-    if (entry.pattern && argsText.includes(entry.pattern)) {
+    if (entry.pattern !== undefined && argsText.includes(entry.pattern)) {
       return entry;
     }
   }

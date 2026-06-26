@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   mkdirSync,
   rmSync,
@@ -15,7 +15,7 @@ function findShell(): string {
   const { platform } = process;
 
   const envShell = process.env.SHELL;
-  if (envShell && existsSync(envShell)) {
+  if (envShell !== undefined && existsSync(envShell)) {
     return envShell;
   }
 
@@ -52,13 +52,13 @@ interface ShellResult {
   timedOut: boolean;
 }
 
-function execCommand(
+ async function execCommand(
   command: string,
   options: ExecOptions = {},
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
-    const env = { ...process.env, ...options.env };
+    const env = Object.assign({}, process.env, options.env);
 
     const isWin = process.platform === 'win32';
     const shellCmd = isWin ? 'cmd.exe' : detectedShell;
@@ -103,7 +103,7 @@ function execCommand(
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (options.timeoutMs && options.timeoutMs > 0) {
+    if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
       timer = setTimeout(() => {
         timedOut = true;
         killed = true;
@@ -179,22 +179,22 @@ async function gatedWriteFile(
   writeFileSync(resolved, content);
 }
 
-export function local(options: { env?: Record<string, string> } = {}) {
+export function local(_options: { env?: Record<string, string> } = {}) {
   return {
     createSessionEnv: async () => {
       const cwd = process.cwd();
       return {
         cwd,
-        exec: (command: string, opts: ExecOptions = {}) =>
+        exec:  async (command: string, opts: ExecOptions = {}) =>
           gatedExec(command, opts, cwd),
         async exists(path: string): Promise<boolean> {
           return existsSync(resolve(cwd, path));
         },
         async mkdir(path: string, options?: { recursive?: boolean }) {
-          mkdirSync(resolve(cwd, path), { recursive: options?.recursive });
+          mkdirSync(resolve(cwd, path), { recursive: options !== undefined ? options.recursive : undefined });
         },
         async readFile(path: string): Promise<string> {
-          return readFileSync(resolve(cwd, path), 'utf-8');
+          return readFileSync(resolve(cwd, path), 'utf8');
         },
         async readFileBuffer(path: string): Promise<Uint8Array> {
           return new Uint8Array(readFileSync(resolve(cwd, path)));
@@ -210,17 +210,17 @@ export function local(options: { env?: Record<string, string> } = {}) {
           options?: { recursive?: boolean; force?: boolean },
         ) {
           rmSync(resolve(cwd, path), {
-            recursive: options?.recursive,
-            force: options?.force,
+            force: options !== undefined ? options.force : undefined,
+            recursive: options !== undefined ? options.recursive : undefined,
           });
         },
         async stat(path: string) {
           const s = statSync(resolve(cwd, path));
           return {
-            size: s.size,
-            mtime: s.mtime,
-            isFile: s.isFile(),
             isDirectory: s.isDirectory(),
+            isFile: s.isFile(),
+            mtime: s.mtime,
+            size: s.size,
           };
         },
         async writeFile(

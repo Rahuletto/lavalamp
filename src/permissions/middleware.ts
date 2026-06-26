@@ -25,9 +25,7 @@ let rules: PermissionRule[] | null = null;
 let ipcListenerInstalled = false;
 
 function ensureRules(cwd: string): PermissionRule[] {
-  if (!rules) {
-    rules = loadRules(cwd);
-  }
+  rules ??= loadRules(cwd);
   return rules;
 }
 
@@ -37,7 +35,7 @@ function installIpcListener(): void {
   }
   ipcListenerInstalled = true;
   process.on('message', (raw: unknown) => {
-    if (!raw || typeof raw !== 'object') {
+    if (raw === null || raw === undefined || typeof raw !== 'object') {
       return;
     }
     const msg = raw as Record<string, unknown>;
@@ -87,10 +85,10 @@ export async function requestPermission(
   const action = checkPermission(toolName, args, cwd);
 
   if (action === 'allow') {
-    return { type: 'permission_response', requestId: '', decision: 'allow' };
+    return { decision: 'allow', requestId: '', type: 'permission_response' };
   }
   if (action === 'deny') {
-    return { type: 'permission_response', requestId: '', decision: 'deny' };
+    return { decision: 'deny', requestId: '', type: 'permission_response' };
   }
 
   // action === 'ask' — send IPC request to TUI
@@ -117,7 +115,7 @@ export async function requestPermission(
     }, 30_000);
 
     // Clean up timeout when resolved normally
-    const origResolve = pending.get(requestId)!.resolve;
+    const origResolve = resolve;
     pending.set(requestId, {
       resolve: (resp) => {
         clearTimeout(timeout);
