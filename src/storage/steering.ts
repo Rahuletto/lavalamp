@@ -1,5 +1,5 @@
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 export interface SteeringRule {
   pattern: string;
@@ -15,12 +15,19 @@ export function steerPrompt(prompt: string, workspaceRoot: string): string {
       if (!fs.existsSync(parent)) {
         fs.mkdirSync(parent, { recursive: true });
       }
-      fs.writeFileSync(configPath, JSON.stringify([
-        {
-          pattern: 'test',
-          instructions: 'Ensure all tests are written using bun:test.',
-        }
-      ], null, 2));
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify(
+          [
+            {
+              instructions: 'Ensure all tests are written using bun:test.',
+              pattern: 'test',
+            },
+          ],
+          null,
+          2,
+        ),
+      );
     } catch {}
     return prompt;
   }

@@ -25,52 +25,53 @@ It is:
 - **An editor of the user's real filesystem.** The agent operates on the actual project
   in `cwd` via Flue's `local()` sandbox — real files, real shell, real git.
 
-**Why this is a good idea, concretely:** Flue (our agent framework) ships *native*
+**Why this is a good idea, concretely:** Flue (our agent framework) ships _native_
 Cloudflare Workers AI and AI Gateway providers — we are not bolting Workers AI on with a
 generic OpenAI shim. The harness engine underneath Flue (Pi) already solved the single
 hardest problem in coding agents — reliable edits across weak models — and publishes that
-as a reusable package. So a huge fraction of "build a great coding agent" is *assembly*
+as a reusable package. So a huge fraction of "build a great coding agent" is _assembly_
 of strong existing parts, and our differentiation budget goes to: the **agent roster**,
 the **permission model**, the **plugin system**, **Cloudflare login**, and the **TUI**.
 
 **What we are NOT building (v1 non-goals):**
+
 - No hosted/SaaS/multi-tenant mode (that reintroduces Durable Objects + D1 + cred storage).
-- No Cloudflare Sandbox *containers* (they need Workers Paid; out of scope — `local()` is our sandbox).
+- No Cloudflare Sandbox _containers_ (they need Workers Paid; out of scope — `local()` is our sandbox).
 - No worktree isolation, no "run in the cloud" offload — both are post-v1.
 
 ---
 
 ## 2. Glossary / mental model
 
-| Term            | Meaning in this project                                                                 |
-| --------------- | --------------------------------------------------------------------------------------- |
-| **Harness**     | The whole local app: TUI + embedded Flue runtime + tools + permissions + plugins.       |
-| **Flue**        | `@flue/runtime` — the agent framework. Gives us agents, sessions, tools, skills, subagents, sandboxes, providers, MCP. |
-| **Pi**          | The harness engine *under* Flue (`@earendil-works/pi-agent-core`, a.k.a. oh-my-pi). Source of hash-anchored edits. |
-| **Agent**       | A `createAgent(...)` default-exported from `src/agents/<name>.ts`. Addressable by name + instance `id`. |
-| **Profile**     | A `defineAgentProfile(...)` — reusable behavior (model/instructions/tools) used as a baseline or a **subagent**. |
-| **Subagent**    | A profile listed in `subagents:` that the parent delegates to via `session.task(msg, { agent })`. Runs in **isolated context**. |
-| **Session**     | A named conversation inside a harness (`harness.session()`), backed by durable history. |
-| **Tool**        | A `defineTool({...})` the model can call. Our file/shell/lsp capabilities are tools.     |
-| **Skill**       | A `SKILL.md` of reusable instructions, loaded on demand. Guides behavior; adds no code.  |
-| **Sandbox**     | Where tools run. We use `local()` = host fs + shell. (Default = in-memory just-bash.)    |
-| **Plugin**      | A user/3rd-party package that contributes tools, subagents, skills, commands, hooks, MCP servers, providers, or permission rules. |
-| **Spectacle**   | Our vision-bridge subagent: turns images into text for models that can't see (see §7).   |
+| Term          | Meaning in this project                                                                                                           |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Harness**   | The whole local app: TUI + embedded Flue runtime + tools + permissions + plugins.                                                 |
+| **Flue**      | `@flue/runtime` — the agent framework. Gives us agents, sessions, tools, skills, subagents, sandboxes, providers, MCP.            |
+| **Pi**        | The harness engine _under_ Flue (`@earendil-works/pi-agent-core`, a.k.a. oh-my-pi). Source of hash-anchored edits.                |
+| **Agent**     | A `createAgent(...)` default-exported from `src/agents/<name>.ts`. Addressable by name + instance `id`.                           |
+| **Profile**   | A `defineAgentProfile(...)` — reusable behavior (model/instructions/tools) used as a baseline or a **subagent**.                  |
+| **Subagent**  | A profile listed in `subagents:` that the parent delegates to via `session.task(msg, { agent })`. Runs in **isolated context**.   |
+| **Session**   | A named conversation inside a harness (`harness.session()`), backed by durable history.                                           |
+| **Tool**      | A `defineTool({...})` the model can call. Our file/shell/lsp capabilities are tools.                                              |
+| **Skill**     | A `SKILL.md` of reusable instructions, loaded on demand. Guides behavior; adds no code.                                           |
+| **Sandbox**   | Where tools run. We use `local()` = host fs + shell. (Default = in-memory just-bash.)                                             |
+| **Plugin**    | A user/3rd-party package that contributes tools, subagents, skills, commands, hooks, MCP servers, providers, or permission rules. |
+| **Spectacle** | Our vision-bridge subagent: turns images into text for models that can't see (see §7).                                            |
 
 ---
 
 ## 3. The stack (locked-in choices)
 
-| Layer            | Choice                                              | Why this and not the alternative                                                            |
-| ---------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Agent framework  | **Flue** `@flue/runtime` (Node target)              | Native `cloudflare-workers-ai` + `cloudflare-ai-gateway` providers, durable sessions, subagents, skills, sandboxes, MCP — all the primitives we'd otherwise hand-build. |
-| Harness engine   | **Pi** (under Flue) + **`@oh-my-pi/hashline`**      | Hash-anchored edits = the single biggest edit-reliability lever. MIT, standalone, pluggable IO. Do **not** reinvent. |
-| TUI              | **Rezi** (`rezitui.dev`)                            | Native C render engine ("Zireael"), constraint layout, no hardcoded FPS cap. ⚠️ Zireael is **alpha** — pin exact versions, isolate behind an interface. |
-| Models (default) | **Cloudflare Workers AI** (`@cf/...`)               | User runs on their own CF account; deep first-class Flue support; generous free tier; one provider for many open models. |
-| Models (BYOK)    | Anthropic / OpenAI / OpenRouter / etc.              | Same `registerProvider` mechanism; lets power users route reasoning to stronger closed models. |
-| Login            | **Wrangler OAuth reuse** (primary) + **manual paste** (fallback) | No public "Sign in with Cloudflare" exists; see §8.                              |
-| Schemas          | **valibot**                                         | What Flue's `defineTool` expects.                                                            |
-| Runtime / PM     | **Node ≥ 22.19** / **bun**                          | Flue's engine requirement; `bun.lock` is committed.                                          |
+| Layer            | Choice                                                           | Why this and not the alternative                                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent framework  | **Flue** `@flue/runtime` (Node target)                           | Native `cloudflare-workers-ai` + `cloudflare-ai-gateway` providers, durable sessions, subagents, skills, sandboxes, MCP — all the primitives we'd otherwise hand-build. |
+| Harness engine   | **Pi** (under Flue) + **`@oh-my-pi/hashline`**                   | Hash-anchored edits = the single biggest edit-reliability lever. MIT, standalone, pluggable IO. Do **not** reinvent.                                                    |
+| TUI              | **Rezi** (`rezitui.dev`)                                         | Native C render engine ("Zireael"), constraint layout, no hardcoded FPS cap. ⚠️ Zireael is **alpha** — pin exact versions, isolate behind an interface.                 |
+| Models (default) | **Cloudflare Workers AI** (`@cf/...`)                            | User runs on their own CF account; deep first-class Flue support; generous free tier; one provider for many open models.                                                |
+| Models (BYOK)    | Anthropic / OpenAI / OpenRouter / etc.                           | Same `registerProvider` mechanism; lets power users route reasoning to stronger closed models.                                                                          |
+| Login            | **Wrangler OAuth reuse** (primary) + **manual paste** (fallback) | No public "Sign in with Cloudflare" exists; see §8.                                                                                                                     |
+| Schemas          | **valibot**                                                      | What Flue's `defineTool` expects.                                                                                                                                       |
+| Runtime / PM     | **Node ≥ 22.19** / **bun**                                       | Flue's engine requirement; `bun.lock` is committed.                                                                                                                     |
 
 ---
 
@@ -85,7 +86,7 @@ since we're "just building a harness," we go with the **single-process, in-proce
   `observe(...)` for the event stream that paints the UI). One binary, no localhost HTTP
   hop, lowest latency, simplest mental model. This is what a local harness should be.
 - **SDK-over-HTTP (REJECTED for v1):** running Flue as a localhost Hono server and pointing
-  a `@flue/sdk` client at it. That's the *hosted* shape — useful only if we later add a
+  a `@flue/sdk` client at it. That's the _hosted_ shape — useful only if we later add a
   daemon mode or remote sessions. "TUI-as-SDK" just meant "the TUI is a client of a Flue
   server"; we are **not** doing that. We keep `@flue/sdk` in our back pocket only for an
   optional future daemon.
@@ -181,10 +182,12 @@ This is ground truth — checked against the installed `.d.mts` files, not guess
   registerProvider('cloudflare-workers-ai', {
     apiKey: userToken,
     baseUrl: `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`, // account-scoped
-    headers: { /* optional */ },
+    headers: {
+      /* optional */
+    },
   });
   ```
-  `registerApiProvider(...)` exists for registering a *brand-new wire protocol*; we won't need it for Cloudflare.
+  `registerApiProvider(...)` exists for registering a _brand-new wire protocol_; we won't need it for Cloudflare.
 - **Tools**: `defineTool({ name, description, parameters: v.object({...}), execute: async (args) => string })`.
   Args are validated against the valibot schema before `execute` runs.
 - **Subagents**: `defineAgentProfile({ name, description, instructions, model?, tools?, skills? })` →
@@ -201,15 +204,15 @@ This is ground truth — checked against the installed `.d.mts` files, not guess
   `session.fs` (read/write without recording in transcript).
 - **Events / hooks**: `observe(subscriber)` returns an unsubscribe fn and streams typed
   `FlueEvent`s: `text_delta · thinking_delta · tool_start · tool · task_start · task ·
-  message_start · message_end · turn_* · operation_* · agent_* · idle · log · compaction_* ·
-  submission_settled`. This is **read-only** (telemetry + TUI rendering). A pre-tool **veto**
+message_start · message_end · turn_* · operation_* · agent_* · idle · log · compaction_* ·
+submission_settled`. This is **read-only** (telemetry + TUI rendering). A pre-tool **veto**
   (block/ask before a tool runs) is **our** permission engine wrapping each tool's `execute`,
   not a Flue feature.
 - **MCP**: `connectMcpServer(name, { url, transport, headers, ... })` returns a connection
   whose tools become available to the agent. This is the backbone of plugin-contributed MCP servers.
 - **Result shaping**: `session.prompt(text, { result: v.object({...}) })` returns validated typed data.
 
-**Flue gives us primitives; the *harness* (commands, hooks, permission veto, plugin loader,
+**Flue gives us primitives; the _harness_ (commands, hooks, permission veto, plugin loader,
 model-capability routing, login) is ours to build on top.**
 
 ---
@@ -220,15 +223,15 @@ All IDs below are **verified exact** against the Cloudflare catalog (June 2026).
 prefix with the provider: `cloudflare-workers-ai/<id>` (or `cloudflare-ai-gateway/...`).
 Every assignment is a **default** — users/plugins can override per agent.
 
-| Agent         | Default model                                  | Exact Workers AI ID                                  | Vision | Why this model                                                                 |
-| ------------- | ---------------------------------------------- | ---------------------------------------------------- | :----: | ----------------------------------------------------------------------------- |
-| **build**     | Kimi K2.7 Code (Moonshot)                      | `@cf/moonshotai/kimi-k2.7-code`                      |  ✅   | Frontier 1T params, 262k ctx, multi-turn **tool calling**, structured outputs, **vision** — purpose-built for agentic coding. Vision means build itself rarely needs spectacle. |
-| **plan**      | GLM-5.2 (Zhipu)                                | `@cf/zai-org/glm-5.2`                                |  ❌   | Flagship **agentic coding** model w/ reasoning — excellent at decomposing work into a spec. No vision → uses spectacle for image input. |
-| **explore**   | GLM-4.7-Flash (Zhipu)                          | `@cf/zai-org/glm-4.7-flash`                          |  ❌   | Fast + cheap, **131k ctx** (read lots of files), function calling. Ideal for high-volume read-only mapping where we don't want to burn the premium model. |
-| **research**  | Llama 3.3 70B fp8 fast (Meta)                  | `@cf/meta/llama-3.3-70b-instruct-fp8-fast`          |  ❌   | Fast, solid general reasoning + function calling for summarizing docs/web findings. |
-| **review**    | GPT-OSS-120B (OpenAI)                           | `@cf/openai/gpt-oss-120b`                            |  ❌   | Strong **reasoning** for adversarial code review (Amp-Oracle role). Read-only; slower/stronger is the point. Alt: `@cf/nvidia/nemotron-3-120b-a12b`. |
-| **spectacle** | Llama 4 Scout 17B (Meta)                        | `@cf/meta/llama-4-scout-17b-16e-instruct`           |  ✅   | Natively multimodal, strong image understanding + describes well. Light fallback: `@cf/meta/llama-3.2-11b-vision-instruct`; budget: `@cf/llava-hf/llava-1.5-7b-hf`. |
-| **scribe** (post-v1) | Llama 3.2 3B (Meta)                     | `@cf/meta/llama-3.2-3b-instruct`                     |  ❌   | Tiny/cheap for commit messages, changelog, doc tidy-ups.                      |
+| Agent                | Default model                 | Exact Workers AI ID                        | Vision | Why this model                                                                                                                                                                  |
+| -------------------- | ----------------------------- | ------------------------------------------ | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **build**            | Kimi K2.7 Code (Moonshot)     | `@cf/moonshotai/kimi-k2.7-code`            |   ✅   | Frontier 1T params, 262k ctx, multi-turn **tool calling**, structured outputs, **vision** — purpose-built for agentic coding. Vision means build itself rarely needs spectacle. |
+| **plan**             | GLM-5.2 (Zhipu)               | `@cf/zai-org/glm-5.2`                      |   ❌   | Flagship **agentic coding** model w/ reasoning — excellent at decomposing work into a spec. No vision → uses spectacle for image input.                                         |
+| **explore**          | GLM-4.7-Flash (Zhipu)         | `@cf/zai-org/glm-4.7-flash`                |   ❌   | Fast + cheap, **131k ctx** (read lots of files), function calling. Ideal for high-volume read-only mapping where we don't want to burn the premium model.                       |
+| **research**         | Llama 3.3 70B fp8 fast (Meta) | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |   ❌   | Fast, solid general reasoning + function calling for summarizing docs/web findings.                                                                                             |
+| **review**           | GPT-OSS-120B (OpenAI)         | `@cf/openai/gpt-oss-120b`                  |   ❌   | Strong **reasoning** for adversarial code review (Amp-Oracle role). Read-only; slower/stronger is the point. Alt: `@cf/nvidia/nemotron-3-120b-a12b`.                            |
+| **spectacle**        | Llama 4 Scout 17B (Meta)      | `@cf/meta/llama-4-scout-17b-16e-instruct`  |   ✅   | Natively multimodal, strong image understanding + describes well. Light fallback: `@cf/meta/llama-3.2-11b-vision-instruct`; budget: `@cf/llava-hf/llava-1.5-7b-hf`.             |
+| **scribe** (post-v1) | Llama 3.2 3B (Meta)           | `@cf/meta/llama-3.2-3b-instruct`           |   ❌   | Tiny/cheap for commit messages, changelog, doc tidy-ups.                                                                                                                        |
 
 **Tier-swap menu** (let users trade quality↔cost/latency per agent):
 
@@ -278,8 +281,8 @@ There is **no** public "Sign in with Cloudflare" OAuth product (like Sign in wit
 `dash.cloudflare.com/oauth2/auth` is real OAuth2 + PKCE but is Cloudflare's **internal**
 server for a hardcoded Wrangler client (localhost redirect only). We do **not** impersonate it.
 
-1. **Primary — Wrangler OAuth reuse.** Shell out to the *real* `wrangler login --scopes
-   account:read ai:write offline_access`. The consent screen correctly says "Wrangler"
+1. **Primary — Wrangler OAuth reuse.** Shell out to the _real_ `wrangler login --scopes
+account:read ai:write offline_access`. The consent screen correctly says "Wrangler"
    because the user genuinely uses Wrangler. Then read the OAuth token Wrangler writes to
    its local config dir. ⚠️ That on-disk format is an **undocumented implementation detail**
    — version-sniff it, treat as best-effort, always fall through to (2).
@@ -305,7 +308,7 @@ endpoint before saving. Never commit, never log, never put in a skill/plugin dir
   already does format-on-write + diagnostics; otherwise it's just `bash npm run lint`.
 - **lsp** = real per-language servers (typescript-language-server / pyright / gopls /
   rust-analyzer …) for hover/defs/refs/rename/diagnostics. Wire **oxc** (`oxlint --lsp`) as
-  a *fast supplementary* diagnostics + autofix source for JS/TS only — it is **not** a
+  a _fast supplementary_ diagnostics + autofix source for JS/TS only — it is **not** a
   tsserver replacement (no hover/defs/refs).
 - **task** = subagent dispatch (`session.task`).
 
@@ -341,27 +344,41 @@ is ours** — it loads manifests, merges contributions, and enforces permissions
 export default definePlugin({
   name: 'acme-postgres',
   version: '1.0.0',
-  tools:       [/* defineTool(...) */],          // model-callable capabilities
-  subagents:   [/* defineAgentProfile(...) */],  // new specialized agents
-  skills:      [/* imported SKILL.md refs */],   // reusable instructions
-  commands:    [/* TUI slash commands: /deploy, /migrate ... */],
-  hooks:       { onSessionStart, onBeforeTool, onAfterTool, onSessionEnd },
-  providers:   [/* { id, apiKey, baseUrl } → registerProvider */],
-  mcpServers:  [/* { name, url, transport } → connectMcpServer */],
-  permissions: [/* default permission rules this plugin ships with */],
+  tools: [
+    /* defineTool(...) */
+  ], // model-callable capabilities
+  subagents: [
+    /* defineAgentProfile(...) */
+  ], // new specialized agents
+  skills: [
+    /* imported SKILL.md refs */
+  ], // reusable instructions
+  commands: [
+    /* TUI slash commands: /deploy, /migrate ... */
+  ],
+  hooks: { onSessionStart, onBeforeTool, onAfterTool, onSessionEnd },
+  providers: [
+    /* { id, apiKey, baseUrl } → registerProvider */
+  ],
+  mcpServers: [
+    /* { name, url, transport } → connectMcpServer */
+  ],
+  permissions: [
+    /* default permission rules this plugin ships with */
+  ],
 });
 ```
 
-| Contribution    | Backed by                          | Notes                                                              |
-| --------------- | ---------------------------------- | ----------------------------------------------------------------- |
-| `tools`         | Flue `defineTool`                  | Merged into the active agent's tools; name-collision → error.      |
-| `subagents`     | Flue `defineAgentProfile`          | Become available to `session.task`.                               |
-| `skills`        | Flue skills                        | Same loading path as bundled/local/global skills.                 |
-| `commands`      | **ours** (TUI)                     | Slash commands that expand to a prompt/skill/task.                |
-| `hooks`         | **ours**, `onBefore/AfterTool` veto via permission layer; read-only hooks via `observe()` | Lifecycle interception. |
-| `providers`     | Flue `registerProvider`            | Add a model provider (e.g. a private gateway).                    |
-| `mcpServers`    | Flue `connectMcpServer`            | The interop standard — wraps any MCP server's tools.             |
-| `permissions`   | **ours** (permission engine)       | Plugin-shipped default rules (still overridable by the user).    |
+| Contribution  | Backed by                                                                                 | Notes                                                         |
+| ------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `tools`       | Flue `defineTool`                                                                         | Merged into the active agent's tools; name-collision → error. |
+| `subagents`   | Flue `defineAgentProfile`                                                                 | Become available to `session.task`.                           |
+| `skills`      | Flue skills                                                                               | Same loading path as bundled/local/global skills.             |
+| `commands`    | **ours** (TUI)                                                                            | Slash commands that expand to a prompt/skill/task.            |
+| `hooks`       | **ours**, `onBefore/AfterTool` veto via permission layer; read-only hooks via `observe()` | Lifecycle interception.                                       |
+| `providers`   | Flue `registerProvider`                                                                   | Add a model provider (e.g. a private gateway).                |
+| `mcpServers`  | Flue `connectMcpServer`                                                                   | The interop standard — wraps any MCP server's tools.          |
+| `permissions` | **ours** (permission engine)                                                              | Plugin-shipped default rules (still overridable by the user). |
 
 **Loading order & precedence:** bundled (ours) → user-global (`~/.config/lavalamp/plugins/`)
 → project-local (`<cwd>/.lavalamp/plugins/`). Later layers can override earlier ones; user
@@ -416,41 +433,45 @@ This is the checklist that nothing modern gets forgotten. **Legend:** ✅ native
 🚫 out of scope (with reason). Verified against `@flue/runtime@1.0.0-beta.2`.
 
 ### Model & inference
-| Feature | Status | Notes |
-| ------- | :----: | ----- |
-| Multi-provider / BYOK | ✅ | `registerProvider` / `registerApiProvider`. |
-| Workers AI native provider | ✅ | `cloudflare-workers-ai/@cf/...` (+ `cloudflare-ai-gateway/...`). |
-| Streaming responses | ✅ | `observe()` → `text_delta`. |
-| Reasoning / thinking display | ✅ | `thinking_delta` events + `thinkingLevel` config. |
-| Structured / JSON output | ✅ | `prompt(text, { result: v.object(...) })`; `give_up` → `ResultUnavailableError`. |
-| Vision / multimodal input | ✅ | `PromptImage`; **+ `spectacle` bridge** for blind models (§7). |
-| Token & cost tracking | ✅ | `PromptUsage` (input/output/cache/cost) → 🔨 TUI usage meter. |
-| Context compaction / auto-summarize | ✅ | `compaction` config + `session.compact()`; overflow recovery built in. |
-| AI Gateway (cache / spend limits / logs) | ✅ | opt-in, on the user's own account (M9). |
-| Prompt caching | ⚠️ | provider-dependent; surfaced in usage. Don't assume on Workers AI. |
-| Embeddings + reranking (RAG code search) | ⏳ | `@cf/baai/bge-m3` + `@cf/baai/bge-reranker-base`. |
-| Voice (STT / TTS) | ⏳ | optional flourish: `@cf/openai/whisper-*`, `@cf/deepgram/aura-2-en`, `@cf/myshell/melotts`. |
+
+| Feature                                  | Status | Notes                                                                                       |
+| ---------------------------------------- | :----: | ------------------------------------------------------------------------------------------- |
+| Multi-provider / BYOK                    |   ✅   | `registerProvider` / `registerApiProvider`.                                                 |
+| Workers AI native provider               |   ✅   | `cloudflare-workers-ai/@cf/...` (+ `cloudflare-ai-gateway/...`).                            |
+| Streaming responses                      |   ✅   | `observe()` → `text_delta`.                                                                 |
+| Reasoning / thinking display             |   ✅   | `thinking_delta` events + `thinkingLevel` config.                                           |
+| Structured / JSON output                 |   ✅   | `prompt(text, { result: v.object(...) })`; `give_up` → `ResultUnavailableError`.            |
+| Vision / multimodal input                |   ✅   | `PromptImage`; **+ `spectacle` bridge** for blind models (§7).                              |
+| Token & cost tracking                    |   ✅   | `PromptUsage` (input/output/cache/cost) → 🔨 TUI usage meter.                               |
+| Context compaction / auto-summarize      |   ✅   | `compaction` config + `session.compact()`; overflow recovery built in.                      |
+| AI Gateway (cache / spend limits / logs) |   ✅   | opt-in, on the user's own account (M9).                                                     |
+| Prompt caching                           |   ⚠️   | provider-dependent; surfaced in usage. Don't assume on Workers AI.                          |
+| Embeddings + reranking (RAG code search) |   ⏳   | `@cf/baai/bge-m3` + `@cf/baai/bge-reranker-base`.                                           |
+| Voice (STT / TTS)                        |   ⏳   | optional flourish: `@cf/openai/whisper-*`, `@cf/deepgram/aura-2-en`, `@cf/myshell/melotts`. |
 
 ### Tools & capabilities
-| Feature | Status | Notes |
-| ------- | :----: | ----- |
-| Core file/shell tools | ✅/🔨 | sandbox provides shell; we author `read/write/edit/rename/list/glob/grep`. |
-| Hash-anchored reliable edits | 🔨 | wrap **`@oh-my-pi/hashline`**. |
-| LSP diagnostics / navigation | 🔨 | real language servers + oxc (M7). |
-| Custom tools | ✅ | `defineTool`. |
-| **MCP tools** | ✅ | `connectMcpServer` → tools named `mcp__<server>__<tool>`. |
-| **MCP resources / prompts** | 🔨/⚠️ | Flue adapts **tools only** — resources/prompts are **not** native. Build a thin layer only if a plugin needs them. |
-| Web search / fetch | 🔨 | `research` agent tools. |
-| TODO / task-list tool | 🔨 | Claude-Code-style in-session task tracking. |
-| Background / async / durable tasks | ✅ | durable submissions (`submission_settled`); survives process restart. |
+
+| Feature                            | Status | Notes                                                                                                              |
+| ---------------------------------- | :----: | ------------------------------------------------------------------------------------------------------------------ |
+| Core file/shell tools              | ✅/🔨  | sandbox provides shell; we author `read/write/edit/rename/list/glob/grep`.                                         |
+| Hash-anchored reliable edits       |   🔨   | wrap **`@oh-my-pi/hashline`**.                                                                                     |
+| LSP diagnostics / navigation       |   🔨   | real language servers + oxc (M7).                                                                                  |
+| Custom tools                       |   ✅   | `defineTool`.                                                                                                      |
+| **MCP tools**                      |   ✅   | `connectMcpServer` → tools named `mcp__<server>__<tool>`.                                                          |
+| **MCP resources / prompts**        | 🔨/⚠️  | Flue adapts **tools only** — resources/prompts are **not** native. Build a thin layer only if a plugin needs them. |
+| Web search / fetch                 |   🔨   | `research` agent tools.                                                                                            |
+| TODO / task-list tool              |   🔨   | Claude-Code-style in-session task tracking.                                                                        |
+| Background / async / durable tasks |   ✅   | durable submissions (`submission_settled`); survives process restart.                                              |
 
 ### Agents & orchestration
+
 | Subagents / delegation | ✅ | `session.task(msg, { agent })`, isolated context. |
 | Agent profiles | ✅ | `defineAgentProfile`. |
 | Plan / spec mode + approval gate | 🔨 | `spec-mode` skill + TUI gate. |
 | Multi-agent roster | 🔨 | build · explore · plan · research · review · spectacle (§7, PLAN §4). |
 
 ### Context & memory
+
 | AGENTS.md auto-load | ✅ | read from `<cwd>` at init. |
 | Skills (bundled + global + project) | ✅ | 3-layer loading (§12). |
 | @-file / @-symbol mentions in prompts | 🔨 | TUI affordance that inlines file contents/refs. |
@@ -458,6 +479,7 @@ This is the checklist that nothing modern gets forgotten. **Legend:** ✅ native
 | Rules / steering (conditional context) | 🔨 | inject context only when a pattern matches the turn. |
 
 ### Sessions & UX
+
 | Durable sessions + history | ✅ | SQLite-backed; survives restart. |
 | Resume / continue / multiple named sessions | ✅ | `FlueSessions.get/create/delete`. |
 | Checkpoint / undo / rewind | 🔨 | git snapshot per turn → revert. (Important modern feature.) |
@@ -468,12 +490,14 @@ This is the checklist that nothing modern gets forgotten. **Legend:** ✅ native
 | Headless / non-interactive (CI, pipe, stdin) | ✅/🔨 | `flue run` exists; we add a TUI-less mode for scripting. |
 
 ### Safety & control
+
 | Permission engine (allow/ask/deny/delegate) | 🔨 | §10. |
 | Sandbox levels | ✅ | `local()` (host) / virtual just-bash. |
 | Self-protection (no self-allowlisting) | 🔨 | config/cred/plugin files never auto-writable. |
 | Safety classification (optional) | 🧩 | `@cf/meta/llama-guard-3-8b` as an opt-in guardrail. |
 
 ### Extensibility & observability
+
 | Plugin system | 🔨 | `definePlugin` (§11). |
 | MCP servers | ✅ | `connectMcpServer`. |
 | Hooks (lifecycle) | ✅/🔨 | read-only via `observe()`; veto via permission layer. |
@@ -482,12 +506,13 @@ This is the checklist that nothing modern gets forgotten. **Legend:** ✅ native
 | Event stream for tooling | ✅ | `observe()` (25+ event types). |
 
 ### Out of scope (stated honestly)
-| Item | Why |
-| ---- | --- |
-| Channels (Slack/Discord/GitHub/Linear/… bots) | Flue *has* these, but they're **hosted-server ingress**, not a local TUI feature. 🚫 v1. |
-| Cloudflare Sandbox **containers** | needs Workers Paid. 🚫 v1 (post-v1 "run in cloud"). |
-| Worktree isolation | ⏳ post-v1. |
-| Multi-tenant / SaaS / daemon-over-HTTP | non-goal; would reintroduce DO/D1 + cred vault. |
+
+| Item                                          | Why                                                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Channels (Slack/Discord/GitHub/Linear/… bots) | Flue _has_ these, but they're **hosted-server ingress**, not a local TUI feature. 🚫 v1. |
+| Cloudflare Sandbox **containers**             | needs Workers Paid. 🚫 v1 (post-v1 "run in cloud").                                      |
+| Worktree isolation                            | ⏳ post-v1.                                                                              |
+| Multi-tenant / SaaS / daemon-over-HTTP        | non-goal; would reintroduce DO/D1 + cred vault.                                          |
 
 ---
 

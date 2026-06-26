@@ -1,1 +1,6 @@
-export { WorkspaceGuard, WorkspaceViolation, SecretFileAccessError, isSecretFile } from './workspace';
+export {
+  WorkspaceGuard,
+  WorkspaceViolation,
+  SecretFileAccessError,
+  isSecretFile,
+} from './workspace';

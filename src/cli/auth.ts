@@ -9,9 +9,11 @@ async function main() {
     case 'login': {
       try {
         const creds = await login();
-        console.log(`[lavalamp] Logged in as account ${creds.accountId.slice(0, 8)}...`);
-      } catch (e: any) {
-        console.error(`[lavalamp] Login failed: ${e.message}`);
+        console.log(
+          `[lavalamp] Logged in as account ${creds.accountId.slice(0, 8)}...`,
+        );
+      } catch (error: any) {
+        console.error(`[lavalamp] Login failed: ${error.message}`);
         process.exit(1);
       }
       break;
@@ -26,16 +28,21 @@ async function main() {
     case 'status': {
       const creds = loadCredentials();
       if (creds) {
-        console.log(`[lavalamp] Logged in as account ${creds.accountId.slice(0, 8)}...`);
+        console.log(
+          `[lavalamp] Logged in as account ${creds.accountId.slice(0, 8)}...`,
+        );
       } else {
-        console.log('[lavalamp] Not logged in. Run "lavalamp login" to authenticate.');
+        console.log(
+          '[lavalamp] Not logged in. Run "lavalamp login" to authenticate.',
+        );
       }
       break;
     }
 
-    default:
+    default: {
       console.error('Usage: lavalamp {login|logout|status}');
       process.exit(1);
+    }
   }
 }
 

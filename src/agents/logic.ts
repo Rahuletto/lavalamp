@@ -10,10 +10,13 @@ export default createAgent((ctx) => {
   const session = startSession(
     ctx.payload?.prompt ?? 'interactive',
     workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>)
+    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
   );
 
-  const model = resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>);
+  const model = resolveModelWithFallback(
+    BUILD_MODEL,
+    ctx.env as Record<string, string>,
+  );
   const memoryContext = getMemoryContext(workspaceRoot);
 
   const instructions = [
@@ -30,18 +33,20 @@ export default createAgent((ctx) => {
   }
 
   return {
-    model,
+    compaction: {
+      keepRecentTokens: 8_000,
+      reserveTokens: 20_000,
+    },
+    cwd: workspaceRoot,
     instructions: instructions.join('\n'),
+    model,
+    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    thinkingLevel: 'medium',
     tools: [
-      ...createMemoryTools(workspaceRoot).filter((t: any) => t.name === 'memory_read'),
+      ...createMemoryTools(workspaceRoot).filter(
+        (t: any) => t.name === 'memory_read',
+      ),
       createRipgrepTool(workspaceRoot),
     ],
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    cwd: workspaceRoot,
-    thinkingLevel: 'medium',
-    compaction: {
-      reserveTokens: 20_000,
-      keepRecentTokens: 8_000,
-    },
   };
 });

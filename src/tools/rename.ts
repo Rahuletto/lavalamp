@@ -3,16 +3,14 @@ import { defineTool } from '@flue/runtime';
 import type { ChangeTracker } from './change-tracker';
 
 const renameSchema = v.object({
-  oldPath: v.string(),
   newPath: v.string(),
+  oldPath: v.string(),
 });
 
 export function createRenameTool(tracker: ChangeTracker) {
   return defineTool({
-    name: 'rename',
     description:
       'Rename or move a file within the workspace. Explicit so it can be permission-gated separately from bash mv.',
-    parameters: renameSchema,
     execute: async (args) => {
       const file = Bun.file(args.oldPath);
       if (!(await file.exists())) {
@@ -29,5 +27,7 @@ export function createRenameTool(tracker: ChangeTracker) {
 
       return `Renamed ${args.oldPath} -> ${args.newPath}`;
     },
+    name: 'rename',
+    parameters: renameSchema,
   });
 }

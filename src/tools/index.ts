@@ -6,7 +6,3 @@ export { createLoadSkillTool } from './skills';
 export { createCodebaseSemanticSearchTool } from './codebase-semantic-search';
 export { createLspTools } from './lsp-client';
 export { createQueryExpertTool } from './query-expert';
-
-
-
-

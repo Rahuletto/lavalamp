@@ -1,4 +1,5 @@
-import { spawn, ChildProcess } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import { spawn } from 'node:child_process';
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
 
@@ -8,10 +9,16 @@ export class LspClient {
   private pending = new Map<number, (res: any) => void>();
   private buffer = '';
 
-  constructor(private workspaceRoot: string, private command: string, private args: string[]) {}
+  constructor(
+    private workspaceRoot: string,
+    private command: string,
+    private args: string[],
+  ) {}
 
   async start(): Promise<void> {
-    if (this.child) return;
+    if (this.child) {
+      return;
+    }
 
     this.child = spawn(this.command, this.args, {
       cwd: this.workspaceRoot,
@@ -25,9 +32,9 @@ export class LspClient {
 
     // Send initialize request
     await this.request('initialize', {
+      capabilities: {},
       processId: process.pid,
       rootUri: `file://${this.workspaceRoot}`,
-      capabilities: {},
     });
 
     await this.request('initialized', {});
@@ -36,14 +43,21 @@ export class LspClient {
   private processBuffer() {
     while (true) {
       const match = this.buffer.match(/^Content-Length: (\d+)\r\n\r\n/i);
-      if (!match) break;
+      if (!match) {
+        break;
+      }
 
       const headerLength = match[0].length;
-      const contentLength = parseInt(match[1], 10);
+      const contentLength = Number.parseInt(match[1], 10);
 
-      if (this.buffer.length < headerLength + contentLength) break;
+      if (this.buffer.length < headerLength + contentLength) {
+        break;
+      }
 
-      const body = this.buffer.slice(headerLength, headerLength + contentLength);
+      const body = this.buffer.slice(
+        headerLength,
+        headerLength + contentLength,
+      );
       this.buffer = this.buffer.slice(headerLength + contentLength);
 
       try {
@@ -65,8 +79,8 @@ export class LspClient {
       this.pending.set(id, resolve);
 
       const payload = JSON.stringify({
-        jsonrpc: '2.0',
         id,
+        jsonrpc: '2.0',
         method,
         params,
       });
@@ -86,18 +100,19 @@ export class LspClient {
 
 // Define schemas and tools
 const lspHoverSchema = v.object({
+  character: v.number(),
   filePath: v.string(),
   line: v.number(),
-  character: v.number(),
 });
 
 export function createLspTools(workspaceRoot: string) {
-  const tsserver = new LspClient(workspaceRoot, 'typescript-language-server', ['--stdio']);
+  const tsserver = new LspClient(workspaceRoot, 'typescript-language-server', [
+    '--stdio',
+  ]);
 
   const hoverTool = defineTool({
-    name: 'lsp_hover',
-    description: 'Query types and hover information at a specific file coordinate via LSP.',
-    parameters: lspHoverSchema,
+    description:
+      'Query types and hover information at a specific file coordinate via LSP.',
     execute: async (args) => {
       try {
         await tsserver.start();
@@ -106,7 +121,8 @@ export function createLspTools(workspaceRoot: string) {
           position: { line: args.line - 1, character: args.character },
         });
         if (res.error) return `LSP Error: ${res.error.message}`;
-        if (!res.result || !res.result.contents) return 'No hover information found.';
+        if (!res.result || !res.result.contents)
+          return 'No hover information found.';
         return typeof res.result.contents === 'string'
           ? res.result.contents
           : JSON.stringify(res.result.contents);
@@ -114,12 +130,12 @@ export function createLspTools(workspaceRoot: string) {
         return `LSP hover failed: ${err.message}`;
       }
     },
+    name: 'lsp_hover',
+    parameters: lspHoverSchema,
   });
 
   const definitionTool = defineTool({
-    name: 'lsp_definition',
     description: 'Find definitions of a symbol at a specific coordinate.',
-    parameters: lspHoverSchema,
     execute: async (args) => {
       try {
         await tsserver.start();
@@ -128,7 +144,10 @@ export function createLspTools(workspaceRoot: string) {
           position: { line: args.line - 1, character: args.character },
         });
         if (res.error) return `LSP Error: ${res.error.message}`;
-        if (!res.result || (Array.isArray(res.result) && res.result.length === 0)) {
+        if (
+          !res.result ||
+          (Array.isArray(res.result) && res.result.length === 0)
+        ) {
           return 'No definition location found.';
         }
         return JSON.stringify(res.result, null, 2);
@@ -136,6 +155,8 @@ export function createLspTools(workspaceRoot: string) {
         return `LSP definition failed: ${err.message}`;
       }
     },
+    name: 'lsp_definition',
+    parameters: lspHoverSchema,
   });
 
   return [hoverTool, definitionTool];

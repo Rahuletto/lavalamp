@@ -1,8 +1,10 @@
-import { spawnSync } from 'child_process';
-import * as path from 'path';
-import * as fs from 'fs';
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
-export async function pasteImageFromClipboard(workspaceRoot: string): Promise<string | null> {
+export async function pasteImageFromClipboard(
+  workspaceRoot: string,
+): Promise<string | null> {
   const attachmentsDir = path.join(workspaceRoot, '.lavalamp', 'attachments');
   if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
@@ -23,7 +25,11 @@ export async function pasteImageFromClipboard(workspaceRoot: string): Promise<st
       // Extract PNG image
       const script = `write (the clipboard as «class PNGf») to (open for access POSIX file "${destPath}" with write permission)`;
       const res = spawnSync('osascript', ['-e', script]);
-      if (res.status === 0 && fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+      if (
+        res.status === 0 &&
+        fs.existsSync(destPath) &&
+        fs.statSync(destPath).size > 0
+      ) {
         return destPath;
       }
     } else if (process.platform === 'win32') {
@@ -31,17 +37,31 @@ export async function pasteImageFromClipboard(workspaceRoot: string): Promise<st
         Add-Type -AssemblyName System.Windows.Forms;
         if ([System.Windows.Forms.Clipboard]::ContainsImage()) {
           $img = [System.Windows.Forms.Clipboard]::GetImage();
-          $img.Save('${destPath.replace(/\\/g, '\\\\')}', [System.Drawing.Imaging.ImageFormat]::Png);
+          $img.Save('${destPath.replaceAll(/\\/g, String.raw`\\`)}', [System.Drawing.Imaging.ImageFormat]::Png);
         }
       `;
       const res = spawnSync('powershell', ['-Command', psScript]);
-      if (res.status === 0 && fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+      if (
+        res.status === 0 &&
+        fs.existsSync(destPath) &&
+        fs.statSync(destPath).size > 0
+      ) {
         return destPath;
       }
     } else if (process.platform === 'linux') {
       // Check for xclip
-      const resXclip = spawnSync('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']);
-      if (resXclip.status === 0 && resXclip.stdout && resXclip.stdout.length > 0) {
+      const resXclip = spawnSync('xclip', [
+        '-selection',
+        'clipboard',
+        '-t',
+        'image/png',
+        '-o',
+      ]);
+      if (
+        resXclip.status === 0 &&
+        resXclip.stdout &&
+        resXclip.stdout.length > 0
+      ) {
         fs.writeFileSync(destPath, resXclip.stdout);
         return destPath;
       }

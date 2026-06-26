@@ -2,16 +2,14 @@ import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
 
 const doomLoopSchema = v.object({
-  issue: v.string(),
   attempts: v.optional(v.string()),
+  issue: v.string(),
 });
 
 export function createDoomLoopTool() {
   return defineTool({
-    name: 'doom_loop',
     description:
       'Call this when you are stuck in a loop, repeating the same failing approach, or unable to make progress. Provides structured recovery steps to break out of the pattern.',
-    parameters: doomLoopSchema,
     execute: async (args) => {
       const attempts = args.attempts ?? 'unknown';
       return [
@@ -31,5 +29,7 @@ export function createDoomLoopTool() {
         'Do not repeat any approach that has already failed.',
       ].join('\n');
     },
+    name: 'doom_loop',
+    parameters: doomLoopSchema,
   });
 }

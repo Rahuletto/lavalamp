@@ -106,12 +106,16 @@
     "import/no-namespace": "off",
     "import/prefer-default-export": "off",
     "import/no-default-export": "off",
-    "import/extensions": ["warn", "ignorePackages", {
-      "ts": "never",
-      "tsx": "never",
-      "js": "never",
-      "jsx": "never"
-    }],
+    "import/extensions": [
+      "warn",
+      "ignorePackages",
+      {
+        "ts": "never",
+        "tsx": "never",
+        "js": "never",
+        "jsx": "never"
+      }
+    ],
 
     "typescript/no-unsafe-assignment": "off",
     "typescript/no-unsafe-member-access": "off",
@@ -133,10 +137,13 @@
     "typescript/no-floating-promises": ["error", { "ignoreVoid": true }],
     "typescript/no-misused-promises": "error",
     "typescript/no-unnecessary-type-assertion": "error",
-    "typescript/strict-boolean-expressions": ["error", {
-      "allowNullableBoolean": true,
-      "allowNullableObject": true
-    }],
+    "typescript/strict-boolean-expressions": [
+      "error",
+      {
+        "allowNullableBoolean": true,
+        "allowNullableObject": true
+      }
+    ],
     "typescript/no-non-null-asserted-optional-chain": "error",
     "typescript/no-import-type-side-effects": "error",
     "typescript/switch-exhaustiveness-check": "error",
@@ -149,7 +156,10 @@
     "typescript/no-unnecessary-template-expression": "error",
     "typescript/no-useless-constructor": "error",
     "typescript/no-dynamic-delete": "error",
-    "typescript/consistent-type-imports": ["error", { "prefer": "type-imports" }],
+    "typescript/consistent-type-imports": [
+      "error",
+      { "prefer": "type-imports" }
+    ],
     "typescript/no-confusing-non-null-assertion": "error",
     "typescript/unified-signatures": "error",
     "typescript/prefer-for-of": "error",

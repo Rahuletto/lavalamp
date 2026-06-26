@@ -1,5 +1,5 @@
-import type { AppState, Message, SubAgent, Task, ToolCall } from "../state";
-import { createInitialState } from "../state";
+import type { AppState, Message, SubAgent, Task, ToolCall } from '../state';
+import { createInitialState } from '../state';
 
 export class AppStateStore {
   private readonly state: AppState;

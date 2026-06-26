@@ -2,8 +2,12 @@ import { createAgent, registerProvider } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession, createSessionsTool, createSessionContextTool, createPullSessionTool,
-  getMemoryContext, createMemoryTools,
+  startSession,
+  createSessionsTool,
+  createSessionContextTool,
+  createPullSessionTool,
+  getMemoryContext,
+  createMemoryTools,
 } from '../sessions';
 import {
   ChangeTracker,
@@ -16,9 +20,6 @@ import {
   createLspTools,
   createQueryExpertTool,
 } from '../tools';
-
-
-
 
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
@@ -74,7 +75,9 @@ export default createAgent((ctx) => {
    */
   function gate(tool: any): any {
     const orig = tool.execute;
-    if (typeof orig !== 'function') return tool;
+    if (typeof orig !== 'function') {
+      return tool;
+    }
     return {
       ...tool,
       execute: wrapToolExecute(tool.name, orig, workspaceRoot),
@@ -84,10 +87,13 @@ export default createAgent((ctx) => {
   const session = startSession(
     ctx.payload?.prompt ?? 'interactive',
     workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>)
+    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
   );
 
-  const model = resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>);
+  const model = resolveModelWithFallback(
+    BUILD_MODEL,
+    ctx.env as Record<string, string>,
+  );
 
   const memoryContext = getMemoryContext(workspaceRoot);
 
@@ -185,8 +191,15 @@ export default createAgent((ctx) => {
   }
 
   return {
-    model,
+    compaction: {
+      keepRecentTokens: 8_000,
+      reserveTokens: 20_000,
+    },
+    cwd: workspaceRoot,
     instructions: instructions.join('\n'),
+    model,
+    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    thinkingLevel: 'medium',
     tools: [
       gate(createRenameTool(tracker)),
       gate(createUndoTool(tracker)),
@@ -200,7 +213,13 @@ export default createAgent((ctx) => {
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
-      createCodebaseSearchTool({ root: workspaceRoot, resolve: (p: string) => `${workspaceRoot}/${p}`, assertAccessible: () => {}, assertInside: () => {}, isInside: () => true } as any),
+      createCodebaseSearchTool({
+        root: workspaceRoot,
+        resolve: (p: string) => `${workspaceRoot}/${p}`,
+        assertAccessible: () => {},
+        assertInside: () => {},
+        isInside: () => true,
+      } as any),
       gate(createOracleTool()),
       gate(createDoomLoopTool()),
       createRipgrepTool(workspaceRoot),
@@ -211,12 +230,5 @@ export default createAgent((ctx) => {
       createQueryExpertTool(workspaceRoot),
       ...createTaskTools(taskStore),
     ],
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    cwd: workspaceRoot,
-    thinkingLevel: 'medium',
-    compaction: {
-      reserveTokens: 20_000,
-      keepRecentTokens: 8_000,
-    },
   };
 });

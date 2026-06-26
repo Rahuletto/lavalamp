@@ -16,9 +16,9 @@ export class ChangeTracker {
     for (const p of paths) {
       const file = Bun.file(p);
       if (await file.exists()) {
-        snapshots.push({ path: p, content: await file.text() });
+        snapshots.push({ content: await file.text(), path: p });
       } else {
-        snapshots.push({ path: p, content: null });
+        snapshots.push({ content: null, path: p });
       }
     }
     this.#stack.push({ label, snapshots });
@@ -41,7 +41,7 @@ export class ChangeTracker {
       }
     }
 
-    return { restored, label: entry.label };
+    return { label: entry.label, restored };
   }
 
   get history(): string[] {

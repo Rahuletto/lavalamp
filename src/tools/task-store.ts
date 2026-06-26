@@ -14,11 +14,11 @@ export class TaskStore {
   create(title: string, description?: string): Task {
     const now = new Date().toISOString();
     const task: Task = {
-      id: this.#nextId++,
-      title,
-      description: description ?? '',
-      status: 'pending',
       createdAt: now,
+      description: description ?? '',
+      id: this.#nextId++,
+      status: 'pending',
+      title,
       updatedAt: now,
     };
     this.#tasks.push(task);
@@ -27,7 +27,9 @@ export class TaskStore {
 
   complete(id: number): Task {
     const task = this.#tasks.find((t) => t.id === id);
-    if (!task) throw new Error(`Task #${id} not found`);
+    if (!task) {
+      throw new Error(`Task #${id} not found`);
+    }
     task.status = 'completed';
     task.updatedAt = new Date().toISOString();
     return task;
@@ -35,7 +37,9 @@ export class TaskStore {
 
   skip(id: number): Task {
     const task = this.#tasks.find((t) => t.id === id);
-    if (!task) throw new Error(`Task #${id} not found`);
+    if (!task) {
+      throw new Error(`Task #${id} not found`);
+    }
     task.status = 'skipped';
     task.updatedAt = new Date().toISOString();
     return task;
@@ -43,22 +47,32 @@ export class TaskStore {
 
   edit(id: number, patch: { title?: string; description?: string }): Task {
     const task = this.#tasks.find((t) => t.id === id);
-    if (!task) throw new Error(`Task #${id} not found`);
-    if (patch.title !== undefined) task.title = patch.title;
-    if (patch.description !== undefined) task.description = patch.description;
+    if (!task) {
+      throw new Error(`Task #${id} not found`);
+    }
+    if (patch.title !== undefined) {
+      task.title = patch.title;
+    }
+    if (patch.description !== undefined) {
+      task.description = patch.description;
+    }
     task.updatedAt = new Date().toISOString();
     return task;
   }
 
   delete(id: number): Task {
     const idx = this.#tasks.findIndex((t) => t.id === id);
-    if (idx === -1) throw new Error(`Task #${id} not found`);
+    if (idx === -1) {
+      throw new Error(`Task #${id} not found`);
+    }
     const [task] = this.#tasks.splice(idx, 1);
     return task;
   }
 
   list(status?: Task['status']): Task[] {
-    if (status) return this.#tasks.filter((t) => t.status === status);
+    if (status) {
+      return this.#tasks.filter((t) => t.status === status);
+    }
     return [...this.#tasks];
   }
 

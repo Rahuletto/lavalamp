@@ -9,12 +9,8 @@ const SESSIONS_DIR = join(homedir(), '.lavalamp', 'sessions');
 
 export function createSessionsTool() {
   return defineTool({
-    name: 'sessions',
     description:
       'List recent lavalamp sessions. Shows session ID, timestamp, prompt, files changed, and model used. Use this to understand what was done before and resume context.',
-    parameters: v.object({
-      limit: v.optional(v.number(), 10),
-    }),
     execute: async (args) => {
       const sessions = listSessions(args.limit);
       if (sessions.length === 0) {
@@ -22,17 +18,17 @@ export function createSessionsTool() {
       }
       return sessions.map(formatSessionSummary).join('\n\n');
     },
+    name: 'sessions',
+    parameters: v.object({
+      limit: v.optional(v.number(), 10),
+    }),
   });
 }
 
 export function createSessionContextTool() {
   return defineTool({
-    name: 'session_context',
     description:
       'Get full context of a specific past session: what was asked, what files were changed, what model was used, and the summary. Pass the session ID (or first few characters) to look up.',
-    parameters: v.object({
-      sessionId: v.string(),
-    }),
     execute: async (args) => {
       const session = getSession(args.sessionId);
       if (!session) {
@@ -40,17 +36,17 @@ export function createSessionContextTool() {
       }
       return formatSessionSummary(session);
     },
+    name: 'session_context',
+    parameters: v.object({
+      sessionId: v.string(),
+    }),
   });
 }
 
 export function createPullSessionTool() {
   return defineTool({
-    name: 'pull_session',
     description:
       'Pull the messages and full conversation history of a specific past session. Pass the session ID to load its contents.',
-    parameters: v.object({
-      sessionId: v.string(),
-    }),
     execute: async (args) => {
       const id = args.sessionId.trim();
       const filePath = join(SESSIONS_DIR, `${id}.json`);
@@ -63,14 +59,19 @@ export function createPullSessionTool() {
         if (messages.length === 0) {
           return `Session "${id}" has no messages.`;
         }
-        return messages.map((m: any) => {
-          const prefix = m.role === 'user' ? 'User' : 'Assistant';
-          return `[${prefix}]: ${m.content}`;
-        }).join('\n\n');
+        return messages
+          .map((m: any) => {
+            const prefix = m.role === 'user' ? 'User' : 'Assistant';
+            return `[${prefix}]: ${m.content}`;
+          })
+          .join('\n\n');
       } catch (e: any) {
         return `Error loading session: ${e.message}`;
       }
     },
+    name: 'pull_session',
+    parameters: v.object({
+      sessionId: v.string(),
+    }),
   });
 }
-

@@ -12,21 +12,24 @@ interface McpRequest {
 
 let requestId = 0;
 
-async function mcpCall(method: string, params?: Record<string, unknown>): Promise<unknown> {
+async function mcpCall(
+  method: string,
+  params?: Record<string, unknown>,
+): Promise<unknown> {
   const body: McpRequest = {
-    jsonrpc: '2.0',
     id: ++requestId,
+    jsonrpc: '2.0',
     method,
     params,
   };
 
   const resp = await fetch(MCP_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream',
-    },
     body: JSON.stringify(body),
+    headers: {
+      Accept: 'application/json, text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
   });
 
   if (!resp.ok) {
@@ -43,7 +46,9 @@ async function mcpCall(method: string, params?: Record<string, unknown>): Promis
 
   const data = await resp.json();
   if (data.error) {
-    throw new Error(`MCP error: ${data.error.message ?? JSON.stringify(data.error)}`);
+    throw new Error(
+      `MCP error: ${data.error.message ?? JSON.stringify(data.error)}`,
+    );
   }
   return data.result;
 }
@@ -59,8 +64,12 @@ function parseSseResponse(text: string): unknown {
   for (let i = dataLines.length - 1; i >= 0; i--) {
     try {
       const parsed = JSON.parse(dataLines[i]);
-      if (parsed.result !== undefined) return parsed.result;
-      if (parsed.error) throw new Error(parsed.error.message ?? JSON.stringify(parsed.error));
+      if (parsed.result !== undefined) {
+        return parsed.result;
+      }
+      if (parsed.error) {
+        throw new Error(parsed.error.message ?? JSON.stringify(parsed.error));
+      }
     } catch {}
   }
 
@@ -70,28 +79,28 @@ function parseSseResponse(text: string): unknown {
 let initialized = false;
 
 async function ensureInit(): Promise<void> {
-  if (initialized) return;
+  if (initialized) {
+    return;
+  }
   await mcpCall('initialize', {
-    protocolVersion: '2025-03-26',
     capabilities: {},
     clientInfo: { name: 'lavalamp', version: '0.1.0' },
+    protocolVersion: '2025-03-26',
   });
   await mcpCall('notifications/initialized');
   initialized = true;
 }
 
 const deepwikiSchema = v.object({
-  repo: v.string(),
   question: v.optional(v.string()),
+  repo: v.string(),
   topic: v.optional(v.string()),
 });
 
 export function createDeepWikiTool() {
   return defineTool({
-    name: 'deepwiki',
     description:
       'Query repository documentation from DeepWiki via MCP. Use read_wiki_structure to list topics, read_wiki_contents to read a specific topic, or ask_question to ask anything about a repo. Only works for repos indexed on deepwiki.com.',
-    parameters: deepwikiSchema,
     execute: async (args) => {
       await ensureInit();
 
@@ -119,11 +128,15 @@ export function createDeepWikiTool() {
       });
       return extractText(result);
     },
+    name: 'deepwiki',
+    parameters: deepwikiSchema,
   });
 }
 
 function extractText(result: unknown): string {
-  if (!result || typeof result !== 'object') return String(result ?? '');
+  if (!result || typeof result !== 'object') {
+    return String(result ?? '');
+  }
   const r = result as Record<string, unknown>;
 
   if (Array.isArray(r.content)) {
@@ -133,7 +146,11 @@ function extractText(result: unknown): string {
       .join('\n');
   }
 
-  if (typeof r.text === 'string') return r.text;
-  if (typeof r === 'string') return r;
+  if (typeof r.text === 'string') {
+    return r.text;
+  }
+  if (typeof r === 'string') {
+    return r;
+  }
   return JSON.stringify(r, null, 2);
 }

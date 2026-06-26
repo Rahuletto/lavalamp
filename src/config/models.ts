@@ -10,41 +10,73 @@ export interface ModelCapabilities {
 }
 
 export const CAPABILITIES: Record<string, ModelCapabilities> = {
-  'cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash': {
-    vision: false, functionCalling: true, contextWindow: 131_072, provider: 'cloudflare-workers-ai',
-  },
-  'cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code': {
-    vision: true, functionCalling: true, contextWindow: 262_144, provider: 'cloudflare-workers-ai',
-  },
-  'cloudflare-workers-ai/@cf/zai-org/glm-5.2': {
-    vision: false, functionCalling: true, contextWindow: 131_072, provider: 'cloudflare-workers-ai',
-  },
-  'cloudflare-workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast': {
-    vision: false, functionCalling: true, contextWindow: 131_072, provider: 'cloudflare-workers-ai',
-  },
-  'cloudflare-workers-ai/@cf/openai/gpt-oss-120b': {
-    vision: false, functionCalling: true, contextWindow: 131_072, provider: 'cloudflare-workers-ai',
-  },
-  'cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct': {
-    vision: true, functionCalling: true, contextWindow: 131_072, provider: 'cloudflare-workers-ai',
+  'anthropic/claude-3-5-sonnet-20241022': {
+    contextWindow: 200_000,
+    functionCalling: true,
+    provider: 'anthropic',
+    vision: true,
   },
   'anthropic/claude-sonnet-4-20250514': {
-    vision: true, functionCalling: true, contextWindow: 200_000, provider: 'anthropic',
+    contextWindow: 200_000,
+    functionCalling: true,
+    provider: 'anthropic',
+    vision: true,
   },
-  'anthropic/claude-3-5-sonnet-20241022': {
-    vision: true, functionCalling: true, contextWindow: 200_000, provider: 'anthropic',
+  'cloudflare-workers-ai/@cf/meta/llama-3.3-70b-instruct-fp8-fast': {
+    contextWindow: 131_072,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: false,
+  },
+  'cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct': {
+    contextWindow: 131_072,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: true,
+  },
+  'cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code': {
+    contextWindow: 262_144,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: true,
+  },
+  'cloudflare-workers-ai/@cf/openai/gpt-oss-120b': {
+    contextWindow: 131_072,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: false,
+  },
+  'cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash': {
+    contextWindow: 131_072,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: false,
+  },
+  'cloudflare-workers-ai/@cf/zai-org/glm-5.2': {
+    contextWindow: 131_072,
+    functionCalling: true,
+    provider: 'cloudflare-workers-ai',
+    vision: false,
   },
   'openai/gpt-4o': {
-    vision: true, functionCalling: true, contextWindow: 128_000, provider: 'openai',
+    contextWindow: 128_000,
+    functionCalling: true,
+    provider: 'openai',
+    vision: true,
   },
   'openai/o3-mini': {
-    vision: false, functionCalling: true, contextWindow: 200_000, provider: 'openai',
+    contextWindow: 200_000,
+    functionCalling: true,
+    provider: 'openai',
+    vision: false,
   },
 };
 
 export function detectProvider(model: string): string | undefined {
   const slash = model.indexOf('/');
-  if (slash === -1) return undefined;
+  if (slash === -1) {
+    return undefined;
+  }
   return model.slice(0, slash);
 }
 
@@ -53,15 +85,21 @@ export function resolveModelWithFallback(
   env: Record<string, string>,
 ): string {
   const override = env.LAVALAMP_MODEL;
-  if (override) return override;
+  if (override) {
+    return override;
+  }
 
   const provider = detectProvider(preferred);
   if (provider === 'anthropic' && !env.ANTHROPIC_API_KEY) {
-    console.error(`[lavalamp] ANTHROPIC_API_KEY not set, falling back to default model`);
+    console.error(
+      `[lavalamp] ANTHROPIC_API_KEY not set, falling back to default model`,
+    );
     return BUILD_MODEL;
   }
   if (provider === 'openai' && !env.OPENAI_API_KEY) {
-    console.error(`[lavalamp] OPENAI_API_KEY not set, falling back to default model`);
+    console.error(
+      `[lavalamp] OPENAI_API_KEY not set, falling back to default model`,
+    );
     return BUILD_MODEL;
   }
 

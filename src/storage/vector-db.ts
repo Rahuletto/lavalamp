@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 export interface ChunkResult {
   filePath: string;
@@ -38,16 +38,22 @@ export class VectorDb {
         FOREIGN KEY (file_path) REFERENCES files(path) ON DELETE CASCADE
       );
     `);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);`);
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);`,
+    );
   }
 
   getFileHash(filePath: string): string | null {
-    const row = this.db.prepare('SELECT hash FROM files WHERE path = ?').get(filePath) as { hash: string } | undefined;
+    const row = this.db
+      .prepare('SELECT hash FROM files WHERE path = ?')
+      .get(filePath) as { hash: string } | undefined;
     return row ? row.hash : null;
   }
 
   upsertFile(filePath: string, hash: string) {
-    this.db.prepare('INSERT OR REPLACE INTO files (path, hash) VALUES (?, ?)').run(filePath, hash);
+    this.db
+      .prepare('INSERT OR REPLACE INTO files (path, hash) VALUES (?, ?)')
+      .run(filePath, hash);
   }
 
   deleteFile(filePath: string) {
@@ -55,28 +61,41 @@ export class VectorDb {
     this.db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
   }
 
-  insertChunk(filePath: string, chunkIndex: number, content: string, embedding: number[]) {
+  insertChunk(
+    filePath: string,
+    chunkIndex: number,
+    content: string,
+    embedding: number[],
+  ) {
     const floatArray = new Float32Array(embedding);
     const buffer = Buffer.from(floatArray.buffer);
-    this.db.prepare(`
+    this.db
+      .prepare(`
       INSERT INTO chunks (file_path, chunk_index, content, embedding)
       VALUES (?, ?, ?, ?)
-    `).run(filePath, chunkIndex, content, buffer);
+    `)
+      .run(filePath, chunkIndex, content, buffer);
   }
 
   search(queryVector: number[], limit = 5): ChunkResult[] {
     const qVec = new Float32Array(queryVector);
-    const rows = this.db.prepare('SELECT file_path, content, embedding FROM chunks').all() as Array<{
+    const rows = this.db
+      .prepare('SELECT file_path, content, embedding FROM chunks')
+      .all() as {
       file_path: string;
       content: string;
       embedding: Buffer;
-    }>;
+    }[];
 
     const results: ChunkResult[] = [];
     for (const row of rows) {
       const buffer = row.embedding;
-      const fVec = new Float32Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 4);
-      
+      const fVec = new Float32Array(
+        buffer.buffer,
+        buffer.byteOffset,
+        buffer.byteLength / 4,
+      );
+
       // Calculate dot product (assuming vectors are normalized by API)
       let dot = 0;
       let lenQ = 0;
@@ -88,13 +107,15 @@ export class VectorDb {
       }
       const similarity = dot / (Math.sqrt(lenQ) * Math.sqrt(lenF) || 1);
       results.push({
-        filePath: row.file_path,
         content: row.content,
+        filePath: row.file_path,
         similarity,
       });
     }
 
-    return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+    return results
+      .toSorted((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
   }
 
   close() {
@@ -103,7 +124,11 @@ export class VectorDb {
 }
 
 // Simple sliding-window chunking
-export function chunkText(text: string, chunkSize = 1000, overlap = 200): string[] {
+export function chunkText(
+  text: string,
+  chunkSize = 1000,
+  overlap = 200,
+): string[] {
   const words = text.split(/\s+/);
   const chunks: string[] = [];
   let i = 0;
@@ -111,29 +136,39 @@ export function chunkText(text: string, chunkSize = 1000, overlap = 200): string
     const chunkWords = words.slice(i, i + chunkSize);
     chunks.push(chunkWords.join(' '));
     i += chunkSize - overlap;
-    if (chunkWords.length < chunkSize) break;
+    if (chunkWords.length < chunkSize) {
+      break;
+    }
   }
   return chunks;
 }
 
-export async function fetchEmbeddings(texts: string[], accountId: string, apiToken: string): Promise<number[][]> {
+export async function fetchEmbeddings(
+  texts: string[],
+  accountId: string,
+  apiToken: string,
+): Promise<number[][]> {
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/run/@cf/baai/bge-large-en-v1.5`;
   const response = await fetch(url, {
-    method: 'POST',
+    body: JSON.stringify({ text: texts }),
     headers: {
-      'Authorization': `Bearer ${apiToken}`,
+      Authorization: `Bearer ${apiToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text: texts }),
+    method: 'POST',
   });
 
   if (!response.ok) {
-    throw new Error(`Cloudflare AI Embeddings API error: ${response.statusText}`);
+    throw new Error(
+      `Cloudflare AI Embeddings API error: ${response.statusText}`,
+    );
   }
 
-  const result = await response.json() as any;
+  const result = (await response.json()) as any;
   if (!result.success) {
-    throw new Error(`Cloudflare AI Embeddings failed: ${JSON.stringify(result.errors)}`);
+    throw new Error(
+      `Cloudflare AI Embeddings failed: ${JSON.stringify(result.errors)}`,
+    );
   }
 
   return result.result.data;

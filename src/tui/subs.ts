@@ -1,4 +1,5 @@
-import { FlueProcess, type FlueEvent } from './ipc';
+import { FlueProcess } from './ipc';
+import type { FlueEvent } from './ipc';
 import type { SubAgent } from './state';
 
 export class SubAgentManager {
@@ -17,14 +18,18 @@ export class SubAgentManager {
   async deploy(queries: string[]): Promise<void> {
     for (const query of queries.slice(0, 3)) {
       const id = `sub-${++this.seq}`;
-      const process = new FlueProcess(this.serverPath, this.cwd, this.agentName);
+      const process = new FlueProcess(
+        this.serverPath,
+        this.cwd,
+        this.agentName,
+      );
       const sub: SubAgent & { process: FlueProcess } = {
         id,
+        process,
         query,
-        status: 'running',
         result: '',
         startTime: Date.now(),
-        process,
+        status: 'running',
       };
       this.subs.set(id, sub);
       this.emitUpdate();
@@ -34,7 +39,9 @@ export class SubAgentManager {
 
   kill(id: string): void {
     const sub = this.subs.get(id);
-    if (!sub) return;
+    if (!sub) {
+      return;
+    }
     sub.process.cancel();
     sub.status = 'killed';
     this.emitUpdate();
@@ -42,7 +49,9 @@ export class SubAgentManager {
   }
 
   killAll(): void {
-    for (const sub of this.subs.values()) this.kill(sub.id);
+    for (const sub of this.subs.values()) {
+      this.kill(sub.id);
+    }
   }
 
   getActive(): SubAgent[] {
@@ -50,7 +59,7 @@ export class SubAgentManager {
   }
 
   list(): SubAgent[] {
-    return Array.from(this.subs.values()).map(({ process, ...sub }) => sub);
+    return [...this.subs.values()].map(({ process, ...sub }) => sub);
   }
 
   isDeploying(): boolean {
@@ -73,6 +82,10 @@ export class SubAgentManager {
     }, 5 * 60_000);
 
     sub.process.prompt(prompt, {
+      onError: (error) => {
+        clearTimeout(timeout);
+        this.fail(sub, error);
+      },
       onEvent: (event: FlueEvent) => {
         if (event.type === 'text_delta') {
           sub.result = (sub.result ?? '') + (event.text ?? event.delta ?? '');
@@ -86,15 +99,13 @@ export class SubAgentManager {
         this.emitUpdate();
         this.checkComplete();
       },
-      onError: (error) => {
-        clearTimeout(timeout);
-        this.fail(sub, error);
-      },
     });
   }
 
   private fail(sub: SubAgent & { process: FlueProcess }, error: unknown): void {
-    if (sub.status !== 'running') return;
+    if (sub.status !== 'running') {
+      return;
+    }
     sub.status = 'failed';
     sub.error = error instanceof Error ? error.message : String(error);
     sub.process.shutdown().catch(() => {});
@@ -103,7 +114,9 @@ export class SubAgentManager {
   }
 
   private checkComplete(): void {
-    if (this.subs.size === 0 || this.isDeploying()) return;
+    if (this.subs.size === 0 || this.isDeploying()) {
+      return;
+    }
     const subs = this.list();
     const summary = subs.every((sub) => sub.status !== 'done')
       ? `## Research Results\n\nAll parallel research agents failed or were stopped.`

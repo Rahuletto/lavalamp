@@ -1,4 +1,10 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -23,39 +29,52 @@ function ensureDir() {
 
 function generateId(): string {
   const now = new Date();
-  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const ts = now.toISOString().replaceAll(/[:.]/g, '-').slice(0, 19);
   const rand = Math.random().toString(36).slice(2, 6);
   return `${ts}-${rand}`;
 }
 
-export function startSession(prompt: string, cwd: string, model?: string): SessionRecord {
+export function startSession(
+  prompt: string,
+  cwd: string,
+  model?: string,
+): SessionRecord {
   ensureDir();
   const session: SessionRecord = {
-    sessionId: generateId(),
-    startedAt: new Date().toISOString(),
     cwd,
-    prompt,
     filesChanged: [],
     model,
+    prompt,
+    sessionId: generateId(),
+    startedAt: new Date().toISOString(),
     toolCount: 0,
   };
-  writeFileSync(join(SESSIONS_DIR, `${session.sessionId}.json`), JSON.stringify(session, null, 2));
+  writeFileSync(
+    join(SESSIONS_DIR, `${session.sessionId}.json`),
+    JSON.stringify(session, null, 2),
+  );
   return session;
 }
 
 export function endSession(sessionId: string, summary?: string) {
   const filePath = join(SESSIONS_DIR, `${sessionId}.json`);
-  if (!existsSync(filePath)) return;
-  const session: SessionRecord = JSON.parse(readFileSync(filePath, 'utf-8'));
+  if (!existsSync(filePath)) {
+    return;
+  }
+  const session: SessionRecord = JSON.parse(readFileSync(filePath, 'utf8'));
   session.endedAt = new Date().toISOString();
-  if (summary) session.summary = summary;
+  if (summary) {
+    session.summary = summary;
+  }
   writeFileSync(filePath, JSON.stringify(session, null, 2));
 }
 
 export function recordFileChange(sessionId: string, filePath: string) {
   const sessionPath = join(SESSIONS_DIR, `${sessionId}.json`);
-  if (!existsSync(sessionPath)) return;
-  const session: SessionRecord = JSON.parse(readFileSync(sessionPath, 'utf-8'));
+  if (!existsSync(sessionPath)) {
+    return;
+  }
+  const session: SessionRecord = JSON.parse(readFileSync(sessionPath, 'utf8'));
   if (!session.filesChanged.includes(filePath)) {
     session.filesChanged.push(filePath);
   }
@@ -67,12 +86,12 @@ export function listSessions(limit = 20): SessionRecord[] {
   ensureDir();
   const files = readdirSync(SESSIONS_DIR)
     .filter((f) => f.endsWith('.json'))
-    .sort()
-    .reverse()
+    .toSorted()
+    .toReversed()
     .slice(0, limit);
 
   return files.map((f) => {
-    const content = readFileSync(join(SESSIONS_DIR, f), 'utf-8');
+    const content = readFileSync(join(SESSIONS_DIR, f), 'utf8');
     return JSON.parse(content) as SessionRecord;
   });
 }
@@ -82,10 +101,12 @@ export function getSession(sessionId: string): SessionRecord | null {
   if (!existsSync(filePath)) {
     const files = readdirSync(SESSIONS_DIR).filter((f) => f.endsWith('.json'));
     const match = files.find((f) => f.startsWith(sessionId));
-    if (!match) return null;
-    return JSON.parse(readFileSync(join(SESSIONS_DIR, match), 'utf-8'));
+    if (!match) {
+      return null;
+    }
+    return JSON.parse(readFileSync(join(SESSIONS_DIR, match), 'utf8'));
   }
-  return JSON.parse(readFileSync(filePath, 'utf-8'));
+  return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
 export function formatSessionSummary(s: SessionRecord): string {

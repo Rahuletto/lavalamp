@@ -1,5 +1,5 @@
 import { BoxRenderable, TextAttributes, TextRenderable } from '@opentui/core';
-import type { CliRenderer, Renderable, StyledText } from "@opentui/core";
+import type { CliRenderer, Renderable, StyledText } from '@opentui/core';
 
 export interface BaseBoxContext {
   renderer: CliRenderer;
@@ -21,8 +21,8 @@ export abstract class BaseBoxManager<T = boolean> {
   ) {
     this.box = new BoxRenderable(ctx.renderer, {
       borderColor,
-      borderStyle: "single",
-      flexDirection: "column",
+      borderStyle: 'single',
+      flexDirection: 'column',
       flexShrink: 0,
       id: boxId,
       paddingBottom: 0,
@@ -30,22 +30,22 @@ export abstract class BaseBoxManager<T = boolean> {
       paddingRight: 1,
       paddingTop: 0,
       visible: false,
-      width: "100%",
+      width: '100%',
     });
 
     this.title = new TextRenderable(ctx.renderer, {
       attributes: TextAttributes.BOLD,
-      content: "",
+      content: '',
       fg: borderColor,
       height: 1,
       id: ctx.nextId(),
-      width: "100%",
+      width: '100%',
     });
 
     this.body = new BoxRenderable(ctx.renderer, {
-      flexDirection: "column",
+      flexDirection: 'column',
       id: `${boxId}-body`,
-      width: "100%",
+      width: '100%',
     });
 
     this.box.add(this.title);
@@ -71,7 +71,7 @@ export abstract class BaseBoxManager<T = boolean> {
     for (const child of this.body.getChildren()) {
       child.destroy();
     }
-    this.title.content = "";
+    this.title.content = '';
     this.clearTimer();
     if (this.resolver) {
       const resolve = this.resolver;
@@ -80,7 +80,9 @@ export abstract class BaseBoxManager<T = boolean> {
     }
   }
 
-  protected populateRows(rows: { content: string | StyledText; fg?: string }[]): void {
+  protected populateRows(
+    rows: { content: string | StyledText; fg?: string }[],
+  ): void {
     for (const child of this.body.getChildren()) {
       child.destroy();
     }
@@ -90,7 +92,7 @@ export abstract class BaseBoxManager<T = boolean> {
           content: row.content,
           fg: row.fg,
           id: this.ctx.nextId(),
-          width: "100%",
+          width: '100%',
         }),
       );
     }

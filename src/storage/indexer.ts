@@ -1,10 +1,14 @@
 import { VectorDb, chunkText, fetchEmbeddings } from './vector-db';
 import { loadCredentials } from '../auth/credentials';
-import * as path from 'path';
-import * as fs from 'fs';
-import * as crypto from 'crypto';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 
-function walkFiles(dir: string, workspaceRoot: string, results: string[] = []): string[] {
+function walkFiles(
+  dir: string,
+  workspaceRoot: string,
+  results: string[] = [],
+): string[] {
   try {
     const list = fs.readdirSync(dir, { withFileTypes: true });
     for (const file of list) {
@@ -21,7 +25,9 @@ function walkFiles(dir: string, workspaceRoot: string, results: string[] = []): 
         }
         walkFiles(fullPath, workspaceRoot, results);
       } else {
-        if (/\.(ts|js|jsx|tsx|json|md|py|go|rs|cpp|c|h|css|html)$/.test(file.name)) {
+        if (
+          /\.(ts|js|jsx|tsx|json|md|py|go|rs|cpp|c|h|css|html)$/.test(file.name)
+        ) {
           const relative = path.relative(workspaceRoot, fullPath);
           results.push(relative);
         }
@@ -40,9 +46,11 @@ export class CodebaseIndexer {
   }
 
   startIndexing(): Promise<void> {
-    if (this.indexingPromise) return this.indexingPromise;
-    this.indexingPromise = this.runIndex().catch((err) => {
-      console.error('[lavalamp] Indexing error:', err);
+    if (this.indexingPromise) {
+      return this.indexingPromise;
+    }
+    this.indexingPromise = this.runIndex().catch((error) => {
+      console.error('[lavalamp] Indexing error:', error);
     });
     return this.indexingPromise;
   }
@@ -54,53 +62,78 @@ export class CodebaseIndexer {
     }
 
     try {
-      const vectors = await fetchEmbeddings([query], creds.accountId, creds.apiToken);
-      if (!vectors || vectors.length === 0) return 'Failed to embed query.';
-      
+      const vectors = await fetchEmbeddings(
+        [query],
+        creds.accountId,
+        creds.apiToken,
+      );
+      if (!vectors || vectors.length === 0) {
+        return 'Failed to embed query.';
+      }
+
       const matches = this.db.search(vectors[0], limit);
-      if (matches.length === 0) return 'No matching semantic chunks found.';
-      
-      return matches.map((m, i) => `### Match ${i + 1} (${m.filePath} - similarity: ${(m.similarity * 100).toFixed(1)}%)\n\n${m.content}`).join('\n\n---\n\n');
-    } catch (err: any) {
-      return `Semantic search failed: ${err.message}`;
+      if (matches.length === 0) {
+        return 'No matching semantic chunks found.';
+      }
+
+      return matches
+        .map(
+          (m, i) =>
+            `### Match ${i + 1} (${m.filePath} - similarity: ${(m.similarity * 100).toFixed(1)}%)\n\n${m.content}`,
+        )
+        .join('\n\n---\n\n');
+    } catch (error: any) {
+      return `Semantic search failed: ${error.message}`;
     }
   }
 
   private async runIndex() {
     const creds = loadCredentials();
-    if (!creds) return; // Silent if no credentials configured yet
+    if (!creds) {
+      return;
+    } // Silent if no credentials configured yet
 
     const filesToSync = walkFiles(this.workspaceRoot, this.workspaceRoot);
 
     // Process files
     for (const file of filesToSync) {
       const fullPath = path.join(this.workspaceRoot, file);
-      if (!fs.existsSync(fullPath)) continue;
-      
+      if (!fs.existsSync(fullPath)) {
+        continue;
+      }
+
       const content = fs.readFileSync(fullPath, 'utf8');
       const hash = crypto.createHash('sha256').update(content).digest('hex');
 
       const existingHash = this.db.getFileHash(file);
-      if (existingHash === hash) continue; // Up to date
+      if (existingHash === hash) {
+        continue;
+      } // Up to date
 
       // Hash changed or file is new - remove old chunks and re-index
       this.db.deleteFile(file);
-      
+
       const chunks = chunkText(content);
-      if (chunks.length === 0) continue;
+      if (chunks.length === 0) {
+        continue;
+      }
 
       try {
         const batchSize = 16;
         for (let i = 0; i < chunks.length; i += batchSize) {
           const batch = chunks.slice(i, i + batchSize);
-          const vectors = await fetchEmbeddings(batch, creds.accountId, creds.apiToken);
+          const vectors = await fetchEmbeddings(
+            batch,
+            creds.accountId,
+            creds.apiToken,
+          );
           for (let j = 0; j < batch.length; j++) {
             this.db.insertChunk(file, i + j, batch[j], vectors[j]);
           }
         }
         this.db.upsertFile(file, hash);
-      } catch (err) {
-        console.error(`[lavalamp] Failed to index ${file}:`, err);
+      } catch (error) {
+        console.error(`[lavalamp] Failed to index ${file}:`, error);
       }
     }
   }

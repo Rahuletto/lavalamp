@@ -2,16 +2,14 @@ import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
 
 const oracleSchema = v.object({
-  question: v.string(),
   context: v.optional(v.string()),
+  question: v.string(),
 });
 
 export function createOracleTool() {
   return defineTool({
-    name: 'oracle',
     description:
       'Get a second opinion from a different model. Use when uncertain about an approach, need to verify a solution, or want an alternative perspective. The oracle uses a different model than the one you are running on.',
-    parameters: oracleSchema,
     execute: async (args) => {
       const prompt = args.context
         ? `You are a second-opinion oracle. A coding assistant is asking for your perspective.\n\nContext:\n${args.context}\n\nQuestion:\n${args.question}\n\nProvide a concise, actionable answer.`
@@ -34,7 +32,7 @@ export function createOracleTool() {
                 messages: [{ role: 'user', content: prompt }],
                 max_tokens: 1024,
               }),
-            }
+            },
           );
 
           if (resp.ok) {
@@ -47,5 +45,7 @@ export function createOracleTool() {
 
       return `[oracle] Second opinion requested but unavailable. Reconsider your approach to: ${args.question.slice(0, 200)}`;
     },
+    name: 'oracle',
+    parameters: oracleSchema,
   });
 }

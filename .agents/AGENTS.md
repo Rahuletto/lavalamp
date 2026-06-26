@@ -23,12 +23,13 @@ It is:
 - **An editor of the user's real filesystem.** The agent operates on the actual project
   in `cwd` via Flue's `local()` sandbox — real files, real shell, real git.
 
-**Why this is a good idea:** Flue ships *native* Workers AI and AI Gateway providers.
+**Why this is a good idea:** Flue ships _native_ Workers AI and AI Gateway providers.
 Pi (under Flue) already solved reliable edits via hash-anchored patches. Our
 differentiation budget goes to: the **TUI**, the **tool surface**, **session management**,
 and **Cloudflare login**.
 
 **What we are NOT building (v1 non-goals):**
+
 - No hosted/SaaS/multi-tenant mode.
 - No Cloudflare Sandbox containers (need Workers Paid).
 - No worktree isolation, no "run in the cloud" offload.
@@ -37,33 +38,33 @@ and **Cloudflare login**.
 
 ## 2. Glossary
 
-| Term | Meaning |
-| ---- | ------- |
-| **Harness** | The whole local app: TUI + Flue server child process + tools + sessions. |
-| **Flue** | `@flue/runtime` — the agent framework. Agents, sessions, tools, skills, subagents, sandboxes, providers, MCP. |
-| **Pi** | `@earendil-works/pi-agent-core` — harness engine under Flue. Source of hash-anchored edits. |
-| **OpenTUI** | `@opentui/core` — the TUI rendering framework (imperative API, not React). |
-| **Agent** | A `createAgent(...)` default-exported from `src/agents/<name>.ts`. |
-| **Tool** | A `defineTool({...})` the model can call. |
-| **Skill** | A `SKILL.md` of reusable instructions, loaded on demand. |
-| **Sandbox** | Where tools run. We use `local()` = host fs + shell at cwd. |
-| **IPC** | The TUI communicates with the Flue server via Node.js IPC channel (`child.send`/`child.on('message')`). |
+| Term        | Meaning                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------- |
+| **Harness** | The whole local app: TUI + Flue server child process + tools + sessions.                                      |
+| **Flue**    | `@flue/runtime` — the agent framework. Agents, sessions, tools, skills, subagents, sandboxes, providers, MCP. |
+| **Pi**      | `@earendil-works/pi-agent-core` — harness engine under Flue. Source of hash-anchored edits.                   |
+| **OpenTUI** | `@opentui/core` — the TUI rendering framework (imperative API, not React).                                    |
+| **Agent**   | A `createAgent(...)` default-exported from `src/agents/<name>.ts`.                                            |
+| **Tool**    | A `defineTool({...})` the model can call.                                                                     |
+| **Skill**   | A `SKILL.md` of reusable instructions, loaded on demand.                                                      |
+| **Sandbox** | Where tools run. We use `local()` = host fs + shell at cwd.                                                   |
+| **IPC**     | The TUI communicates with the Flue server via Node.js IPC channel (`child.send`/`child.on('message')`).       |
 
 ---
 
 ## 3. The stack
 
-| Layer | Choice | Why |
-| ----- | ------ | ----- |
-| Agent framework | **Flue** `@flue/runtime` (Node target) | Native Workers AI + AI Gateway providers, durable sessions, subagents, skills, MCP. |
-| Harness engine | **Pi** + **`@oh-my-pi/hashline`** | Hash-anchored edits = the single biggest edit-reliability lever. |
-| TUI | **OpenTUI** `@opentui/core` | Imperative TypeScript API, MarkdownRenderable, DiffRenderable, CodeRenderable, ScrollBox with viewport culling, TextareaRenderable. Replaced Rezi. |
-| Process model | **Two-process IPC** | TUI spawns `dist/server.mjs` as child process. IPC channel for structured events. TUI handles all rendering. |
-| Models (default) | **Cloudflare Workers AI** | User runs on their own CF account. Default: `@cf/zai-org/glm-4.7-flash`. |
-| Models (BYOK) | Anthropic / OpenAI / OpenRouter | Same `registerProvider` mechanism. |
-| Login | **Wrangler OAuth reuse** + **manual paste** fallback | No public "Sign in with Cloudflare" exists. |
-| Schemas | **valibot** | What Flue's `defineTool` expects. |
-| Runtime / PM | **Bun** (>= 1.3.14) | `bun.lock` committed. Build via `flue build --target node`. |
+| Layer            | Choice                                               | Why                                                                                                                                                |
+| ---------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agent framework  | **Flue** `@flue/runtime` (Node target)               | Native Workers AI + AI Gateway providers, durable sessions, subagents, skills, MCP.                                                                |
+| Harness engine   | **Pi** + **`@oh-my-pi/hashline`**                    | Hash-anchored edits = the single biggest edit-reliability lever.                                                                                   |
+| TUI              | **OpenTUI** `@opentui/core`                          | Imperative TypeScript API, MarkdownRenderable, DiffRenderable, CodeRenderable, ScrollBox with viewport culling, TextareaRenderable. Replaced Rezi. |
+| Process model    | **Two-process IPC**                                  | TUI spawns `dist/server.mjs` as child process. IPC channel for structured events. TUI handles all rendering.                                       |
+| Models (default) | **Cloudflare Workers AI**                            | User runs on their own CF account. Default: `@cf/zai-org/glm-4.7-flash`.                                                                           |
+| Models (BYOK)    | Anthropic / OpenAI / OpenRouter                      | Same `registerProvider` mechanism.                                                                                                                 |
+| Login            | **Wrangler OAuth reuse** + **manual paste** fallback | No public "Sign in with Cloudflare" exists.                                                                                                        |
+| Schemas          | **valibot**                                          | What Flue's `defineTool` expects.                                                                                                                  |
+| Runtime / PM     | **Bun** (>= 1.3.14)                                  | `bun.lock` committed. Build via `flue build --target node`.                                                                                        |
 
 ---
 
@@ -98,6 +99,7 @@ bin/lavalamp (bash wrapper)
 ```
 
 **Event flow:**
+
 1. User types → `sendPrompt()` → `flue.prompt(text, callbacks)`
 2. FlueProcess sends IPC message to server child process
 3. Server streams events: `text_delta`, `thinking_delta`, `tool_start`, `tool`, `result`
@@ -109,6 +111,7 @@ bin/lavalamp (bash wrapper)
 ## 5. Tool surface (current)
 
 **Agent-defined tools (src/tools/):**
+
 - `rename`, `undo`, `history` — file mutation tracking with ChangeTracker
 - `web_search` — DuckDuckGo search
 - `fetch_url` — Reader API (r.marban.lol) for clean markdown
@@ -123,14 +126,17 @@ bin/lavalamp (bash wrapper)
 - `memory_read`, `memory_write`, `memory_append` — persistent project memory
 
 **Flue built-in tools:**
+
 - `read`, `write`, `edit`, `bash`, `grep`, `glob`
 - Permission defaults allow read-only `bash` commands that start with `sed ` so the harness can inspect precise file ranges; other `bash` commands still ask.
 
 **TUI-local slash commands (not sent to agent):**
+
 - `/help`, `/clear`, `/compact`, `/sessions`, `/memory`, `/model`, `/workspace`, `/skills`, `/mcp`, `/tools`, `/subagents`, `/autorun`, `/permissions`, `/plan`, `/copy`, `/undo`, `/quit`
 - `/sudo` toggles dangerous allow-everything mode and always shows a confirmation box before enabling.
 
 **Permission engine (fully wired):**
+
 - `src/permissions/rules.ts` — default allow/ask/deny rules plus `.lavalamp/rules.json` loading/saving.
 - `src/permissions/autorun.ts` — persisted command/pattern always-allow plus `/sudo` allow-all state in `.lavalamp/autorun.json`.
 - `src/permissions/middleware.ts` — server-side permission gating via bidirectional IPC. Sends `permission_request` to TUI, awaits `permission_response`. Auto-denies after 30s.
@@ -142,6 +148,7 @@ bin/lavalamp (bash wrapper)
 ## 6. TUI features
 
 **Streaming:**
+
 - Character-by-character markdown rendering via `MarkdownRenderable` (streaming + conceal modes)
 - Collapsible thinking blocks (purple, `▸`/`▼` toggle, consecutive blocks merge into one)
 - Collapsible tool groups (closed by default, green/red headers based on success/error)
@@ -151,6 +158,7 @@ bin/lavalamp (bash wrapper)
 - Spinner (braille animation) merged into status bar
 
 **Input:**
+
 - Multiline textarea (`TextareaRenderable`) — Enter sends, Shift+Enter newline
 - Dynamic height (1-6 rows) via word-wrap estimation
 - Autocomplete: `/commands`, `@files`, `#skills` with fuzzy search popup
@@ -159,12 +167,14 @@ bin/lavalamp (bash wrapper)
 - Queue panel for queued/steered prompts
 
 **Views:**
+
 - Full-screen diff viewer with vim bindings (`:q`, j/k, g/G, Ctrl+D/U)
 - Full-screen code viewer with syntax highlighting (CodeRenderable)
 - Clickable file path links (purple, underlined) after assistant responses
 - Session picker with arrow-key navigation
 
 **Sessions:**
+
 - Auto-save on every stream finalize (JSON in `~/.lavalamp/sessions/`)
 - `/sessions` to browse and resume (arrow keys, Enter to resume)
 - `/clear` creates new session
@@ -172,6 +182,7 @@ bin/lavalamp (bash wrapper)
 - Messages include thinking and toolCalls for full replay
 
 **Safety:**
+
 - PermissionBox (yellow border) for destructive tool approval: `[y] Allow  [n] Deny  [a] Always Allow`
 - Bidirectional IPC: server blocks tool execution until TUI responds; auto-deny after 30s
 - Confirmation panel (yellow border) for Ctrl+C exit (double-press pattern)
@@ -179,6 +190,7 @@ bin/lavalamp (bash wrapper)
 - Fatal error handler saves session and prints resume command
 
 **Parallel subagents:**
+
 - `deploy_parallel_subs` tool result is intercepted by the TUI.
 - `SubAgentManager` spawns up to 3 isolated `FlueProcess` children with focused research prompts.
 - Subagent panel shows running/done/failed state; `q` kills the first running subagent.
@@ -191,10 +203,12 @@ bin/lavalamp (bash wrapper)
 Default model: `cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash`
 
 Overridable via:
+
 - `LAVALAMP_MODEL` environment variable
 - `-m` / `--model` CLI flag
 
 **Registered providers:**
+
 1. `cloudflare-workers-ai` — from `~/.config/lavalamp/credentials`
 2. `anthropic` — from `ANTHROPIC_API_KEY` env
 3. `openai` — from `OPENAI_API_KEY` env
@@ -254,12 +268,14 @@ lavalamp/
 ## 10. Skills
 
 **Bundled (referenced in agent instructions):**
+
 - `thermo-nuclear-code-quality-review` — strict maintainability review
 - `thermo-nuclear-review` — security and correctness audit
 - `deslop` — remove AI-generated code slop
 - `find-skills` — discover and install skills
 
 **Discovery paths (in `discover.ts`):**
+
 1. `<cwd>/.agents/skills/`
 2. `<cwd>/../.agents/skills/`
 3. `~/.agents/skills/`
@@ -293,4 +309,3 @@ wrapping, autorun/sudo, and user-configurable rules.
 **M5 and M5.5 complete.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, auto-merge, explore/plan/research/review profiles, spec-mode approval gate, file-level backups/reverts, context steering, skill loading, and a language-agnostic Mixture of Experts (MoE) routing system (ui, refactor, logic, database, oracle, research, critique, spectacle) are fully implemented.
 
 **Remaining milestones:** spectacle vision bridge (M6), LSP (M7), plugin system (M8), model picker + AI Gateway (M9).
-

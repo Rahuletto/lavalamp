@@ -1,5 +1,5 @@
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { Glob } from 'bun';
 
 export class BackupEngine {
@@ -17,7 +17,9 @@ export class BackupEngine {
     const destFolder = path.join(this.backupDir, timestamp);
     fs.mkdirSync(destFolder, { recursive: true });
 
-    const glob = new Glob('**/*.{ts,js,jsx,tsx,json,md,py,go,rs,cpp,c,h,css,html}');
+    const glob = new Glob(
+      '**/*.{ts,js,jsx,tsx,json,md,py,go,rs,cpp,c,h,css,html}',
+    );
     for await (const file of glob.scan({ cwd: this.workspaceRoot })) {
       if (
         file.includes('node_modules') ||
@@ -74,16 +76,17 @@ export class BackupEngine {
 
   private pruneBackups() {
     try {
-      const folders = fs.readdirSync(this.backupDir)
-        .map((name) => ({ name, time: parseInt(name, 10) }))
+      const folders = fs
+        .readdirSync(this.backupDir)
+        .map((name) => ({ name, time: Number.parseInt(name, 10) }))
         .filter((entry) => !isNaN(entry.time))
-        .sort((a, b) => b.time - a.time);
+        .toSorted((a, b) => b.time - a.time);
 
       // Keep only top 8 backups
       if (folders.length > 8) {
         for (const extra of folders.slice(8)) {
           const extraPath = path.join(this.backupDir, extra.name);
-          fs.rmSync(extraPath, { recursive: true, force: true });
+          fs.rmSync(extraPath, { force: true, recursive: true });
         }
       }
     } catch {}

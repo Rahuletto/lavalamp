@@ -1,8 +1,8 @@
 import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
-import { spawn } from 'child_process';
-import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { spawn } from 'node:child_process';
+import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 const queryExpertSchema = v.object({
   expert: v.union([
@@ -23,10 +23,8 @@ export function createQueryExpertTool(workspaceRoot: string) {
   const serverPath = path.join(workspaceRoot, 'dist', 'server.mjs');
 
   return defineTool({
-    name: 'query_expert',
     description:
-      'Delegate a specialized task to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle). Spectacle is the vision expert that can describe screenshots/images. Returns the expert\'s response.',
-    parameters: queryExpertSchema,
+      "Delegate a specialized task to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle). Spectacle is the vision expert that can describe screenshots/images. Returns the expert's response.",
     execute: async ({ expert, prompt }) => {
       return new Promise<string>((resolve, reject) => {
         const instanceId = `expert_${randomUUID().slice(0, 8)}`;
@@ -89,5 +87,7 @@ export function createQueryExpertTool(workspaceRoot: string) {
         child.on('exit', onExit);
       });
     },
+    name: 'query_expert',
+    parameters: queryExpertSchema,
   });
 }

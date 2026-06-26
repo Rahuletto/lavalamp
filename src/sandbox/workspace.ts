@@ -20,12 +20,14 @@ const SECRET_EXCLUSIONS = [
   /\.env\.example$/,
   /\.env\.template$/,
   /\.env\.sample$/,
-  /\.envrc$/,        // direnv config, not a secret
+  /\.envrc$/, // direnv config, not a secret
 ];
 
 export function isSecretFile(filePath: string): boolean {
   const name = basename(filePath);
-  if (SECRET_EXCLUSIONS.some((p) => p.test(name))) return false;
+  if (SECRET_EXCLUSIONS.some((p) => p.test(name))) {
+    return false;
+  }
   return SECRET_PATTERNS.some((p) => p.test(name));
 }
 
@@ -93,7 +95,7 @@ export class WorkspaceViolation extends Error {
   constructor(target: string, root: string) {
     super(
       `Access denied: ${target} is outside workspace root (${root}). ` +
-      `The agent can only operate inside the assigned workspace.`
+        `The agent can only operate inside the assigned workspace.`,
     );
     this.name = 'WorkspaceViolation';
   }
@@ -103,7 +105,7 @@ export class SecretFileAccessError extends Error {
   constructor(target: string) {
     super(
       `Access denied: ${target} is a secret/sensitive file. ` +
-      `The agent cannot read or write credential files (.env, .dev.vars, .credentials, etc.).`
+        `The agent cannot read or write credential files (.env, .dev.vars, .credentials, etc.).`,
     );
     this.name = 'SecretFileAccessError';
   }

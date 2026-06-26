@@ -1,4 +1,5 @@
-import { matchRules, loadRules, type PermissionRule, type PermissionAction } from './rules';
+import { matchRules, loadRules } from './rules';
+import type { PermissionRule, PermissionAction } from './rules';
 import { getMatchingAutorun, isAllowAll } from './autorun';
 
 export interface PermissionRequest {
@@ -15,23 +16,34 @@ export interface PermissionResponse {
   alwaysAllow?: boolean;
 }
 
-const pending = new Map<string, { resolve: (response: PermissionResponse) => void }>();
+const pending = new Map<
+  string,
+  { resolve: (response: PermissionResponse) => void }
+>();
 
 let rules: PermissionRule[] | null = null;
 let ipcListenerInstalled = false;
 
 function ensureRules(cwd: string): PermissionRule[] {
-  if (!rules) rules = loadRules(cwd);
+  if (!rules) {
+    rules = loadRules(cwd);
+  }
   return rules;
 }
 
 function installIpcListener(): void {
-  if (ipcListenerInstalled) return;
+  if (ipcListenerInstalled) {
+    return;
+  }
   ipcListenerInstalled = true;
   process.on('message', (raw: unknown) => {
-    if (!raw || typeof raw !== 'object') return;
+    if (!raw || typeof raw !== 'object') {
+      return;
+    }
     const msg = raw as Record<string, unknown>;
-    if (msg.type !== 'permission_response') return;
+    if (msg.type !== 'permission_response') {
+      return;
+    }
     const requestId = msg.requestId as string;
     const p = pending.get(requestId);
     if (p) {
@@ -50,10 +62,14 @@ export function checkPermission(
   args: Record<string, unknown>,
   cwd: string,
 ): PermissionAction {
-  if (isAllowAll()) return 'allow';
+  if (isAllowAll()) {
+    return 'allow';
+  }
 
   const autorunEntry = getMatchingAutorun(toolName, args);
-  if (autorunEntry) return autorunEntry.action;
+  if (autorunEntry) {
+    return autorunEntry.action;
+  }
 
   return matchRules(toolName, args, ensureRules(cwd));
 }
@@ -70,8 +86,12 @@ export async function requestPermission(
 ): Promise<PermissionResponse> {
   const action = checkPermission(toolName, args, cwd);
 
-  if (action === 'allow') return { type: 'permission_response', requestId: '', decision: 'allow' };
-  if (action === 'deny') return { type: 'permission_response', requestId: '', decision: 'deny' };
+  if (action === 'allow') {
+    return { type: 'permission_response', requestId: '', decision: 'allow' };
+  }
+  if (action === 'deny') {
+    return { type: 'permission_response', requestId: '', decision: 'deny' };
+  }
 
   // action === 'ask' — send IPC request to TUI
   installIpcListener();
@@ -79,10 +99,10 @@ export async function requestPermission(
   const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   const request: PermissionRequest = {
-    type: 'permission_request',
+    args,
     requestId,
     toolName,
-    args,
+    type: 'permission_request',
   };
 
   return new Promise<PermissionResponse>((resolve) => {
@@ -92,7 +112,7 @@ export async function requestPermission(
     const timeout = setTimeout(() => {
       if (pending.has(requestId)) {
         pending.delete(requestId);
-        resolve({ type: 'permission_response', requestId, decision: 'deny' });
+        resolve({ decision: 'deny', requestId, type: 'permission_response' });
       }
     }, 30_000);
 
@@ -112,7 +132,7 @@ export async function requestPermission(
       // No IPC channel (running standalone) — auto-allow
       pending.delete(requestId);
       clearTimeout(timeout);
-      resolve({ type: 'permission_response', requestId, decision: 'allow' });
+      resolve({ decision: 'allow', requestId, type: 'permission_response' });
     }
   });
 }
@@ -142,7 +162,7 @@ export function wrapToolExecute(
  */
 export function rejectAllPending(): void {
   for (const [id, p] of pending) {
-    p.resolve({ type: 'permission_response', requestId: id, decision: 'deny' });
+    p.resolve({ decision: 'deny', requestId: id, type: 'permission_response' });
   }
   pending.clear();
 }

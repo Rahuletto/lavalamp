@@ -9,18 +9,37 @@
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const FLUE_RUNTIME_BASE = join(import.meta.dir, '..', 'node_modules', '@flue', 'runtime', 'dist');
-const FLUE_CLI_BASE = join(import.meta.dir, '..', 'node_modules', '@flue', 'cli', 'node_modules', '@flue', 'runtime', 'dist');
+const FLUE_RUNTIME_BASE = join(
+  import.meta.dir,
+  '..',
+  'node_modules',
+  '@flue',
+  'runtime',
+  'dist',
+);
+const FLUE_CLI_BASE = join(
+  import.meta.dir,
+  '..',
+  'node_modules',
+  '@flue',
+  'cli',
+  'node_modules',
+  '@flue',
+  'runtime',
+  'dist',
+);
 
 function patchFile(filePath: string): boolean {
   let code;
   try {
-    code = readFileSync(filePath, 'utf-8');
+    code = readFileSync(filePath, 'utf8');
   } catch {
     return false;
   }
 
-  if (!code.includes('from "node:sqlite"')) return false;
+  if (!code.includes('from "node:sqlite"')) {
+    return false;
+  }
 
   const bunShim = `
 // --- bun:sqlite shim (patched by postinstall.ts) ---
@@ -47,7 +66,7 @@ class DatabaseSync {
 
   code = code.replace(
     /import\s*\{\s*DatabaseSync\s*\}\s*from\s*"node:sqlite"\s*;?/,
-    bunShim
+    bunShim,
   );
 
   writeFileSync(filePath, code);
@@ -59,10 +78,14 @@ let patched = 0;
 // Patch main runtime
 for (const dir of [FLUE_RUNTIME_BASE, FLUE_CLI_BASE]) {
   try {
-    const files = readdirSync(join(dir, 'node'), { recursive: true }) as string[];
+    const files = readdirSync(join(dir, 'node'), {
+      recursive: true,
+    }) as string[];
     for (const file of files) {
       if (file.endsWith('.mjs') && patchFile(join(dir, 'node', file))) {
-        console.log(`[postinstall] Patched: ${join(dir, 'node', file).replace(FLUE_RUNTIME_BASE, '@flue/runtime')}`);
+        console.log(
+          `[postinstall] Patched: ${join(dir, 'node', file).replace(FLUE_RUNTIME_BASE, '@flue/runtime')}`,
+        );
         patched++;
       }
     }
@@ -72,5 +95,7 @@ for (const dir of [FLUE_RUNTIME_BASE, FLUE_CLI_BASE]) {
 if (patched === 0) {
   console.log('[postinstall] No node:sqlite imports found to patch.');
 } else {
-  console.log(`[postinstall] Patched ${patched} file(s). node:sqlite → bun:sqlite`);
+  console.log(
+    `[postinstall] Patched ${patched} file(s). node:sqlite → bun:sqlite`,
+  );
 }

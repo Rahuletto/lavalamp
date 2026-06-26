@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { PermissionAction } from './rules';
 
 export interface AutorunEntry {
@@ -18,10 +18,15 @@ function getAutorunPath(cwd: string): string {
 
 export function loadAutorun(cwd: string): void {
   const autorunPath = getAutorunPath(cwd);
-  if (!existsSync(autorunPath)) return;
+  if (!existsSync(autorunPath)) {
+    return;
+  }
   try {
-    const content = readFileSync(autorunPath, 'utf-8');
-    const parsed = JSON.parse(content) as { entries?: AutorunEntry[]; allowAll?: boolean };
+    const content = readFileSync(autorunPath, 'utf8');
+    const parsed = JSON.parse(content) as {
+      entries?: AutorunEntry[];
+      allowAll?: boolean;
+    };
     autorunMap.clear();
     if (parsed.entries) {
       for (const entry of parsed.entries) {
@@ -36,16 +41,21 @@ export function saveAutorun(cwd: string): void {
   const dirPath = join(cwd, '.lavalamp');
   const autorunPath = getAutorunPath(cwd);
   if (!existsSync(dirPath)) {
-    const { mkdirSync } = require('fs');
+    const { mkdirSync } = require('node:fs');
     mkdirSync(dirPath, { recursive: true });
   }
-  const entries = Array.from(autorunMap.values());
-  writeFileSync(autorunPath, JSON.stringify({ entries, allowAll }, null, 2));
+  const entries = [...autorunMap.values()];
+  writeFileSync(autorunPath, JSON.stringify({ allowAll, entries }, null, 2));
 }
 
-export function setAutorun(cwd: string, tool: string, action: PermissionAction, pattern?: string): void {
+export function setAutorun(
+  cwd: string,
+  tool: string,
+  action: PermissionAction,
+  pattern?: string,
+): void {
   const key = pattern ? `${tool}:${pattern}` : tool;
-  autorunMap.set(key, { tool, pattern, action, timestamp: Date.now() });
+  autorunMap.set(key, { action, pattern, timestamp: Date.now(), tool });
   saveAutorun(cwd);
 }
 
@@ -72,13 +82,22 @@ export function getAutorun(tool: string): AutorunEntry | undefined {
   return autorunMap.get(tool);
 }
 
-export function getMatchingAutorun(tool: string, args: Record<string, unknown>): AutorunEntry | undefined {
+export function getMatchingAutorun(
+  tool: string,
+  args: Record<string, unknown>,
+): AutorunEntry | undefined {
   const exact = autorunMap.get(tool);
-  if (exact) return exact;
+  if (exact) {
+    return exact;
+  }
   const argsText = JSON.stringify(args);
   for (const entry of autorunMap.values()) {
-    if (entry.tool !== tool) continue;
-    if (entry.pattern && argsText.includes(entry.pattern)) return entry;
+    if (entry.tool !== tool) {
+      continue;
+    }
+    if (entry.pattern && argsText.includes(entry.pattern)) {
+      return entry;
+    }
   }
   return undefined;
 }
@@ -88,5 +107,5 @@ export function isAutorunActive(): boolean {
 }
 
 export function getAutorunEntries(): AutorunEntry[] {
-  return Array.from(autorunMap.values());
+  return [...autorunMap.values()];
 }

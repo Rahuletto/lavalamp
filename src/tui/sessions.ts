@@ -1,11 +1,11 @@
-import * as fs from "fs";
-import * as path from "path";
-import { type Message } from "./state";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import type { Message } from './state';
 
 const SESSIONS_DIR = path.join(
-  process.env.HOME ?? "~",
-  ".lavalamp",
-  "sessions",
+  process.env.HOME ?? '~',
+  '.lavalamp',
+  'sessions',
 );
 
 function ensureSessionsDir() {
@@ -13,17 +13,21 @@ function ensureSessionsDir() {
 }
 
 export function nameSession(messages: Message[]): string {
-  const firstUser = messages.find((m) => m.role === "user");
-  if (!firstUser) return "Empty Session";
-  
+  const firstUser = messages.find((m) => m.role === 'user');
+  if (!firstUser) {
+    return 'Empty Session';
+  }
+
   let text = firstUser.content
-    .replace(/^<<PLAN_MODE>>\s*/, "") // Strip plan mode tag
-    .replace(/^\/\w+\s*/, "")        // Strip slash commands (e.g., /ask)
-    .replace(/[#@][^\s]*/g, "")      // Strip autocomplete prefixes/skills
-    .replace(/\s+/g, " ")            // Normalize spacing
+    .replace(/^<<PLAN_MODE>>\s*/, '') // Strip plan mode tag
+    .replace(/^\/\w+\s*/, '') // Strip slash commands (e.g., /ask)
+    .replaceAll(/[#@][^\s]*/g, '') // Strip autocomplete prefixes/skills
+    .replaceAll(/\s+/g, ' ') // Normalize spacing
     .trim();
 
-  if (!text) return "Chat Session";
+  if (!text) {
+    return 'Chat Session';
+  }
 
   // Capitalize first letter
   text = text.charAt(0).toUpperCase() + text.slice(1);
@@ -32,52 +36,56 @@ export function nameSession(messages: Message[]): string {
   const maxLength = 45;
   if (text.length > maxLength) {
     const truncated = text.slice(0, maxLength);
-    const lastSpace = truncated.lastIndexOf(" ");
+    const lastSpace = truncated.lastIndexOf(' ');
     if (lastSpace > maxLength * 0.7) {
-      text = truncated.slice(0, lastSpace) + "...";
+      text = `${truncated.slice(0, lastSpace)}...`;
     } else {
-      text = truncated + "...";
+      text = `${truncated}...`;
     }
   }
 
   return text;
 }
 
-export function saveSession(messages: Message[], name: string, existingId?: string): string {
+export function saveSession(
+  messages: Message[],
+  name: string,
+  existingId?: string,
+): string {
   ensureSessionsDir();
   const id = existingId || `session_${Date.now()}`;
   const file = path.join(SESSIONS_DIR, `${id}.json`);
   fs.writeFileSync(
     file,
-    JSON.stringify({ id, name, messages, savedAt: Date.now() }),
+    JSON.stringify({ id, messages, name, savedAt: Date.now() }),
   );
   return id;
 }
 
-export function listSessions(): Array<{
+export function listSessions(): {
   id: string;
   name: string;
   savedAt: number;
   messageCount: number;
-}> {
+}[] {
   ensureSessionsDir();
-  const files = fs.readdirSync(SESSIONS_DIR).filter((f) => f.endsWith(".json"));
-  const sessions: Array<{
+  const files = fs.readdirSync(SESSIONS_DIR).filter((f) => f.endsWith('.json'));
+  const sessions: {
     id: string;
     name: string;
     savedAt: number;
     messageCount: number;
-  }> = [];
+  }[] = [];
   for (const f of files) {
     try {
       const data = JSON.parse(
-        fs.readFileSync(path.join(SESSIONS_DIR, f), "utf-8"),
+        fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'),
       );
       sessions.push({
         id: data.id,
-        name: data.name ?? f.replace(".json", ""),
-        savedAt: data.savedAt ?? 0,
         messageCount: (data.messages ?? []).length,
+        name: data.name ?? f.replace('.json', ''),
+        savedAt: data.savedAt ?? 0,
       });
     } catch {}
   }
@@ -89,7 +97,7 @@ export function loadSession(sessionId: string): Message[] | null {
   ensureSessionsDir();
   const file = path.join(SESSIONS_DIR, `${sessionId}.json`);
   try {
-    const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     return data.messages ?? null;
   } catch {
     return null;

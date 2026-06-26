@@ -1,7 +1,12 @@
-import { BoxRenderable, MarkdownRenderable, TextAttributes, TextRenderable } from "@opentui/core";
-import type { CliRenderer, ScrollBoxRenderable } from "@opentui/core";
-import { syntaxStyle } from "../art";
-import { COLORS } from "../theme";
+import {
+  BoxRenderable,
+  MarkdownRenderable,
+  TextAttributes,
+  TextRenderable,
+} from '@opentui/core';
+import type { CliRenderer, ScrollBoxRenderable } from '@opentui/core';
+import { syntaxStyle } from '../art';
+import { COLORS } from '../theme';
 
 interface MessageRenderContext {
   renderer: CliRenderer;
@@ -22,29 +27,31 @@ export class MessageRenderer {
   addUser(content: string): void {
     this.ctx.hideLavaLamp();
     this.userMessageCount++;
-    if (this.userMessageCount > 1) {this.addUserSeparator();}
+    if (this.userMessageCount > 1) {
+      this.addUserSeparator();
+    }
 
-    for (const [index, line] of content.split("\n").entries()) {
+    for (const [index, line] of content.split('\n').entries()) {
       const row = new BoxRenderable(this.ctx.renderer, {
-        flexDirection: "row",
+        flexDirection: 'row',
         id: this.ctx.nextId(),
-        width: "100%",
+        width: '100%',
       });
       row.add(
         new TextRenderable(this.ctx.renderer, {
           attributes: index === 0 ? TextAttributes.BOLD : TextAttributes.NONE,
-          content: "┃ ",
+          content: '┃ ',
           fg: COLORS.blue,
           id: this.ctx.nextId(),
         }),
       );
       row.add(
         new TextRenderable(this.ctx.renderer, {
-          content: `  ${  line}`,
+          content: `  ${line}`,
           fg: COLORS.blue,
           id: this.ctx.nextId(),
           selectable: true,
-          width: "100%",
+          width: '100%',
         }),
       );
       this.ctx.messagesScroll.add(row);
@@ -58,7 +65,7 @@ export class MessageRenderer {
       content,
       id: this.ctx.nextId(),
       syntaxStyle,
-      width: "100%",
+      width: '100%',
     });
     md.selectable = true;
     this.ctx.messagesScroll.add(md);
@@ -71,7 +78,7 @@ export class MessageRenderer {
       content,
       fg: color ?? COLORS.dim,
       id: this.ctx.nextId(),
-      width: "100%",
+      width: '100%',
     });
     this.ctx.messagesScroll.add(line);
     return line;
@@ -79,26 +86,28 @@ export class MessageRenderer {
 
   createThinkingBlock(): BoxRenderable {
     const box = new BoxRenderable(this.ctx.renderer, {
-      flexDirection: "column",
+      flexDirection: 'column',
       id: this.ctx.nextId(),
-      width: "100%",
+      width: '100%',
     });
     const hdr = new BoxRenderable(this.ctx.renderer, {
-      flexDirection: "row",
+      flexDirection: 'row',
       focusable: true,
       id: this.ctx.nextId(),
-      onMouseDown: () =>{  toggleThinkingBlock(box); },
-      width: "100%",
+      onMouseDown: () => {
+        toggleThinkingBlock(box);
+      },
+      width: '100%',
     });
     hdr.add(createThinkingHeader(this.ctx.renderer, this.ctx.nextId));
     box.add(hdr);
     box.add(
       new TextRenderable(this.ctx.renderer, {
-        content: "",
+        content: '',
         fg: COLORS.dim,
-        id: "thinking-content",
+        id: 'thinking-content',
         visible: true,
-        width: "100%",
+        width: '100%',
       }),
     );
     return box;
@@ -110,54 +119,71 @@ export class MessageRenderer {
       block.destroy();
       return false;
     }
-    const contentEl = block.getRenderable("thinking-content");
+    const contentEl = block.getRenderable('thinking-content');
     if (contentEl && contentEl instanceof TextRenderable) {
       contentEl.content = text;
       contentEl.visible = false;
     }
-    setThinkingHeader(block, "Reasoning... ▸", COLORS.link);
+    setThinkingHeader(block, 'Reasoning... ▸', COLORS.link);
     return true;
   }
 
   private addUserSeparator(): void {
     this.ctx.messagesScroll.add(
       new TextRenderable(this.ctx.renderer, {
-        content: "",
+        content: '',
         height: 1,
         id: this.ctx.nextId(),
-        width: "100%",
+        width: '100%',
       }),
     );
     this.ctx.messagesScroll.add(
       new TextRenderable(this.ctx.renderer, {
-        content: "─".repeat(60),
+        content: '─'.repeat(60),
         fg: COLORS.dim,
         id: this.ctx.nextId(),
-        width: "100%",
+        width: '100%',
       }),
     );
   }
 }
 
-function createThinkingHeader(renderer: CliRenderer, nextId: () => string): TextRenderable {
+function createThinkingHeader(
+  renderer: CliRenderer,
+  nextId: () => string,
+): TextRenderable {
   return new TextRenderable(renderer, {
-    content: "Reasoning... ▸",
+    content: 'Reasoning... ▸',
     fg: COLORS.link,
     id: nextId(),
   });
 }
 
 function toggleThinkingBlock(block: BoxRenderable): void {
-  const content = block.getRenderable("thinking-content");
-  if (!content) {return;}
+  const content = block.getRenderable('thinking-content');
+  if (!content) {
+    return;
+  }
   content.visible = !content.visible;
-  setThinkingHeader(block, content.visible ? "Reasoning... ▼" : "Reasoning... ▸", COLORS.link);
+  setThinkingHeader(
+    block,
+    content.visible ? 'Reasoning... ▼' : 'Reasoning... ▸',
+    COLORS.link,
+  );
 }
 
-function setThinkingHeader(block: BoxRenderable, content: string, fg: string): void {
-  const hdr = block.getChildren().find((child) => child instanceof BoxRenderable);
+function setThinkingHeader(
+  block: BoxRenderable,
+  content: string,
+  fg: string,
+): void {
+  const hdr = block
+    .getChildren()
+    .find((child) => child instanceof BoxRenderable);
   // oxlint-disable-next-line oxc/no-optional-chaining
-  const label = hdr?.getChildren().find((child) => child instanceof TextRenderable);
+  const label = hdr
+    ?.getChildren()
+    .find((child) => child instanceof TextRenderable);
   if (label && label instanceof TextRenderable) {
     label.content = content;
     label.fg = fg;

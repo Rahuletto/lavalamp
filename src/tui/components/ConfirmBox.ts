@@ -1,4 +1,4 @@
-import { COLORS } from "../theme";
+import { COLORS } from '../theme';
 import { BaseBoxManager } from './BaseBoxManager';
 import type { BaseBoxContext } from './BaseBoxManager';
 
@@ -7,7 +7,7 @@ export class ConfirmBoxManager extends BaseBoxManager {
   private confirmAcceptCtrlC = true;
 
   constructor(ctx: BaseBoxContext) {
-    super(ctx, "confirm-box", COLORS.warn);
+    super(ctx, 'confirm-box', COLORS.warn);
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -45,7 +45,9 @@ export class ConfirmBoxManager extends BaseBoxManager {
 
     this.clearTimer();
     this.timer = setTimeout(() => {
-      if (this.isVisible()) {this.hide(false);}
+      if (this.isVisible()) {
+        this.hide(false);
+      }
     }, timeoutMs);
   }
 }

@@ -3,22 +3,30 @@ import { defineTool } from '@flue/runtime';
 import type { WorkspaceGuard } from '../sandbox/workspace';
 
 const codebaseSearchSchema = v.object({
-  query: v.string(),
   pattern: v.optional(v.string()),
+  query: v.string(),
 });
 
 export function createCodebaseSearchTool(guard: WorkspaceGuard) {
   let cachedBackend: 'rg' | 'grep' | 'bun' | null = null;
 
   async function detectBackend(): Promise<'rg' | 'grep' | 'bun'> {
-    if (cachedBackend) return cachedBackend;
+    if (cachedBackend) {
+      return cachedBackend;
+    }
     try {
-      const proc = Bun.spawn(['rg', '--version'], { stdout: 'pipe', stderr: 'pipe' });
+      const proc = Bun.spawn(['rg', '--version'], {
+        stderr: 'pipe',
+        stdout: 'pipe',
+      });
       await proc.exited;
       cachedBackend = 'rg';
     } catch {
       try {
-        const proc = Bun.spawn(['grep', '--version'], { stdout: 'pipe', stderr: 'pipe' });
+        const proc = Bun.spawn(['grep', '--version'], {
+          stderr: 'pipe',
+          stdout: 'pipe',
+        });
         await proc.exited;
         cachedBackend = 'grep';
       } catch {
@@ -29,10 +37,8 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
   }
 
   return defineTool({
-    name: 'codebase_search',
     description:
       'Search the codebase for files and code matching a query. Combines filename matching and content search. Use to find relevant files, functions, classes, or patterns across the project.',
-    parameters: codebaseSearchSchema,
     execute: async (args) => {
       const backend = await detectBackend();
       const results: string[] = [];
@@ -50,21 +56,41 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
         let output = '';
         if (backend === 'rg') {
           const proc = Bun.spawn(
-            ['rg', '-n', '--no-heading', '-i', searchPattern, guard.root, '--glob', '!node_modules', '--glob', '!.git'],
-            { stdout: 'pipe', stderr: 'pipe' }
+            [
+              'rg',
+              '-n',
+              '--no-heading',
+              '-i',
+              searchPattern,
+              guard.root,
+              '--glob',
+              '!node_modules',
+              '--glob',
+              '!.git',
+            ],
+            { stdout: 'pipe', stderr: 'pipe' },
           );
           output = await new Response(proc.stdout).text();
         } else if (backend === 'grep') {
           const proc = Bun.spawn(
-            ['grep', '-rn', '-i', searchPattern, guard.root, '--exclude-dir=node_modules', '--exclude-dir=.git'],
-            { stdout: 'pipe', stderr: 'pipe' }
+            [
+              'grep',
+              '-rn',
+              '-i',
+              searchPattern,
+              guard.root,
+              '--exclude-dir=node_modules',
+              '--exclude-dir=.git',
+            ],
+            { stdout: 'pipe', stderr: 'pipe' },
           );
           output = await new Response(proc.stdout).text();
         } else {
           const regex = new RegExp(searchPattern, 'gi');
           const glob = new Bun.Glob('**/*');
           for await (const match of glob.scan({ cwd: guard.root })) {
-            if (match.includes('node_modules') || match.includes('.git')) continue;
+            if (match.includes('node_modules') || match.includes('.git'))
+              continue;
             const file = Bun.file(`${guard.root}/${match}`);
             if (!(await file.exists())) continue;
             const text = await file.text();
@@ -91,5 +117,7 @@ export function createCodebaseSearchTool(guard: WorkspaceGuard) {
 
       return results.slice(0, 40).join('\n');
     },
+    name: 'codebase_search',
+    parameters: codebaseSearchSchema,
   });
 }

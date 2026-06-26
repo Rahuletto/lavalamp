@@ -5,28 +5,22 @@ const MAX_RESULTS = 100;
 const MAX_OUTPUT_BYTES = 50 * 1024;
 
 const ripgrepSchema = v.object({
-  pattern: v.string(),
-  path: v.optional(v.string()),
-  ignoreCase: v.optional(v.boolean()),
-  fileType: v.optional(v.string()),
   context: v.optional(v.number()),
+  fileType: v.optional(v.string()),
+  ignoreCase: v.optional(v.boolean()),
   maxResults: v.optional(v.number()),
-  wholeWord: v.optional(v.boolean()),
   multiline: v.optional(v.boolean()),
+  path: v.optional(v.string()),
+  pattern: v.string(),
+  wholeWord: v.optional(v.boolean()),
 });
 
 export function createRipgrepTool(cwd: string) {
   return defineTool({
-    name: 'ripgrep',
     description:
       'Search file contents using ripgrep with regex support. Faster and more powerful than the built-in grep tool. Returns file paths, line numbers, and matching lines. Use this instead of grep for codebase searches.',
-    parameters: ripgrepSchema,
     execute: async (args) => {
-      const rgArgs = [
-        '-n',
-        '--no-heading',
-        '--color=never',
-      ];
+      const rgArgs = ['-n', '--no-heading', '--color=never'];
 
       if (args.ignoreCase) rgArgs.push('-i');
       if (args.wholeWord) rgArgs.push('-w');
@@ -66,7 +60,9 @@ export function createRipgrepTool(cwd: string) {
         }
 
         if (exitCode === 2) {
-          throw new Error(`ripgrep error: ${stderr.trim() || 'exited with code 2'}`);
+          throw new Error(
+            `ripgrep error: ${stderr.trim() || 'exited with code 2'}`,
+          );
         }
 
         const lines = output.trim().split('\n');
@@ -100,8 +96,12 @@ export function createRipgrepTool(cwd: string) {
 
         return [header, ...stripped].join('\n') + footer;
       } catch (err) {
-        throw new Error(`ripgrep failed: ${err instanceof Error ? err.message : String(err)}. Is ripgrep installed? (brew install ripgrep)`);
+        throw new Error(
+          `ripgrep failed: ${err instanceof Error ? err.message : String(err)}. Is ripgrep installed? (brew install ripgrep)`,
+        );
       }
     },
+    name: 'ripgrep',
+    parameters: ripgrepSchema,
   });
 }

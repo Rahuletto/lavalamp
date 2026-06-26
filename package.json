@@ -2,10 +2,10 @@
   "name": "lavalamp",
   "version": "0.1.0",
   "description": "Cloudflare-native local AI coding harness",
-  "type": "module",
   "bin": {
     "lavalamp": "./dist/server.mjs"
   },
+  "type": "module",
   "scripts": {
     "build": "flue build --target node",
     "postinstall": "bun run build/postinstall.ts",

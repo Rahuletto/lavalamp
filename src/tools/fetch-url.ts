@@ -4,17 +4,15 @@ import { defineTool } from '@flue/runtime';
 const READER_BASE = 'https://r.marban.lol';
 
 const fetchUrlSchema = v.object({
-  url: v.string(),
-  selector: v.optional(v.string()),
   format: v.optional(v.string()),
+  selector: v.optional(v.string()),
+  url: v.string(),
 });
 
 export function createFetchUrlTool() {
   return defineTool({
-    name: 'fetch_url',
     description:
       'Fetch a URL and return its content as clean markdown using the Reader API (r.marban.lol). Use this instead of raw HTML fetches when you need to read, summarize, or quote web content. Returns extracted text, headings, links, and structure.',
-    parameters: fetchUrlSchema,
     execute: async (args) => {
       const params = new URLSearchParams({
         url: args.url,
@@ -27,7 +25,9 @@ export function createFetchUrlTool() {
 
       if (!resp.ok) {
         const body = await resp.text().catch(() => '');
-        throw new Error(`Reader API error (${resp.status}): ${body.slice(0, 300)}`);
+        throw new Error(
+          `Reader API error (${resp.status}): ${body.slice(0, 300)}`,
+        );
       }
 
       const finalUrl = resp.headers.get('X-Final-URL') ?? args.url;
@@ -38,5 +38,7 @@ export function createFetchUrlTool() {
       }
       return content;
     },
+    name: 'fetch_url',
+    parameters: fetchUrlSchema,
   });
 }

@@ -1,20 +1,33 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, existsSync, statSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { requestPermission } from '../permissions/middleware';
 
 function findShell(): string {
-  const platform = process.platform;
+  const { platform } = process;
 
   const envShell = process.env.SHELL;
-  if (envShell && existsSync(envShell)) return envShell;
+  if (envShell && existsSync(envShell)) {
+    return envShell;
+  }
 
-  const candidates = platform === 'win32'
-    ? ['cmd.exe', 'powershell.exe']
-    : ['/bin/zsh', '/bin/bash', '/bin/sh'];
+  const candidates =
+    platform === 'win32'
+      ? ['cmd.exe', 'powershell.exe']
+      : ['/bin/zsh', '/bin/bash', '/bin/sh'];
 
   for (const sh of candidates) {
-    if (existsSync(sh)) return sh;
+    if (existsSync(sh)) {
+      return sh;
+    }
   }
 
   return platform === 'win32' ? 'cmd.exe' : '/bin/sh';
@@ -39,7 +52,10 @@ interface ShellResult {
   timedOut: boolean;
 }
 
-function execCommand(command: string, options: ExecOptions = {}): Promise<ShellResult> {
+function execCommand(
+  command: string,
+  options: ExecOptions = {},
+): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
     const env = { ...process.env, ...options.env };
@@ -50,10 +66,10 @@ function execCommand(command: string, options: ExecOptions = {}): Promise<ShellR
 
     const proc = spawn(shellCmd, shellArgs, {
       cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
       detached: !isWin,
+      env,
       signal: options.signal,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let stdout = '';
@@ -71,7 +87,11 @@ function execCommand(command: string, options: ExecOptions = {}): Promise<ShellR
         if (!killed) {
           killed = true;
           proc.kill('SIGTERM');
-          setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, KILL_GRACE_MS);
+          setTimeout(() => {
+            try {
+              proc.kill('SIGKILL');
+            } catch {}
+          }, KILL_GRACE_MS);
         }
         return;
       }
@@ -88,22 +108,30 @@ function execCommand(command: string, options: ExecOptions = {}): Promise<ShellR
         timedOut = true;
         killed = true;
         proc.kill('SIGTERM');
-        setTimeout(() => { try { proc.kill('SIGKILL'); } catch {} }, KILL_GRACE_MS);
+        setTimeout(() => {
+          try {
+            proc.kill('SIGKILL');
+          } catch {}
+        }, KILL_GRACE_MS);
       }, options.timeoutMs);
     }
 
     proc.on('close', (code) => {
-      if (timer) clearTimeout(timer);
-      stdout = Buffer.concat(chunks).toString('utf-8');
-      stderr = Buffer.concat(errChunks).toString('utf-8');
-      resolve({ exitCode: code ?? 1, stdout, stderr, timedOut });
+      if (timer) {
+        clearTimeout(timer);
+      }
+      stdout = Buffer.concat(chunks).toString('utf8');
+      stderr = Buffer.concat(errChunks).toString('utf8');
+      resolve({ exitCode: code ?? 1, stderr, stdout, timedOut });
     });
 
     proc.on('error', () => {
-      if (timer) clearTimeout(timer);
-      stdout = Buffer.concat(chunks).toString('utf-8');
-      stderr = Buffer.concat(errChunks).toString('utf-8');
-      resolve({ exitCode: 1, stdout, stderr, timedOut });
+      if (timer) {
+        clearTimeout(timer);
+      }
+      stdout = Buffer.concat(chunks).toString('utf8');
+      stderr = Buffer.concat(errChunks).toString('utf8');
+      resolve({ exitCode: 1, stderr, stdout, timedOut });
     });
   });
 }
@@ -119,7 +147,12 @@ async function gatedExec(
 ): Promise<ShellResult> {
   const response = await requestPermission('bash', { command }, workspaceRoot);
   if (response.decision === 'deny') {
-    return { exitCode: 1, stdout: '', stderr: 'Permission denied', timedOut: false };
+    return {
+      exitCode: 1,
+      stderr: 'Permission denied',
+      stdout: '',
+      timedOut: false,
+    };
   }
   return execCommand(command, options);
 }
@@ -133,7 +166,11 @@ async function gatedWriteFile(
   workspaceRoot: string,
   cwd: string,
 ): Promise<void> {
-  const response = await requestPermission('write', { file_path: path }, workspaceRoot);
+  const response = await requestPermission(
+    'write',
+    { file_path: path },
+    workspaceRoot,
+  );
   if (response.decision === 'deny') {
     throw new Error('Permission denied for write');
   }
@@ -148,34 +185,49 @@ export function local(options: { env?: Record<string, string> } = {}) {
       const cwd = process.cwd();
       return {
         cwd,
-        exec: (command: string, opts: ExecOptions = {}) => gatedExec(command, opts, cwd),
-        async readFile(path: string): Promise<string> {
-          return readFileSync(resolve(cwd, path), 'utf-8');
-        },
-        async readFileBuffer(path: string): Promise<Uint8Array> {
-          return new Uint8Array(readFileSync(resolve(cwd, path)));
-        },
-        async writeFile(path: string, content: string | Uint8Array): Promise<void> {
-          return gatedWriteFile(path, content, cwd, cwd);
-        },
-        async stat(path: string) {
-          const s = statSync(resolve(cwd, path));
-          return { size: s.size, mtime: s.mtime, isFile: s.isFile(), isDirectory: s.isDirectory() };
-        },
-        async readdir(path: string): Promise<string[]> {
-          return readdirSync(resolve(cwd, path));
-        },
+        exec: (command: string, opts: ExecOptions = {}) =>
+          gatedExec(command, opts, cwd),
         async exists(path: string): Promise<boolean> {
           return existsSync(resolve(cwd, path));
         },
         async mkdir(path: string, options?: { recursive?: boolean }) {
           mkdirSync(resolve(cwd, path), { recursive: options?.recursive });
         },
-        async rm(path: string, options?: { recursive?: boolean; force?: boolean }) {
-          rmSync(resolve(cwd, path), { recursive: options?.recursive, force: options?.force });
+        async readFile(path: string): Promise<string> {
+          return readFileSync(resolve(cwd, path), 'utf-8');
+        },
+        async readFileBuffer(path: string): Promise<Uint8Array> {
+          return new Uint8Array(readFileSync(resolve(cwd, path)));
+        },
+        async readdir(path: string): Promise<string[]> {
+          return readdirSync(resolve(cwd, path));
         },
         resolvePath(p: string): string {
           return resolve(cwd, p);
+        },
+        async rm(
+          path: string,
+          options?: { recursive?: boolean; force?: boolean },
+        ) {
+          rmSync(resolve(cwd, path), {
+            recursive: options?.recursive,
+            force: options?.force,
+          });
+        },
+        async stat(path: string) {
+          const s = statSync(resolve(cwd, path));
+          return {
+            size: s.size,
+            mtime: s.mtime,
+            isFile: s.isFile(),
+            isDirectory: s.isDirectory(),
+          };
+        },
+        async writeFile(
+          path: string,
+          content: string | Uint8Array,
+        ): Promise<void> {
+          return gatedWriteFile(path, content, cwd, cwd);
         },
       };
     },

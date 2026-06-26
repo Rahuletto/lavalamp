@@ -3,8 +3,8 @@ import { defineTool } from '@flue/runtime';
 import { CodebaseIndexer } from '../storage/indexer';
 
 const codebaseSemanticSearchSchema = v.object({
-  query: v.string(),
   limit: v.optional(v.number()),
+  query: v.string(),
 });
 
 export function createCodebaseSemanticSearchTool(workspaceRoot: string) {
@@ -13,14 +13,13 @@ export function createCodebaseSemanticSearchTool(workspaceRoot: string) {
   indexer.startIndexing().catch(() => {});
   indexer.watchWorkspace();
 
-
   return defineTool({
-    name: 'codebase_semantic_search',
     description:
       'Search the codebase semantically using vector database similarity. Best for finding code by intent, meaning, or functionality, rather than exact keyword matches.',
-    parameters: codebaseSemanticSearchSchema,
     execute: async (args) => {
       return indexer.semanticSearch(args.query, args.limit ?? 5);
     },
+    name: 'codebase_semantic_search',
+    parameters: codebaseSemanticSearchSchema,
   });
 }

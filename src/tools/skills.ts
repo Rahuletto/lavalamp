@@ -1,7 +1,7 @@
 import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 const loadSkillSchema = v.object({
   name: v.string(),
@@ -9,9 +9,8 @@ const loadSkillSchema = v.object({
 
 export function createLoadSkillTool(workspaceRoot: string) {
   return defineTool({
-    name: 'load_skill',
-    description: 'Load the instructions/guidance for a specific skill (e.g. deslop, thermonuclear review) from local or global directories.',
-    parameters: loadSkillSchema,
+    description:
+      'Load the instructions/guidance for a specific skill (e.g. deslop, thermonuclear review) from local or global directories.',
     execute: async ({ name }) => {
       const home = process.env.HOME ?? '';
       const dirs = [
@@ -30,5 +29,7 @@ export function createLoadSkillTool(workspaceRoot: string) {
       }
       return `Skill "${name}" not found in any of the discovery paths.`;
     },
+    name: 'load_skill',
+    parameters: loadSkillSchema,
   });
 }

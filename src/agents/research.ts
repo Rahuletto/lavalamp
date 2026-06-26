@@ -2,7 +2,10 @@ import { createAgent, registerProvider } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
 import {
-  startSession, createSessionsTool, createSessionContextTool, createPullSessionTool,
+  startSession,
+  createSessionsTool,
+  createSessionContextTool,
+  createPullSessionTool,
 } from '../sessions';
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
@@ -15,10 +18,13 @@ export default createAgent((ctx) => {
   const session = startSession(
     ctx.payload?.prompt ?? 'interactive',
     workspaceRoot,
-    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>)
+    resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>),
   );
 
-  const model = resolveModelWithFallback(BUILD_MODEL, ctx.env as Record<string, string>);
+  const model = resolveModelWithFallback(
+    BUILD_MODEL,
+    ctx.env as Record<string, string>,
+  );
 
   const instructions = [
     'You are the research agent of lavalamp.',
@@ -37,8 +43,15 @@ export default createAgent((ctx) => {
   ];
 
   return {
-    model,
+    compaction: {
+      keepRecentTokens: 8_000,
+      reserveTokens: 20_000,
+    },
+    cwd: workspaceRoot,
     instructions: instructions.join('\n'),
+    model,
+    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    thinkingLevel: 'medium',
     tools: [
       createSessionsTool(),
       createSessionContextTool(),
@@ -48,12 +61,5 @@ export default createAgent((ctx) => {
       createDeepWikiTool(),
       createLoadSkillTool(workspaceRoot),
     ],
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    cwd: workspaceRoot,
-    thinkingLevel: 'medium',
-    compaction: {
-      reserveTokens: 20_000,
-      keepRecentTokens: 8_000,
-    },
   };
 });

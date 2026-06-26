@@ -1,4 +1,11 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, chmodSync, unlinkSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  chmodSync,
+  unlinkSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -15,13 +22,18 @@ export function credentialsPath(): string {
 }
 
 export function loadCredentials(): Credentials | null {
-  if (!existsSync(CREDENTIALS_FILE)) return null;
+  if (!existsSync(CREDENTIALS_FILE)) {
+    return null;
+  }
 
   try {
-    const raw = readFileSync(CREDENTIALS_FILE, 'utf-8');
+    const raw = readFileSync(CREDENTIALS_FILE, 'utf8');
     const parsed = JSON.parse(raw);
 
-    if (typeof parsed.accountId === 'string' && typeof parsed.apiToken === 'string') {
+    if (
+      typeof parsed.accountId === 'string' &&
+      typeof parsed.apiToken === 'string'
+    ) {
       return { accountId: parsed.accountId, apiToken: parsed.apiToken };
     }
     return null;

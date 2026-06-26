@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from 'child_process';
-import { randomUUID } from 'crypto';
+import { spawn } from 'child_process';
+import type { ChildProcess } from 'child_process';
+import { randomUUID } from 'node:crypto';
 
 export interface FlueEvent {
   type: string;
@@ -80,7 +81,6 @@ export class FlueProcess {
     this.agentName = name;
   }
 
-
   get isProcessing(): boolean {
     return this.pending.size > 0;
   }
@@ -89,13 +89,19 @@ export class FlueProcess {
     return this.child?.pid;
   }
 
-  sendPermissionResponse(requestId: string, decision: PermissionDecision, alwaysAllow?: boolean): void {
-    if (!this.child) return;
+  sendPermissionResponse(
+    requestId: string,
+    decision: PermissionDecision,
+    alwaysAllow?: boolean,
+  ): void {
+    if (!this.child) {
+      return;
+    }
     this.child.send({
-      type: 'permission_response',
-      requestId,
-      decision,
       alwaysAllow: alwaysAllow ?? false,
+      decision,
+      requestId,
+      type: 'permission_response',
     });
   }
 
@@ -103,16 +109,16 @@ export class FlueProcess {
     const instanceId = `inst_${randomUUID().slice(0, 8)}`;
 
     this.child = spawn(process.execPath, [this.serverPath], {
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       cwd: this.cwd,
       env: {
         ...process.env,
-        FLUE_MODE: 'local',
-        FLUE_INTERNAL_CLI_IPC: '1',
-        FLUE_CLI_TARGET: 'agent',
-        FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_ID: instanceId,
+        FLUE_CLI_NAME: this.agentName,
+        FLUE_CLI_TARGET: 'agent',
+        FLUE_INTERNAL_CLI_IPC: '1',
+        FLUE_MODE: 'local',
       },
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
     this.child.stdout?.on('data', (data: Buffer) => {
@@ -120,10 +126,18 @@ export class FlueProcess {
       const lines = text.trimEnd().split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (/\d+;rgb:/.test(trimmed)) continue;
-        if (/^ghostty/.test(trimmed)) continue;
-        if (/^\d+;\d+[A-Z]/.test(trimmed)) continue;
+        if (!trimmed) {
+          continue;
+        }
+        if (/\d+;rgb:/.test(trimmed)) {
+          continue;
+        }
+        if (trimmed.startsWith('ghostty')) {
+          continue;
+        }
+        if (/^\d+;\d+[A-Z]/.test(trimmed)) {
+          continue;
+        }
         process.stderr.write(`  ${trimmed}\n`);
       }
     });
@@ -133,10 +147,18 @@ export class FlueProcess {
       const lines = text.trimEnd().split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed) continue;
-        if (/\d+;rgb:/.test(trimmed)) continue;
-        if (/^ghostty/.test(trimmed)) continue;
-        if (/^\d+;\d+[A-Z]/.test(trimmed)) continue;
+        if (!trimmed) {
+          continue;
+        }
+        if (/\d+;rgb:/.test(trimmed)) {
+          continue;
+        }
+        if (trimmed.startsWith('ghostty')) {
+          continue;
+        }
+        if (/^\d+;\d+[A-Z]/.test(trimmed)) {
+          continue;
+        }
         process.stderr.write(`  ${trimmed}\n`);
       }
     });
@@ -192,7 +214,11 @@ export class FlueProcess {
     });
   }
 
-  prompt(message: string, callbacks: PromptCallbacks = {}, sessionId?: string): string {
+  prompt(
+    message: string,
+    callbacks: PromptCallbacks = {},
+    sessionId?: string,
+  ): string {
     if (!this.child || !this.ready) {
       throw new Error('Server not started');
     }
@@ -201,10 +227,10 @@ export class FlueProcess {
     this.pending.set(requestId, callbacks);
 
     this.child.send({
-      type: 'prompt',
-      requestId,
       message,
+      requestId,
       sessionId,
+      type: 'prompt',
     });
 
     this.child.on('message', (raw: Record<string, unknown>) => {
@@ -214,7 +240,9 @@ export class FlueProcess {
         return;
       }
 
-      if (raw.requestId !== requestId) return;
+      if (raw.requestId !== requestId) {
+        return;
+      }
 
       if (raw.type === 'started') {
         callbacks.onStarted?.();
@@ -235,7 +263,9 @@ export class FlueProcess {
       if (raw.type === 'error') {
         this.pending.delete(requestId);
         const err = raw.error as { message?: string; details?: string };
-        callbacks.onError?.(new Error(err.message ?? err.details ?? 'Unknown error'));
+        callbacks.onError?.(
+          new Error(err.message ?? err.details ?? 'Unknown error'),
+        );
         return;
       }
     });
@@ -258,14 +288,18 @@ export class FlueProcess {
   }
 
   async shutdown(): Promise<void> {
-    if (this.shutdownRequested) return;
+    if (this.shutdownRequested) {
+      return;
+    }
     this.shutdownRequested = true;
 
     this.rejectAll(new Error('Shutting down'));
     this.child?.kill('SIGTERM');
 
     await new Promise<void>((resolve) => {
-      if (!this.child) return resolve();
+      if (!this.child) {
+        return resolve();
+      }
       const timeout = setTimeout(() => {
         this.child?.kill('SIGKILL');
         resolve();

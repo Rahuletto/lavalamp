@@ -15,9 +15,11 @@ function memoryPath(cwd: string): string {
 
 export function loadMemory(cwd: string): string | null {
   const path = memoryPath(cwd);
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) {
+    return null;
+  }
   try {
-    return readFileSync(path, 'utf-8');
+    return readFileSync(path, 'utf8');
   } catch {
     return null;
   }
@@ -32,11 +34,13 @@ export function appendMemory(cwd: string, entry: string): void {
   const existing = loadMemory(cwd) ?? '';
   const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ');
   const newEntry = `\n[${timestamp}] ${entry}`;
-  saveMemory(cwd, existing + newEntry + '\n');
+  saveMemory(cwd, `${existing + newEntry}\n`);
 }
 
 export function getMemoryContext(cwd: string): string | null {
   const memory = loadMemory(cwd);
-  if (!memory || memory.trim().length === 0) return null;
+  if (!memory || memory.trim().length === 0) {
+    return null;
+  }
   return `## Project Memory (from previous sessions)\n\n${memory}`;
 }
