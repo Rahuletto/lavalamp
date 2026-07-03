@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { workspaceDataDir } from './paths';
 
 export interface ChunkResult {
   filePath: string;
@@ -12,7 +13,7 @@ export class VectorDb {
   private readonly db: Database;
 
   constructor(private readonly workspaceRoot: string) {
-    const dir = path.join(workspaceRoot, '.agents');
+    const dir = path.join(workspaceDataDir(workspaceRoot), 'semantic-index');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }

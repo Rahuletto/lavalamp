@@ -51,6 +51,14 @@ export interface AppState {
   model?: string;
   tasks: Task[];
   subAgents: SubAgent[];
+  usageTotals: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalTokens: number;
+    cost: number;
+  };
 }
 
 export function createInitialState(cwd: string, model?: string): AppState {
@@ -73,5 +81,13 @@ export function createInitialState(cwd: string, model?: string): AppState {
     steerPending: [],
     subAgents: [],
     tasks: [],
+    usageTotals: {
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: 0,
+      input: 0,
+      output: 0,
+      totalTokens: 0,
+    },
   };
 }

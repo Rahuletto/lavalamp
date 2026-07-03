@@ -110,13 +110,11 @@ export class FlueProcess {
 
     this.child = spawn(process.execPath, [this.serverPath], {
       cwd: this.cwd,
-      env: Object.assign({}, process.env, {
-        FLUE_CLI_ID: instanceId,
+      env: { ...process.env, FLUE_CLI_ID: instanceId,
         FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_TARGET: 'agent',
         FLUE_INTERNAL_CLI_IPC: '1',
-        FLUE_MODE: 'local',
-      }),
+        FLUE_MODE: 'local',},
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 

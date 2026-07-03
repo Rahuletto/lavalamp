@@ -87,7 +87,7 @@ async function readWranglerAuthToken(): Promise<string | null> {
     const result = await new Promise<{ stdout: string; exitCode: number }>(
       (resolve) => {
         const proc = spawn('bunx', ['wrangler', 'auth', 'token', '--json'], {
-          env: Object.assign({}, process.env),
+          env: { ...process.env},
         });
         let stdout = '';
         proc.stdout.on('data', (data: Buffer) => (stdout += data.toString()));
@@ -232,7 +232,7 @@ async function resolveAccountId(oauthToken: string): Promise<string | null> {
     const result = await new Promise<{ stdout: string; exitCode: number }>(
       (resolve) => {
         const proc = spawn('bunx', ['wrangler', 'whoami'], {
-          env: Object.assign({}, process.env),
+          env: { ...process.env},
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';

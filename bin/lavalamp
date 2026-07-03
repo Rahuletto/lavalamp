@@ -17,6 +17,9 @@ USAGE:
   lavalamp --continue            Resume a previous session
   lavalamp --workspace /path     Set workspace directory (default: cwd)
   lavalamp --model MODEL         Override default model
+  lavalamp models                List known models
+  lavalamp config show           Show persisted config
+  lavalamp config set KEY VALUE  Persist model/Gateway config
 
 PIPE MODE:
   cat file.ts | lavalamp -p "review this"     Pipe stdin as context
@@ -66,6 +69,9 @@ show_version() {
 case "${1:-}" in
   login|logout|status)
     exec bun run "${REPO_DIR}/src/cli/auth.ts" "$@"
+    ;;
+  config|models)
+    exec bun run "${REPO_DIR}/src/cli/config.ts" "$@"
     ;;
 esac
 

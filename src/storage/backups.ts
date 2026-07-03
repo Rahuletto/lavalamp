@@ -1,50 +1,74 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import { Glob } from 'bun';
+import { workspaceDataDir } from './paths';
+
+interface BackupManifest {
+  mode: 'partial';
+  files: {
+    path: string;
+    existed: boolean;
+  }[];
+}
 
 export class BackupEngine {
   private readonly backupDir: string;
 
   constructor(private readonly workspaceRoot: string) {
-    this.backupDir = path.join(workspaceRoot, '.agents', 'backups');
+    this.backupDir = path.join(workspaceDataDir(workspaceRoot), 'backups');
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
     }
   }
 
-  async createBackup(): Promise<string> {
+  createBackup(paths: string[]): string {
     const timestamp = Date.now().toString();
     const destFolder = path.join(this.backupDir, timestamp);
     fs.mkdirSync(destFolder, { recursive: true });
-
-    const glob = new Glob(
-      '**/*.{ts,js,jsx,tsx,json,md,py,go,rs,cpp,c,h,css,html}',
-    );
-    for await (const file of glob.scan({ cwd: this.workspaceRoot })) {
-      if (
-        file.includes('node_modules') ||
-        file.includes('.git') ||
-        file.includes('.agents') ||
-        file.includes('dist') ||
-        file.includes('build')
-      ) {
-        continue;
-      }
-      const srcPath = path.join(this.workspaceRoot, file);
-      const destPath = path.join(destFolder, file);
-
-      const parent = path.dirname(destPath);
-      if (!fs.existsSync(parent)) {
-        fs.mkdirSync(parent, { recursive: true });
-      }
-
-      if (fs.existsSync(srcPath)) {
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-
+    this.createPartialBackup(destFolder, paths);
     this.pruneBackups();
     return timestamp;
+  }
+
+  private createPartialBackup(destFolder: string, paths: string[]): void {
+    const manifest: BackupManifest = { files: [], mode: 'partial' };
+    const filesDir = path.join(destFolder, 'files');
+
+    for (const requestedPath of new Set(paths)) {
+      const resolved = this.resolveWorkspacePath(requestedPath);
+      if (resolved === null) {
+        continue;
+      }
+
+      const relative = path.relative(this.workspaceRoot, resolved);
+      const existed = fs.existsSync(resolved);
+      manifest.files.push({ existed, path: relative });
+
+      if (!existed || !fs.statSync(resolved).isFile()) {
+        continue;
+      }
+
+      const destPath = path.join(filesDir, relative);
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(resolved, destPath);
+    }
+
+    fs.writeFileSync(
+      path.join(destFolder, 'manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    );
+  }
+
+  private resolveWorkspacePath(requestedPath: string): string | null {
+    if (requestedPath.trim().length === 0) {
+      return null;
+    }
+
+    const resolved = path.resolve(this.workspaceRoot, requestedPath);
+    const relative = path.relative(this.workspaceRoot, resolved);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      return null;
+    }
+    return resolved;
   }
 
   restoreBackup(timestamp: string): void {
@@ -53,7 +77,12 @@ export class BackupEngine {
       throw new Error(`Backup folder not found for timestamp: ${timestamp}`);
     }
 
-    // Deep copy back to workspace root
+    const manifestPath = path.join(srcFolder, 'manifest.json');
+    if (fs.existsSync(manifestPath)) {
+      this.restorePartialBackup(srcFolder, manifestPath);
+      return;
+    }
+
     const restoreDir = (dir: string) => {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
@@ -72,6 +101,27 @@ export class BackupEngine {
       }
     };
     restoreDir(srcFolder);
+  }
+
+  private restorePartialBackup(srcFolder: string, manifestPath: string): void {
+    const manifest = JSON.parse(
+      fs.readFileSync(manifestPath, 'utf8'),
+    ) as BackupManifest;
+
+    for (const file of manifest.files) {
+      const destPath = path.join(this.workspaceRoot, file.path);
+      if (!file.existed) {
+        fs.rmSync(destPath, { force: true, recursive: true });
+        continue;
+      }
+
+      const srcPath = path.join(srcFolder, 'files', file.path);
+      if (!fs.existsSync(srcPath)) {
+        continue;
+      }
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(srcPath, destPath);
+    }
   }
 
   private pruneBackups() {

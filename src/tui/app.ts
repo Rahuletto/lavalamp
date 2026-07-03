@@ -43,8 +43,6 @@ import {
   extractResultText,
   extractFilePaths,
 } from './tools';
-import { clearCredentials } from '../auth/credentials';
-import { login } from '../auth/login';
 import {
   isAllowAll,
   loadAutorun,
@@ -57,6 +55,16 @@ import { steerPrompt } from '../storage/steering';
 import { pasteImageFromClipboard } from '../storage/clipboard';
 import { describeImageWithSpectacle } from '../storage/spectacle';
 import { openCodeViewer, openDiffViewer } from './viewers';
+import {
+  configPath,
+  resolveConfig,
+  updateConfig,
+} from '../config/user-config';
+import {
+  BUILD_MODEL,
+  getModelEntry,
+  listModels,
+} from '../config/models';
 
 export interface TuiOptions {
   serverPath: string;
@@ -103,11 +111,22 @@ function formatAge(ts: number): string {
   return `${d}d ago`;
 }
 
+function formatCost(value: number): string {
+  return `$${value.toFixed(4)}`;
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) {return `${(value / 1_000_000).toFixed(2)}m`;}
+  if (value >= 1000) {return `${(value / 1000).toFixed(1)}k`;}
+  return String(value);
+}
+
 export async function startTui(options: TuiOptions): Promise<void> {
   const store = new AppStateStore(options.cwd, options.model);
   const state = store.getState();
   const backupEngine = new BackupEngine(options.cwd);
   const backupHistory: string[] = [];
+  let turnBackupCreated = false;
   const attachedImages: { tag: string; path: string }[] = [];
   let imageCounter = 0;
 
@@ -1164,6 +1183,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const name = event.toolName ?? 'unknown';
         const args = event.args ?? {};
 
+        createMutationBackup(name, args);
+
         if (
           name === 'create_task' ||
           name === 'complete_task' ||
@@ -1173,7 +1194,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           name === 'skip_task'
         ) {
           const action = name.replace('_task', '');
-          handleTaskToolStart(Object.assign({}, args, { action }));
+          handleTaskToolStart({ ...args, action});
         }
 
         const summary = summarizeToolArgs(name, args, cwd);
@@ -1348,7 +1369,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   function formatErrorMessage(err: Error): string {
     const message = err.message.trim();
     if (isAuthError(err)) {
-      return 'authentication failed (401). Re-authenticating...';
+      return 'authentication failed (401). Restart lavalamp to re-authenticate.';
     }
     return message.split('\n')[0] ?? 'Unknown error';
   }
@@ -1356,15 +1377,167 @@ export async function startTui(options: TuiOptions): Promise<void> {
   function printUsage(result: FlueResult) {
     const u = result.usage;
     if (u == null) {return;}
+    state.usageTotals.input += u.input;
+    state.usageTotals.output += u.output;
+    state.usageTotals.cacheRead += u.cacheRead;
+    state.usageTotals.cacheWrite += u.cacheWrite;
+    state.usageTotals.totalTokens += u.totalTokens;
+    state.usageTotals.cost += u.cost.total;
     const m = result.model != null ? `${result.model.provider}/${result.model.id}` : '';
+    const config = resolveConfig();
+    const label = config.usageDisplayMode === 'neurons' ? 'neurons' : 'usage';
     addInfoLine(
-      `  ${u.totalTokens} tok | $${u.cost.total.toFixed(4)} | ${m}`,
+      `  ${label}: ${formatTokenCount(u.totalTokens)} tok (${formatCost(u.cost.total)}) | session ${formatTokenCount(state.usageTotals.totalTokens)} tok (${formatCost(state.usageTotals.cost)}) | ${m}`,
       COLORS.dim,
     );
   }
 
+  function readStringArg(
+    args: Record<string, unknown>,
+    names: string[],
+  ): string | undefined {
+    for (const name of names) {
+      const value = args[name];
+      if (typeof value === 'string' && value.length > 0) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  function extractHashlinePaths(value: unknown): string[] {
+    if (typeof value !== 'string') {
+      return [];
+    }
+
+    const paths: string[] = [];
+    for (const line of value.split('\n')) {
+      const match = /^\[([^#\]]+)#[^\]]+\]/.exec(line.trim());
+      if (match) {
+        paths.push(match[1]);
+      }
+    }
+    return paths;
+  }
+
+  function unquoteShellWord(word: string): string {
+    if (
+      (word.startsWith('"') && word.endsWith('"')) ||
+      (word.startsWith("'") && word.endsWith("'"))
+    ) {
+      return word.slice(1, -1);
+    }
+    return word;
+  }
+
+  function looksLikePath(value: string): boolean {
+    if (value.length === 0 || value.startsWith('-')) {
+      return false;
+    }
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(value)) {
+      return false;
+    }
+    return (
+      value.includes('/') ||
+      value.startsWith('.') ||
+      /\.[A-Za-z0-9]{1,8}$/.test(value)
+    );
+  }
+
+  function extractBashMutationPaths(command: string): string[] {
+    const paths: string[] = [];
+    const redirectMatches = command.matchAll(
+      /(?:^|[\s])(?:\d?>|>>|&>)\s*("[^"]+"|'[^']+'|[^\s;&|]+)/g,
+    );
+    for (const match of redirectMatches) {
+      paths.push(unquoteShellWord(match[1]));
+    }
+
+    const words =
+      command.match(/"[^"]+"|'[^']+'|[^\s;&|()<>]+/g)?.map(unquoteShellWord) ??
+      [];
+    const mutatingCommands = new Set([
+      'cp',
+      'install',
+      'mkdir',
+      'mv',
+      'rm',
+      'sed',
+      'tee',
+      'touch',
+      'truncate',
+    ]);
+
+    if (!mutatingCommands.has(words[0] ?? '')) {
+      return paths;
+    }
+
+    for (const word of words.slice(1)) {
+      if (looksLikePath(word)) {
+        paths.push(word);
+      }
+    }
+
+    return [...new Set(paths)];
+  }
+
+  function getMutationBackupPlan(
+    name: string,
+    args: Record<string, unknown>,
+  ): { paths: string[] } | null {
+    if (name === 'write' || name === 'edit') {
+      const paths = [
+        readStringArg(args, ['file_path', 'path', 'filePath']),
+        ...extractHashlinePaths(args.patch),
+        ...extractHashlinePaths(args.content),
+        ...extractHashlinePaths(args.input),
+      ].filter((value): value is string => value !== undefined);
+      return paths.length > 0 ? { paths } : null;
+    }
+
+    if (name === 'rename') {
+      const paths = [
+        readStringArg(args, ['oldPath', 'old_path', 'from']),
+        readStringArg(args, ['newPath', 'new_path', 'to']),
+      ].filter((value): value is string => value !== undefined);
+      return paths.length > 0 ? { paths } : null;
+    }
+
+    if (name === 'bash') {
+      const command = readStringArg(args, ['command', 'cmd']) ?? '';
+      if (/^\s*(sed|cat|pwd|ls|find|rg|grep|git\s+(status|diff|show|log|branch))\b/.test(command)) {
+        return null;
+      }
+      const paths = extractBashMutationPaths(command);
+      return paths.length > 0 ? { paths } : null;
+    }
+
+    return null;
+  }
+
+  function createMutationBackup(
+    name: string,
+    args: Record<string, unknown>,
+  ): void {
+    if (turnBackupCreated) {
+      return;
+    }
+
+    const plan = getMutationBackupPlan(name, args);
+    if (plan === null) {
+      return;
+    }
+
+    try {
+      const ts = backupEngine.createBackup(plan.paths);
+      backupHistory.push(ts);
+      turnBackupCreated = true;
+    } catch {}
+  }
+
   async function _sendPrompt(prompt: string) {
     state.processing = true;
+    turnBackupCreated = false;
     state.historyIndex = -1;
     prompt = withModeTag(prompt);
     state.commandHistory.push(visiblePrompt(prompt));
@@ -1381,11 +1554,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
       timestamp: Date.now(),
     });
     updateStatus();
-
-    try {
-      const ts = await backupEngine.createBackup();
-      backupHistory.push(ts);
-    } catch {}
 
     clearResponseAccumulators();
 
@@ -1424,23 +1592,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
             );
           }
 
-          if (isAuthError(err)) {
-            clearCredentials();
-            login()
-              .then(() => {
-                addInfoLine(
-                  '  login complete. Try your message again.',
-                  COLORS.green,
-                );
-                flue.restart().catch(() => {});
-              })
-              .catch((error: unknown) => {
-                addInfoLine(
-                  `  login failed: ${error instanceof Error ? error.message : String(error)}`,
-                  COLORS.red,
-                );
-              });
-          }
           clearResponseAccumulators();
           updateStatus();
           drainPending();
@@ -1794,6 +1945,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   async function _handleSlashCommand(raw: string) {
     const cmd = raw.split(/\s+/)[0].toLowerCase();
+    const arg = raw.slice(cmd.length).trim();
     switch (cmd) {
       case '/help': {
         const rows: { content: string; fg?: string; bold?: boolean }[] = [
@@ -1806,6 +1958,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ['/compact', 'Compact context'],
           ['/memory', 'Show project memory'],
           ['/model', 'Show/change model'],
+          ['/gateway', 'Show/change AI Gateway'],
+          ['/usage', 'Show neuron meter'],
           ['/workspace', 'Show workspace'],
           ['/skills', 'List skills'],
           ['/mcp', 'List MCP servers'],
@@ -1913,8 +2067,139 @@ export async function startTui(options: TuiOptions): Promise<void> {
         break;
       }
       case '/model': {
-        showResultPanel('/model', [
-          { content: `  model: ${state.model ?? 'default'}`, fg: COLORS.gray },
+        if (arg.length > 0) {
+          const model = getModelEntry(arg);
+          if (model === undefined) {
+            showResultPanel('/model', [
+              { content: `  unknown model: ${arg}`, fg: COLORS.yellow },
+              { content: '  run /model to list known models', fg: COLORS.dim },
+            ]);
+            break;
+          }
+          if (state.processing) {
+            showResultPanel('/model', [
+              {
+                content: '  cannot change model while a prompt is running',
+                fg: COLORS.yellow,
+              },
+            ]);
+            break;
+          }
+          updateConfig({ defaultModel: arg });
+          process.env.LAVALAMP_MODEL = arg;
+          state.model = arg;
+          await flue.restart();
+          showResultPanel('/model', [
+            { content: `  model set: ${arg}`, fg: COLORS.green },
+          ]);
+          updateStatus();
+          break;
+        }
+
+        const config = resolveConfig();
+        const current = state.model ?? (
+          config.defaultModel.length > 0 ? config.defaultModel : BUILD_MODEL
+        );
+        const currentEntry = getModelEntry(current);
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [
+          { bold: true, content: `  model: ${current}`, fg: COLORS.white },
+          {
+            content: `  config: ${configPath()}`,
+            fg: COLORS.dim,
+          },
+        ];
+        if (currentEntry !== undefined) {
+          rows.push({
+            content: `  ${currentEntry.displayName} · ${Math.round(currentEntry.contextWindow / 1000)}k ctx · ${currentEntry.functionCalling ? 'tools' : 'no tools'} · ${currentEntry.vision ? 'vision' : 'text'}`,
+            fg: COLORS.gray,
+          });
+        }
+        rows.push({ content: '' }, {
+          bold: true,
+          content: '  available models:',
+          fg: COLORS.white,
+        });
+        for (const model of listModels()) {
+          rows.push({
+            content: `  ${model.id}  ${model.vision ? 'vision' : 'text'} ${model.gatewaySupport ? 'gateway' : 'direct'}`,
+            fg: model.id === current ? accent() : COLORS.gray,
+          });
+        }
+        showResultPanel('/model', rows);
+        break;
+      }
+      case '/gateway': {
+        if (arg.length > 0) {
+          if (state.processing) {
+            showResultPanel('/gateway', [
+              {
+                content: '  cannot change Gateway while a prompt is running',
+                fg: COLORS.yellow,
+              },
+            ]);
+            break;
+          }
+          if (arg.toLowerCase() === 'off') {
+            updateConfig({
+              gatewayEnabled: false,
+              preferredProviderRoute: 'direct',
+            });
+            await flue.restart();
+            showResultPanel('/gateway', [
+              { content: '  AI Gateway disabled', fg: COLORS.green },
+            ]);
+            break;
+          }
+          updateConfig({
+            gatewayEnabled: true,
+            gatewayId: arg,
+            preferredProviderRoute: 'gateway',
+          });
+          await flue.restart();
+          showResultPanel('/gateway', [
+            { content: `  AI Gateway enabled: ${arg}`, fg: COLORS.green },
+          ]);
+          break;
+        }
+
+        const config = resolveConfig();
+        showResultPanel('/gateway', [
+          {
+            bold: true,
+            content: `  gateway: ${config.gatewayEnabled ? 'on' : 'off'}`,
+            fg: config.gatewayEnabled ? COLORS.green : COLORS.gray,
+          },
+          {
+            content: `  id: ${config.gatewayId || '(none)'}`,
+            fg: COLORS.gray,
+          },
+          {
+            content: `  route: ${config.preferredProviderRoute}`,
+            fg: COLORS.gray,
+          },
+          {
+            content: '  use /gateway <id> to enable · /gateway off to disable',
+            fg: COLORS.dim,
+          },
+        ]);
+        break;
+      }
+      case '/usage': {
+        const total = state.usageTotals;
+        showResultPanel('/usage', [
+          { bold: true, content: '  neuron meter', fg: COLORS.white },
+          {
+            content: `  total: ${formatTokenCount(total.totalTokens)} tokens · ${formatCost(total.cost)}`,
+            fg: COLORS.gray,
+          },
+          {
+            content: `  input: ${formatTokenCount(total.input)} · output: ${formatTokenCount(total.output)}`,
+            fg: COLORS.gray,
+          },
+          {
+            content: `  cache read: ${formatTokenCount(total.cacheRead)} · cache write: ${formatTokenCount(total.cacheWrite)}`,
+            fg: COLORS.dim,
+          },
         ]);
         break;
       }
@@ -2166,7 +2451,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (imgPath !== null && imgPath !== '') {
           imageCounter++;
           const tag = `[Image ${imageCounter}]`;
-          attachedImages.push({ tag, path: imgPath });
+          attachedImages.push({ path: imgPath, tag });
           inputField.insertText(tag);
         } else {
           showResultPanel('/paste-image', [
@@ -2222,7 +2507,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           if (imgPath !== null && imgPath !== '') {
             imageCounter++;
             const tag = `[Image ${imageCounter}]`;
-            attachedImages.push({ tag, path: imgPath });
+            attachedImages.push({ path: imgPath, tag });
             inputField.insertText(tag);
             renderer.requestRender();
           }

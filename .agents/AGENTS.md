@@ -310,4 +310,10 @@ wrapping, autorun/sudo, and user-configurable rules.
 
 **Release hardening complete.** The package binary points at the shell wrapper, the wrapper preserves quoted prompts/flags when forwarding to `src/run.ts`, install PATH setup uses the configured `INSTALL_DIR`, and project-local runtime permission state is ignored.
 
-**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), model picker + AI Gateway (M9). Plugin system (M8) is explicitly postponed.
+**Config/model UX complete.** `~/.config/lavalamp/config.json` stores non-secret model and AI Gateway preferences, `lavalamp models` and `lavalamp config ...` expose scriptable controls, `/model`, `/gateway`, and `/usage` expose TUI controls, and headless JSON includes model route and usage metadata.
+
+**Interactive auth preflight complete.** For interactive sessions that use Workers AI or AI Gateway, `src/run.ts` validates Cloudflare credentials and runs reauthentication before creating the OpenTUI renderer. The TUI no longer performs reauth inside the chat transcript after a 401.
+
+**Workspace hygiene complete.** Runtime backups, prompt steering, autorun/sudo state, clipboard attachments, and semantic index data no longer write into `<cwd>/.agents`. They live under OS-native lavalamp data storage (`LOCALAPPDATA`/`APPDATA` on Windows, `~/Library/Application Support/lavalamp` on macOS, `XDG_DATA_HOME` or `~/.local/share/lavalamp` on Linux), with `LAVALAMP_HOME` as an override. Backups are created only when a mutating tool starts and only for concrete target paths from `write`/`edit`/`rename` or obvious shell command paths; lavalamp no longer snapshots the whole workspace. Project-authored `.agents/AGENTS.md`, `.agents/PLAN.md`, `.agents/skills`, and optional `.agents/rules.json` remain workspace files.
+
+**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), deeper AI Gateway spend/log UX, and final release packaging. Plugin system (M8) is explicitly postponed.

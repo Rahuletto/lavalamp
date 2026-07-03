@@ -39,7 +39,10 @@ async function main() {
       break;
     }
 
-    case undefined: { throw new Error('Not implemented yet: undefined case') }
+    case undefined: {
+      console.error('Usage: lavalamp {login|logout|status}');
+      process.exit(1);
+    }
     default: {
       console.error('Usage: lavalamp {login|logout|status}');
       process.exit(1);

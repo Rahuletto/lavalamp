@@ -5,6 +5,8 @@ export const HELP_COMMANDS: [string, string][] = [
   ['/compact', 'Compact context'],
   ['/memory', 'Show project memory'],
   ['/model', 'Show/change model'],
+  ['/gateway', 'Show/change AI Gateway'],
+  ['/usage', 'Show neuron meter'],
   ['/workspace', 'Show workspace'],
   ['/skills', 'List skills'],
   ['/mcp', 'List MCP servers'],

@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 export type PermissionAction = 'allow' | 'ask' | 'deny';

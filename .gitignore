@@ -6,4 +6,8 @@ testbench/
 .DS_Store
 .agents/autorun.json
 .agents/rules.json
+.agents/backups/
+.agents/steering.json
+.agents/attachments/
+.agents/vector-db.db
 .lavalamp/autorun.json

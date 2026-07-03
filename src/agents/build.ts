@@ -33,15 +33,44 @@ import { createTaskTools } from '../tools/task-tools';
 import { wrapToolExecute } from '../permissions/middleware';
 import { loadAutorun } from '../permissions/autorun';
 import { loadCredentials } from '../auth/credentials';
+import { getGatewayBaseUrl, resolveConfig } from '../config/user-config';
 
 function registerProviders(env: Record<string, string>) {
+  const config = resolveConfig();
   try {
     const creds = loadCredentials();
     if (creds !== null) {
+      const gatewayHeaders =
+        config.gatewayEnabled && config.gatewayId.length > 0
+          ? { 'cf-aig-gateway-id': config.gatewayId }
+          : undefined;
       registerProvider('cloudflare-workers-ai', {
         apiKey: creds.apiToken,
         baseUrl: `https://api.cloudflare.com/client/v4/accounts/${creds.accountId}/ai/v1`,
+        headers: gatewayHeaders,
       });
+
+      const gatewayRoute =
+        config.gatewayEnabled &&
+        config.gatewayId.length > 0 &&
+        config.preferredProviderRoute === 'gateway';
+
+      if (gatewayRoute && env.OPENAI_API_KEY === undefined) {
+        registerProvider('openai', {
+          apiKey: creds.apiToken,
+          baseUrl: getGatewayBaseUrl(creds.accountId, config.gatewayId, 'openai'),
+        });
+      }
+      if (gatewayRoute && env.ANTHROPIC_API_KEY === undefined) {
+        registerProvider('anthropic', {
+          apiKey: creds.apiToken,
+          baseUrl: getGatewayBaseUrl(
+            creds.accountId,
+            config.gatewayId,
+            'anthropic',
+          ),
+        });
+      }
     }
   } catch { /* credentials not available */ }
 
@@ -73,7 +102,7 @@ export default createAgent((ctx) => {
     if (typeof orig !== 'function') {
       return tool;
     }
-    return Object.assign({}, tool, { execute: wrapToolExecute(tool.name, orig as (args: Record<string, unknown>) => Promise<unknown>, workspaceRoot as string) as ToolDefinition['execute'] });
+    return { ...tool, execute: wrapToolExecute(tool.name, orig as (args: Record<string, unknown>) => Promise<unknown>, workspaceRoot as string) as ToolDefinition['execute']};
   }
 
   

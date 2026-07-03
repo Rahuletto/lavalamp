@@ -58,7 +58,7 @@ interface ShellResult {
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
-    const env = Object.assign({}, process.env, options.env);
+    const env = { ...process.env, ...options.env};
 
     const isWin = process.platform === 'win32';
     const shellCmd = isWin ? 'cmd.exe' : detectedShell;

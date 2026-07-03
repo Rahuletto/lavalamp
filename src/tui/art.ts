@@ -8,6 +8,8 @@ export const ALL_SLASH_COMMANDS = [
   '/sessions',
   '/memory',
   '/model',
+  '/gateway',
+  '/usage',
   '/workspace',
   '/skills',
   '/mcp',
@@ -26,6 +28,7 @@ export const SLASH_COMMAND_DESCRIPTIONS: Record<string, string> = {
   '/clear': 'new session',
   '/compact': 'shrink context',
   '/copy': 'copy transcript',
+  '/gateway': 'configure ai gateway',
   '/help': 'show help',
   '/mcp': 'list mcp',
   '/memory': 'show memory',
@@ -40,6 +43,7 @@ export const SLASH_COMMAND_DESCRIPTIONS: Record<string, string> = {
   '/sudo': 'allow everything',
   '/tools': 'list tools',
   '/undo': 'undo change',
+  '/usage': 'show neuron meter',
   '/workspace': 'show workspace',
 };
 

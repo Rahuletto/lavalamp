@@ -1,34 +1,19 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { workspaceDataDir } from './paths';
 
 export interface SteeringRule {
   pattern: string;
   instructions: string;
 }
 
+export function steeringPath(workspaceRoot: string): string {
+  return path.join(workspaceDataDir(workspaceRoot), 'steering.json');
+}
+
 export function steerPrompt(prompt: string, workspaceRoot: string): string {
-  const configPath = path.join(workspaceRoot, '.agents', 'steering.json');
+  const configPath = steeringPath(workspaceRoot);
   if (!fs.existsSync(configPath)) {
-    // Write a default empty file if it doesn't exist yet
-    try {
-      const parent = path.dirname(configPath);
-      if (!fs.existsSync(parent)) {
-        fs.mkdirSync(parent, { recursive: true });
-      }
-      fs.writeFileSync(
-        configPath,
-        JSON.stringify(
-          [
-            {
-              instructions: 'Ensure all tests are written using bun:test.',
-              pattern: 'test',
-            },
-          ],
-          null,
-          2,
-        ),
-      );
-    } catch {}
     return prompt;
   }
 

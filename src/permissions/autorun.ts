@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { PermissionAction } from './rules';
+import { workspaceDataDir } from '../storage/paths';
 
 export interface AutorunEntry {
   tool: string;
@@ -13,7 +14,7 @@ const autorunMap = new Map<string, AutorunEntry>();
 let allowAll = false;
 
 function getAutorunPath(cwd: string): string {
-  return join(cwd, '.agents', 'autorun.json');
+  return join(workspaceDataDir(cwd), 'autorun.json');
 }
 
 export function loadAutorun(cwd: string): void {
@@ -38,8 +39,8 @@ export function loadAutorun(cwd: string): void {
 }
 
 export function saveAutorun(cwd: string): void {
-  const dirPath = join(cwd, '.agents');
   const autorunPath = getAutorunPath(cwd);
+  const dirPath = dirname(autorunPath);
   if (!existsSync(dirPath)) {
     mkdirSync(dirPath, { recursive: true });
   }

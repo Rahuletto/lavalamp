@@ -1,11 +1,12 @@
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { workspaceDataDir } from './paths';
 
 export async function pasteImageFromClipboard(
   workspaceRoot: string,
 ): Promise<string | null> {
-  const attachmentsDir = path.join(workspaceRoot, '.agents', 'attachments');
+  const attachmentsDir = path.join(workspaceDataDir(workspaceRoot), 'attachments');
   if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
   }
