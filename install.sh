@@ -2,7 +2,7 @@
 set -euo pipefail
 
 LAVALAMP_VERSION="${1:-latest}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.lavalamp/bin}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.agents/bin}"
 REPO="rahuletto/lavalamp"
 
 # Colors
@@ -102,6 +102,7 @@ setup_path() {
     fi
 
     # Create config if it doesn't exist
+    mkdir -p "$(dirname "$config")"
     touch "$config"
 
     if [ "$shell_name" = "fish" ]; then
@@ -109,7 +110,7 @@ setup_path() {
     else
       echo "" >> "$config"
       echo "# lavalamp" >> "$config"
-      echo "export PATH=\"\$HOME/.lavalamp/bin:\$PATH\"" >> "$config"
+      echo "export PATH=\"$dir:\$PATH\"" >> "$config"
     fi
 
     info "Added PATH to $config"
@@ -144,9 +145,17 @@ install_lavalamp() {
   info "Downloading from ${binary_url}..."
 
   if command -v curl &>/dev/null; then
-    curl -sL "$binary_url" -o "${tmp_dir}/lavalamp"
+    curl -fsSL "$binary_url" -o "${tmp_dir}/lavalamp" || error "Failed to download ${binary_url}"
   else
-    wget -q "$binary_url" -O "${tmp_dir}/lavalamp"
+    wget -q "$binary_url" -O "${tmp_dir}/lavalamp" || error "Failed to download ${binary_url}"
+  fi
+
+  if [ ! -s "${tmp_dir}/lavalamp" ]; then
+    error "Downloaded binary is empty"
+  fi
+
+  if head -c 256 "${tmp_dir}/lavalamp" | LC_ALL=C grep -Eiq '^(\{|Not Found|<\?xml|<html|Bad Gateway|404)'; then
+    error "Downloaded file does not look like a lavalamp binary"
   fi
 
   chmod +x "${tmp_dir}/lavalamp"

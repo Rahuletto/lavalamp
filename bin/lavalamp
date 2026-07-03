@@ -156,24 +156,24 @@ if [ -n "$MODEL" ]; then
 fi
 
 if [ "$PRINT_MODE" = true ]; then
-  EXTRA_ARGS="-p"
+  EXTRA_ARGS=(-p)
   if [ -n "$PRINT_PROMPT" ]; then
-    EXTRA_ARGS="$EXTRA_ARGS $PRINT_PROMPT"
+    EXTRA_ARGS+=("$PRINT_PROMPT")
   fi
-  EXTRA_ARGS="$EXTRA_ARGS --output-format $OUTPUT_FORMAT"
+  EXTRA_ARGS+=(--output-format "$OUTPUT_FORMAT")
   if [ "$QUIET" = true ]; then
-    EXTRA_ARGS="$EXTRA_ARGS --quiet"
+    EXTRA_ARGS+=(--quiet)
   fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts $EXTRA_ARGS
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
 else
-  EXTRA_ARGS=""
+  EXTRA_ARGS=()
   if [ "$RESUME_SESSION" = true ]; then
-    EXTRA_ARGS="--continue"
+    EXTRA_ARGS+=(--continue)
     if [ -n "${SESSION_ID:-}" ]; then
-      EXTRA_ARGS="$EXTRA_ARGS $SESSION_ID"
+      EXTRA_ARGS+=("$SESSION_ID")
     fi
   fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts $EXTRA_ARGS
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
 fi

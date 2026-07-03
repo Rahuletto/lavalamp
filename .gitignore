@@ -4,3 +4,6 @@ dist/
 *.db
 testbench/
 .DS_Store
+.agents/autorun.json
+.agents/rules.json
+.lavalamp/autorun.json

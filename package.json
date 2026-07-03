@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Cloudflare-native local AI coding harness",
   "bin": {
-    "lavalamp": "./dist/server.mjs"
+    "lavalamp": "./bin/lavalamp"
   },
   "type": "module",
   "scripts": {

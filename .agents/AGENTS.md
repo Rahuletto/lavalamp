@@ -308,4 +308,6 @@ wrapping, autorun/sudo, and user-configurable rules.
 
 **M5 and M5.5 complete.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, auto-merge, explore/plan/research/review profiles, spec-mode approval gate, file-level backups/reverts, context steering, skill loading, and a language-agnostic Mixture of Experts (MoE) routing system (ui, refactor, logic, database, oracle, research, critique, spectacle) are fully implemented.
 
-**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), plugin system (M8), model picker + AI Gateway (M9).
+**Release hardening complete.** The package binary points at the shell wrapper, the wrapper preserves quoted prompts/flags when forwarding to `src/run.ts`, install PATH setup uses the configured `INSTALL_DIR`, and project-local runtime permission state is ignored.
+
+**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), model picker + AI Gateway (M9). Plugin system (M8) is explicitly postponed.

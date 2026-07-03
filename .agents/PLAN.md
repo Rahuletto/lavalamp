@@ -143,9 +143,10 @@ OpenCode/Claude Code.
 
 ### M9 — Polish & distribution
 
+- [x] Release hardening: package bin points at `bin/lavalamp`, shell args preserve quoted prompts, install PATH uses `INSTALL_DIR`, runtime permission state is ignored.
 - [ ] Model picker (Workers AI catalog + BYOK) with the capability table.
 - [ ] AI Gateway opt-in (caching, spend limits, logs on the user's account).
-- [ ] Usage/neuron meter, config UX, install/packaging.
+- [ ] Usage/neuron meter, config UX, release packaging.
 
 ### Later / out of v1
 
