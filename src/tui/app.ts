@@ -1481,6 +1481,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
     return [...new Set(paths)];
   }
 
+  function isReadOnlyBashCommand(command: string): boolean {
+    return (
+      /^\s*sed\s+-n\b/.test(command) ||
+      /^\s*(cat|pwd|ls|rg|grep)\b/.test(command) ||
+      /^\s*find\b/.test(command) && !/\s-(delete|exec)\b/.test(command) ||
+      /^\s*git\s+(status|diff|show|log|branch)\b/.test(command)
+    );
+  }
+
   function getMutationBackupPlan(
     name: string,
     args: Record<string, unknown>,
@@ -1505,7 +1514,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     if (name === 'bash') {
       const command = readStringArg(args, ['command', 'cmd']) ?? '';
-      if (/^\s*(sed|cat|pwd|ls|find|rg|grep|git\s+(status|diff|show|log|branch))\b/.test(command)) {
+      if (isReadOnlyBashCommand(command)) {
         return null;
       }
       const paths = extractBashMutationPaths(command);
