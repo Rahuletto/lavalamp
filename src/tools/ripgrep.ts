@@ -1,5 +1,7 @@
 import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
+import * as path from 'node:path';
+import { WorkspaceGuard } from '../sandbox/workspace';
 
 const MAX_RESULTS = 100;
 const MAX_OUTPUT_BYTES = 50 * 1024;
@@ -16,27 +18,59 @@ const ripgrepSchema = v.object({
 });
 
 export function createRipgrepTool(cwd: string) {
+  const guard = new WorkspaceGuard(cwd);
+
+  function linePath(line: string): string | undefined {
+    const match = /^(.+?)(?::|-)\d+(?::|-)/.exec(line);
+    return match?.[1];
+  }
+
   return defineTool({
     description:
       'Search file contents using ripgrep with regex support. Faster and more powerful than the built-in grep tool. Returns file paths, line numbers, and matching lines. Use this instead of grep for codebase searches.',
     execute: async (args) => {
       const rgArgs = ['-n', '--no-heading', '--color=never'];
 
-      if (args.ignoreCase) {rgArgs.push('-i');}
-      if (args.wholeWord) {rgArgs.push('-w');}
-      if (args.multiline) {rgArgs.push('-U');}
-      if (args.context !== null) {rgArgs.push(`-C${args.context}`);}
-      if (args.fileType !== null && args.fileType !== undefined) {rgArgs.push('-t', args.fileType);}
+      if (args.ignoreCase) {
+        rgArgs.push('-i');
+      }
+      if (args.wholeWord) {
+        rgArgs.push('-w');
+      }
+      if (args.multiline) {
+        rgArgs.push('-U');
+      }
+      if (args.context !== undefined) {
+        rgArgs.push(`-C${args.context}`);
+      }
+      if (args.fileType !== undefined) {
+        rgArgs.push('-t', args.fileType);
+      }
 
       const limit = Math.min(args.maxResults ?? MAX_RESULTS, MAX_RESULTS);
       rgArgs.push('--max-count', String(limit), args.pattern);
 
-      const searchPath = args.path !== null && args.path !== undefined ? `${cwd}/${args.path}` : cwd;
-      rgArgs.push(searchPath, '--glob', '!node_modules', '--glob', '!.git', '--glob', '!dist', '--glob', '!.next', '--glob', '!coverage');
+      const searchPath =
+        args.path !== undefined
+          ? path.relative(guard.root, guard.constrain(args.path)) || '.'
+          : '.';
+      rgArgs.push(
+        searchPath,
+        '--glob',
+        '!node_modules',
+        '--glob',
+        '!.git',
+        '--glob',
+        '!dist',
+        '--glob',
+        '!.next',
+        '--glob',
+        '!coverage',
+      );
 
       try {
         const proc = Bun.spawn(['rg', ...rgArgs], {
-          cwd,
+          cwd: guard.root,
           stderr: 'pipe',
           stdout: 'pipe',
         });
@@ -68,17 +102,25 @@ export function createRipgrepTool(cwd: string) {
           const truncatedLines: string[] = [];
           let totalBytes = 0;
           for (const line of lines) {
-            const lineBytes = new TextEncoder().encode(`${line  }\n`).byteLength;
-            if (totalBytes + lineBytes > MAX_OUTPUT_BYTES) {break;}
+            const lineBytes = new TextEncoder().encode(`${line}\n`).byteLength;
+            if (totalBytes + lineBytes > MAX_OUTPUT_BYTES) {
+              break;
+            }
             truncatedLines.push(line);
             totalBytes += lineBytes;
           }
           output = truncatedLines.join('\n');
         }
 
-        const resultLines = output.trim().split('\n');
+        const resultLines = output
+          .trim()
+          .split('\n')
+          .filter((line) => {
+            const filePath = linePath(line);
+            return filePath === undefined || guard.isAccessible(filePath);
+          });
         const stripped = resultLines.map((l) =>
-          l.startsWith(`${cwd  }/`) ? l.slice(cwd.length + 1) : l,
+          l.startsWith(`${guard.root}/`) ? l.slice(guard.root.length + 1) : l,
         );
 
         const header = `[ripgrep: ${stripped.length} matches]`;
@@ -89,7 +131,8 @@ export function createRipgrepTool(cwd: string) {
         return [header, ...stripped].join('\n') + footer;
       } catch (error) {
         throw new Error(
-          `ripgrep failed: ${error instanceof Error ? error.message : String(error)}. Is ripgrep installed? (brew install ripgrep)`, { cause: error },
+          `ripgrep failed: ${error instanceof Error ? error.message : String(error)}. Is ripgrep installed? (brew install ripgrep)`,
+          { cause: error },
         );
       }
     },

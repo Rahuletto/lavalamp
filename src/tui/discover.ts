@@ -33,7 +33,7 @@ function matchGitignore(name: string, pattern: string): boolean {
   }
   if (p.includes('*')) {
     return new RegExp(
-      `^${  p.replaceAll('.', String.raw`\.`).replaceAll('*', '.*')  }$`,
+      `^${p.replaceAll('.', String.raw`\.`).replaceAll('*', '.*')}$`,
     ).test(name);
   }
   return name === p || name.startsWith(`${p}/`);
@@ -105,13 +105,14 @@ export function fuzzyMatch(query: string, target: string): number | null {
       if (last === ti - 1) {
         score += 10;
       }
-      if (ti === 0 || '/-_ '.includes(target[ti - 1])) {
+      const previous = target[ti - 1];
+      if (ti === 0 || (previous !== undefined && '/-_ '.includes(previous))) {
         score += 20;
       }
       if (ti === qi) {
         score += 5;
       }
-      if (ti > 0 && target[ti - 1] === '.') {
+      if (previous === '.') {
         score += 15;
       }
       last = ti;

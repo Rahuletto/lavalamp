@@ -3,11 +3,14 @@ import * as fs from 'node:fs';
 import { workspaceDataDir } from './paths';
 
 interface BackupManifest {
+  createdAt: string;
   mode: 'partial';
   files: {
     path: string;
     existed: boolean;
+    backedUp: boolean;
   }[];
+  version: 1;
 }
 
 export class BackupEngine {
@@ -30,7 +33,12 @@ export class BackupEngine {
   }
 
   private createPartialBackup(destFolder: string, paths: string[]): void {
-    const manifest: BackupManifest = { files: [], mode: 'partial' };
+    const manifest: BackupManifest = {
+      createdAt: new Date().toISOString(),
+      files: [],
+      mode: 'partial',
+      version: 1,
+    };
     const filesDir = path.join(destFolder, 'files');
 
     for (const requestedPath of new Set(paths)) {
@@ -41,9 +49,10 @@ export class BackupEngine {
 
       const relative = path.relative(this.workspaceRoot, resolved);
       const existed = fs.existsSync(resolved);
-      manifest.files.push({ existed, path: relative });
+      const backedUp = existed && fs.statSync(resolved).isFile();
+      manifest.files.push({ backedUp, existed, path: relative });
 
-      if (!existed || !fs.statSync(resolved).isFile()) {
+      if (!backedUp) {
         continue;
       }
 
@@ -79,7 +88,7 @@ export class BackupEngine {
 
     const manifestPath = path.join(srcFolder, 'manifest.json');
     if (fs.existsSync(manifestPath)) {
-      this.restorePartialBackup(srcFolder, manifestPath);
+      this.restorePartialBackup(srcFolder, this.readManifest(manifestPath));
       return;
     }
 
@@ -103,20 +112,72 @@ export class BackupEngine {
     restoreDir(srcFolder);
   }
 
-  private restorePartialBackup(srcFolder: string, manifestPath: string): void {
-    const manifest = JSON.parse(
-      fs.readFileSync(manifestPath, 'utf8'),
-    ) as BackupManifest;
+  private readManifest(manifestPath: string): BackupManifest {
+    const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as unknown;
+    if (typeof raw !== 'object' || raw === null) {
+      throw new Error(`Invalid backup manifest: ${manifestPath}`);
+    }
+    const record = raw as Record<string, unknown>;
+    if (record.mode !== 'partial' || !Array.isArray(record.files)) {
+      throw new Error(`Invalid backup manifest: ${manifestPath}`);
+    }
+    const files = record.files
+      .map((entry): BackupManifest['files'][number] | null => {
+        if (typeof entry !== 'object' || entry === null) {
+          return null;
+        }
+        const file = entry as Record<string, unknown>;
+        if (
+          typeof file.path !== 'string' ||
+          typeof file.existed !== 'boolean'
+        ) {
+          return null;
+        }
+        return {
+          backedUp:
+            typeof file.backedUp === 'boolean' ? file.backedUp : file.existed,
+          existed: file.existed,
+          path: file.path,
+        };
+      })
+      .filter(
+        (entry): entry is BackupManifest['files'][number] => entry !== null,
+      );
+    return {
+      createdAt:
+        typeof record.createdAt === 'string'
+          ? record.createdAt
+          : new Date(0).toISOString(),
+      files,
+      mode: 'partial',
+      version: 1,
+    };
+  }
 
+  private restorePartialBackup(
+    srcFolder: string,
+    manifest: BackupManifest,
+  ): void {
     for (const file of manifest.files) {
-      const destPath = path.join(this.workspaceRoot, file.path);
+      const destPath = this.resolveWorkspacePath(file.path);
+      if (destPath === null) {
+        continue;
+      }
       if (!file.existed) {
         fs.rmSync(destPath, { force: true, recursive: true });
         continue;
       }
 
+      if (!file.backedUp) {
+        continue;
+      }
       const srcPath = path.join(srcFolder, 'files', file.path);
-      if (!fs.existsSync(srcPath)) {
+      const relative = path.relative(path.join(srcFolder, 'files'), srcPath);
+      if (
+        relative.startsWith('..') ||
+        path.isAbsolute(relative) ||
+        !fs.existsSync(srcPath)
+      ) {
         continue;
       }
       fs.mkdirSync(path.dirname(destPath), { recursive: true });

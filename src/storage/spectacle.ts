@@ -35,7 +35,11 @@ export async function describeImageWithSpectacle(
       throw new Error(`Cloudflare Vision API error: ${response.statusText}`);
     }
 
-    const result = (await response.json()) as { success: boolean; result: { response?: string }; errors: unknown[] };
+    const result = (await response.json()) as {
+      success: boolean;
+      result: { response?: string };
+      errors: unknown[];
+    };
     if (!result.success) {
       throw new Error(
         `Cloudflare Vision failed: ${JSON.stringify(result.errors)}`,

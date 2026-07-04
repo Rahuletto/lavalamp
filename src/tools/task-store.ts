@@ -66,6 +66,9 @@ export class TaskStore {
       throw new Error(`Task #${id} not found`);
     }
     const [task] = this.#tasks.splice(idx, 1);
+    if (task === undefined) {
+      throw new Error(`Task #${id} not found`);
+    }
     return task;
   }
 

@@ -195,9 +195,9 @@ export class ToolUiManager {
     const fp =
       typeof args.file_path === 'string'
         ? args.file_path
-        : (typeof args.path === 'string'
+        : typeof args.path === 'string'
           ? args.path
-          : '');
+          : '';
     const displayPath = stripCwd(fp, this.ctx.cwd);
     const dur =
       durationMs !== null && durationMs !== undefined

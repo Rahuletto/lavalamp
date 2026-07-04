@@ -8,7 +8,9 @@ export function createMemoryTools(cwd: string) {
       'Read the persistent project memory file. This contains notes, decisions, and context from previous sessions. Use this at the start of a session to understand what was done before.',
     execute: async () => {
       const memory = loadMemory(cwd);
-      if (memory === null) {return 'No project memory found yet.';}
+      if (memory === null) {
+        return 'No project memory found yet.';
+      }
       return memory;
     },
     name: 'memory_read',

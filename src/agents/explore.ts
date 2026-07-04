@@ -1,7 +1,8 @@
 import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
-import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
+import { BUILD_MODEL } from '../config/models';
+import { resolveSelectedModel } from '../config/runtime-route';
 import {
   createSessionsTool,
   createSessionContextTool,
@@ -13,6 +14,7 @@ import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
+import { WorkspaceGuard } from '../sandbox/workspace';
 import { createOracleTool } from '../tools/oracle';
 import { createRipgrepTool } from '../tools/ripgrep';
 import { createLoadSkillTool } from '../tools/skills';
@@ -22,12 +24,11 @@ import { createQueryExpertTool } from '../tools/query-expert';
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
+  const guard = new WorkspaceGuard(workspaceRoot as string);
 
-  
-
-  const model = resolveModelWithFallback(
+  const model = resolveSelectedModel(
     BUILD_MODEL,
-    ctx.env as Record<string, string>,
+    ctx.env as Record<string, string | undefined>,
   );
   const memoryContext = getMemoryContext(workspaceRoot as string);
 
@@ -81,13 +82,7 @@ export default createAgent((ctx) => {
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
-      createCodebaseSearchTool({
-        assertAccessible: () => {},
-        assertInside: () => {},
-        isInside: () => true,
-        resolve: (p: string) => `${workspaceRoot}/${p}`,
-        root: workspaceRoot,
-      } as Parameters<typeof createCodebaseSearchTool>[0]),
+      createCodebaseSearchTool(guard),
       createOracleTool(),
       createRipgrepTool(workspaceRoot as string),
       createLoadSkillTool(workspaceRoot as string),

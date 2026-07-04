@@ -1,5 +1,6 @@
 import { VectorDb, chunkText, fetchEmbeddings } from './vector-db';
 import { loadCredentials } from '../auth/credentials';
+import { WorkspaceGuard } from '../sandbox/workspace';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as crypto from 'node:crypto';
@@ -41,18 +42,24 @@ function walkFiles(
 export class CodebaseIndexer {
   private readonly db: VectorDb;
   private indexingPromise: Promise<void> | null = null;
+  private readonly guard: WorkspaceGuard;
 
   constructor(private readonly workspaceRoot: string) {
+    this.guard = new WorkspaceGuard(workspaceRoot);
     this.db = new VectorDb(workspaceRoot);
   }
 
-   async startIndexing(): Promise<void> {
+  async startIndexing(): Promise<void> {
     if (this.indexingPromise) {
       return this.indexingPromise;
     }
-    this.indexingPromise = this.runIndex().catch((error: unknown) => {
-      console.error('[lavalamp] Indexing error:', error);
-    });
+    this.indexingPromise = this.runIndex()
+      .catch((error: unknown) => {
+        console.error('[lavalamp] Indexing error:', error);
+      })
+      .finally(() => {
+        this.indexingPromise = null;
+      });
     return this.indexingPromise;
   }
 
@@ -72,7 +79,12 @@ export class CodebaseIndexer {
         return 'Failed to embed query.';
       }
 
-      const matches = this.db.search(vectors[0], limit);
+      const queryVector = vectors[0];
+      if (queryVector === undefined) {
+        return 'Failed to embed query.';
+      }
+
+      const matches = this.db.search(queryVector, limit);
       if (matches.length === 0) {
         return 'No matching semantic chunks found.';
       }
@@ -98,7 +110,10 @@ export class CodebaseIndexer {
 
     // Process files
     for (const file of filesToSync) {
-      const fullPath = path.join(this.workspaceRoot, file);
+      if (!this.guard.isAccessible(file)) {
+        continue;
+      }
+      const fullPath = this.guard.constrain(file);
       if (!fs.existsSync(fullPath)) {
         continue;
       }
@@ -129,7 +144,12 @@ export class CodebaseIndexer {
             creds.apiToken,
           );
           for (let j = 0; j < batch.length; j++) {
-            this.db.insertChunk(file, i + j, batch[j], vectors[j]);
+            const content = batch[j];
+            const vector = vectors[j];
+            if (content === undefined || vector === undefined) {
+              continue;
+            }
+            this.db.insertChunk(file, i + j, content, vector);
           }
         }
         this.db.upsertFile(file, hash);
@@ -137,11 +157,5 @@ export class CodebaseIndexer {
         console.error(`[lavalamp] Failed to index ${file}:`, error);
       }
     }
-  }
-
-  watchWorkspace() {
-    setInterval(() => {
-      this.runIndex().catch(() => {});
-    }, 60_000);
   }
 }

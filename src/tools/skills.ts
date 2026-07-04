@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
+import { skillDirs } from '../storage/paths';
 
 const loadSkillSchema = v.object({
   name: v.string(),
@@ -12,15 +13,12 @@ export function createLoadSkillTool(workspaceRoot: string) {
     description:
       'Load the instructions/guidance for a specific skill (e.g. deslop, thermonuclear review) from local or global directories.',
     execute: async ({ name }) => {
-      const home = process.env.HOME ?? '';
-      const dirs = [
-        path.join(workspaceRoot, '.agents', 'skills', name),
-        path.join(workspaceRoot, '..', '.agents', 'skills', name),
-        home ? path.join(home, '.agents', 'skills', name) : '',
-      ];
+      if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+        return 'Invalid skill name.';
+      }
+      const dirs = skillDirs(workspaceRoot).map((dir) => path.join(dir, name));
 
       for (const dir of dirs) {
-        if (!dir) {continue;}
         const skillMd = path.join(dir, 'SKILL.md');
         if (fs.existsSync(skillMd)) {
           const content = fs.readFileSync(skillMd, 'utf8');

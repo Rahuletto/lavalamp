@@ -71,6 +71,65 @@ export class FlueProcess {
   private shutdownRequested = false;
   onPermissionRequest?: OnPermissionRequest;
 
+  private readonly handleChildMessage = (raw: Record<string, unknown>) => {
+    if (raw.type === 'permission_request') {
+      if (this.onPermissionRequest != null) {
+        this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
+      }
+      return;
+    }
+
+    const requestId =
+      typeof raw.requestId === 'string' ? raw.requestId : undefined;
+    if (requestId === undefined) {
+      return;
+    }
+
+    const callbacks = this.pending.get(requestId);
+    if (callbacks === undefined) {
+      return;
+    }
+
+    if (raw.type === 'started') {
+      if (callbacks.onStarted != null) {
+        callbacks.onStarted();
+      }
+      return;
+    }
+
+    if (raw.type === 'event') {
+      if (callbacks.onEvent != null) {
+        callbacks.onEvent(raw.event as FlueEvent);
+      }
+      return;
+    }
+
+    if (raw.type === 'result') {
+      this.pending.delete(requestId);
+      if (callbacks.onResult != null) {
+        callbacks.onResult(raw.result as FlueResult);
+      }
+      return;
+    }
+
+    if (raw.type === 'error') {
+      this.pending.delete(requestId);
+      const err =
+        raw.error !== null &&
+        raw.error !== undefined &&
+        typeof raw.error === 'object'
+          ? (raw.error as { message?: string; details?: string })
+          : {};
+      if (callbacks.onError != null) {
+        callbacks.onError(
+          new Error(
+            err.message ?? err.details ?? String(raw.error ?? 'Unknown error'),
+          ),
+        );
+      }
+    }
+  };
+
   constructor(
     private readonly serverPath: string,
     private readonly cwd: string,
@@ -107,14 +166,20 @@ export class FlueProcess {
 
   async start(): Promise<void> {
     const instanceId = `inst_${randomUUID().slice(0, 8)}`;
+    this.shutdownRequested = false;
 
     this.child = spawn(process.execPath, [this.serverPath], {
       cwd: this.cwd,
-      env: { ...process.env, FLUE_CLI_ID: instanceId,
+      env: {
+        ...process.env,
+        FLUE_CLI_ID: instanceId,
         FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_TARGET: 'agent',
         FLUE_INTERNAL_CLI_IPC: '1',
-        FLUE_MODE: 'local',},
+        FLUE_MODE: 'local',
+        LAVALAMP_SERVER_PATH: this.serverPath,
+        LAVALAMP_WORKSPACE: this.cwd,
+      },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     });
 
@@ -175,19 +240,28 @@ export class FlueProcess {
     }
 
     this.child.on('exit', (code) => {
-      if (!this.ready) {
+      const wasReady = this.ready;
+      this.ready = false;
+      if (!wasReady) {
         this.rejectAll(new Error(`Server exited before ready (code ${code})`));
+        return;
+      }
+      if (!this.shutdownRequested) {
+        this.rejectAll(new Error(`Server exited unexpectedly (code ${code})`));
       }
     });
+    this.child.on('message', this.handleChildMessage);
 
     await this.waitForReady(instanceId);
   }
 
-  private  async waitForReady(instanceId: string): Promise<void> {
+  private async waitForReady(instanceId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
-        if (this.child !== null) { this.child.kill('SIGTERM'); }
+        if (this.child !== null) {
+          this.child.kill('SIGTERM');
+        }
         reject(new Error('Server did not become ready within 60s'));
       }, 60_000);
 
@@ -248,53 +322,13 @@ export class FlueProcess {
       type: 'prompt',
     });
 
-    this.child.on('message', (raw: Record<string, unknown>) => {
-      // Handle permission requests from the server
-      if (raw.type === 'permission_request') {
-        if (this.onPermissionRequest != null) {
-          this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
-        }
-        return;
-      }
-
-      if (raw.requestId !== requestId) {
-        return;
-      }
-
-      if (raw.type === 'started') {
-        if (callbacks.onStarted != null) { callbacks.onStarted(); }
-        return;
-      }
-
-      if (raw.type === 'event') {
-        if (callbacks.onEvent != null) { callbacks.onEvent(raw.event as FlueEvent); }
-        return;
-      }
-
-      if (raw.type === 'result') {
-        this.pending.delete(requestId);
-        if (callbacks.onResult != null) { callbacks.onResult(raw.result as FlueResult); }
-        return;
-      }
-
-      if (raw.type === 'error') {
-        this.pending.delete(requestId);
-        const err = raw.error as { message?: string; details?: string };
-        if (callbacks.onError != null) {
-          callbacks.onError(
-            new Error(err.message ?? err.details ?? 'Unknown error'),
-          );
-        }
-        return;
-      }
-    });
-
     return requestId;
   }
 
   cancel(): void {
     this.rejectAll(new Error('Cancelled'));
     if (this.child) {
+      this.child.off('message', this.handleChildMessage);
       this.child.kill('SIGTERM');
       this.child = null;
       this.ready = false;
@@ -313,14 +347,19 @@ export class FlueProcess {
     this.shutdownRequested = true;
 
     this.rejectAll(new Error('Shutting down'));
-    if (this.child !== null) { this.child.kill('SIGTERM'); }
+    if (this.child !== null) {
+      this.child.off('message', this.handleChildMessage);
+      this.child.kill('SIGTERM');
+    }
 
     await new Promise<void>((resolve) => {
       if (this.child === null) {
         return resolve();
       }
       const timeout = setTimeout(() => {
-        if (this.child !== null) { this.child.kill('SIGKILL'); }
+        if (this.child !== null) {
+          this.child.kill('SIGKILL');
+        }
         resolve();
       }, 5000);
       this.child.once('exit', () => {
@@ -335,7 +374,9 @@ export class FlueProcess {
 
   private rejectAll(error: Error) {
     for (const [id, cbs] of this.pending) {
-      if (cbs.onError != null) { cbs.onError(error); }
+      if (cbs.onError != null) {
+        cbs.onError(error);
+      }
       this.pending.delete(id);
     }
   }

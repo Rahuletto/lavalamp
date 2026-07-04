@@ -19,7 +19,9 @@ export function createFetchUrlTool() {
         format: args.format ?? 'markdown',
         url: args.url,
       });
-      if (args.selector !== null && args.selector !== undefined) {params.set('selector', args.selector);}
+      if (args.selector !== null && args.selector !== undefined) {
+        params.set('selector', args.selector);
+      }
 
       const resp = await fetch(`${READER_BASE}/read?${params.toString()}`);
 

@@ -67,17 +67,26 @@ function parseSearchResults(html: string, maxResults: number): SearchResult[] {
     links.length < maxResults
   ) {
     const href = match[1];
+    const title = match[2];
+    if (href === undefined || title === undefined) {
+      continue;
+    }
     const uddgMatch = href.match(/uddg=([^&]+)/);
-    const actualUrl = uddgMatch ? decodeURIComponent(uddgMatch[1]) : href;
+    const encodedUrl = uddgMatch?.[1];
+    const actualUrl =
+      encodedUrl !== undefined ? decodeURIComponent(encodedUrl) : href;
     links.push(actualUrl);
-    titles.push(match[2].replaceAll(/<[^>]+>/g, '').trim());
+    titles.push(title.replaceAll(/<[^>]+>/g, '').trim());
   }
 
   while (
     (match = snippetRegex.exec(html)) !== null &&
     snippets.length < maxResults
   ) {
-    snippets.push(match[1].replaceAll(/<[^>]+>/g, '').trim());
+    const snippet = match[1];
+    if (snippet !== undefined) {
+      snippets.push(snippet.replaceAll(/<[^>]+>/g, '').trim());
+    }
   }
 
   for (let i = 0; i < Math.min(links.length, maxResults); i++) {

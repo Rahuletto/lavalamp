@@ -12,14 +12,14 @@ export function createDeployParallelSubsTool() {
     execute: async (args) => {
       const queries = args.queries.slice(0, 3);
       if (queries.length === 0) {
-        return { error: 'At least one query is required' };
+        return JSON.stringify({ error: 'At least one query is required' });
       }
-      return {
+      return JSON.stringify({
         message: `${queries.length} research agent(s) deployed`,
         queries,
         status: 'deployed',
         type: 'parallel_deploy',
-      };
+      });
     },
     name: 'deploy_parallel_subs',
     parameters: deployParallelSubsSchema,

@@ -1,5 +1,3 @@
-import { resolveConfig } from './user-config';
-
 export const ACCENT_COLOR = '#FF5E1F';
 
 export const BUILD_MODEL = 'cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash';
@@ -141,35 +139,4 @@ export function detectProvider(model: string): string | undefined {
     return undefined;
   }
   return model.slice(0, slash);
-}
-
-export function resolveModelWithFallback(
-  preferred: string,
-  env: Record<string, string>,
-): string {
-  const override = env.LAVALAMP_MODEL;
-  if (override !== undefined) {
-    return override;
-  }
-
-  const configured = resolveConfig().defaultModel;
-  if (configured.length > 0) {
-    return configured;
-  }
-
-  const provider = detectProvider(preferred);
-  if (provider === 'anthropic' && env.ANTHROPIC_API_KEY === undefined) {
-    console.error(
-      `[lavalamp] ANTHROPIC_API_KEY not set, falling back to default model`,
-    );
-    return BUILD_MODEL;
-  }
-  if (provider === 'openai' && env.OPENAI_API_KEY === undefined) {
-    console.error(
-      `[lavalamp] OPENAI_API_KEY not set, falling back to default model`,
-    );
-    return BUILD_MODEL;
-  }
-
-  return preferred;
 }

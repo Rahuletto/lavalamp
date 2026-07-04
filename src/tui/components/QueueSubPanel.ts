@@ -73,9 +73,9 @@ export class SubPanelManager extends BasePanelManager {
       const icon =
         sub.status === 'running'
           ? spinnerFrames[spinnerFrame]
-          : (sub.status === 'done'
+          : sub.status === 'done'
             ? '✓'
-            : '×');
+            : '×';
       const preview =
         sub.query.length > 70 ? `${sub.query.slice(0, 67)}...` : sub.query;
       this.body.add(
@@ -84,9 +84,9 @@ export class SubPanelManager extends BasePanelManager {
           fg:
             sub.status === 'running'
               ? COLORS.pink
-              : (sub.status === 'done'
+              : sub.status === 'done'
                 ? COLORS.green
-                : COLORS.red),
+                : COLORS.red,
           id: this.ctx.nextId(),
           width: '100%',
         }),

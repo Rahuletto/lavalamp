@@ -11,9 +11,10 @@ export function createOracleTool() {
     description:
       'Get a second opinion from a different model. Use when uncertain about an approach, need to verify a solution, or want an alternative perspective. The oracle uses a different model than the one you are running on.',
     execute: async (args) => {
-      const prompt = args.context !== null && args.context !== undefined
-        ? `You are a second-opinion oracle. A coding assistant is asking for your perspective.\n\nContext:\n${args.context}\n\nQuestion:\n${args.question}\n\nProvide a concise, actionable answer.`
-        : `You are a second-opinion oracle. A coding assistant is asking for your perspective.\n\nQuestion:\n${args.question}\n\nProvide a concise, actionable answer.`;
+      const prompt =
+        args.context !== null && args.context !== undefined
+          ? `You are a second-opinion oracle. A coding assistant is asking for your perspective.\n\nContext:\n${args.context}\n\nQuestion:\n${args.question}\n\nProvide a concise, actionable answer.`
+          : `You are a second-opinion oracle. A coding assistant is asking for your perspective.\n\nQuestion:\n${args.question}\n\nProvide a concise, actionable answer.`;
 
       try {
         const { loadCredentials } = await import('../auth/credentials');
@@ -36,14 +37,21 @@ export function createOracleTool() {
           );
 
           if (resp.ok) {
-            const data = await resp.json() as Record<string, unknown>;
-            const choices = data.choices as Record<string, unknown>[] | undefined;
-            const text = choices !== null && choices !== undefined && choices.length > 0
-              ? ((choices[0].message as Record<string, unknown> | undefined) !== undefined
-                ? (choices[0].message as Record<string, unknown>).content
-                : undefined)
-              : undefined;
-            if (typeof text === 'string' && text !== '') {return `[oracle — llama-3.3-70b]\n${text}`;}
+            const data = (await resp.json()) as Record<string, unknown>;
+            const choices = data.choices as
+              | Record<string, unknown>[]
+              | undefined;
+            const choice = choices?.[0];
+            const text =
+              choice !== undefined
+                ? (choice.message as Record<string, unknown> | undefined) !==
+                  undefined
+                  ? (choice.message as Record<string, unknown>).content
+                  : undefined
+                : undefined;
+            if (typeof text === 'string' && text !== '') {
+              return `[oracle — llama-3.3-70b]\n${text}`;
+            }
           }
         }
       } catch {}

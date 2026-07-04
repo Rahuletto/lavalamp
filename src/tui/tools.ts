@@ -1,13 +1,13 @@
 import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { WorkspaceGuard } from '../sandbox/workspace';
 
 export function stripCwd(fullPath: string, cwd: string): string {
   if (fullPath.startsWith(cwd)) {
-    return `~${  fullPath.slice(cwd.length)}`;
+    return `~${fullPath.slice(cwd.length)}`;
   }
   const home = process.env.HOME ?? '';
   if (home && fullPath.startsWith(home)) {
-    return `~${  fullPath.slice(home.length)}`;
+    return `~${fullPath.slice(home.length)}`;
   }
   return fullPath;
 }
@@ -26,18 +26,18 @@ export function summarizeToolArgs(
       const cmd =
         typeof args.command === 'string'
           ? args.command
-          : (typeof args.cmd === 'string'
+          : typeof args.cmd === 'string'
             ? args.cmd
-            : '');
+            : '';
       return cmd.length > 60 ? `${cmd.slice(0, 57)}...` : cmd;
     }
     case 'read': {
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : (typeof args.path === 'string'
+          : typeof args.path === 'string'
             ? args.path
-            : '');
+            : '';
       const rest: string[] = [];
       if (typeof args.offset === 'number') {
         rest.push(`offset=${args.offset}`);
@@ -58,9 +58,9 @@ export function summarizeToolArgs(
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : (typeof args.path === 'string'
+          : typeof args.path === 'string'
             ? args.path
-            : '');
+            : '';
       return stripCwd(fp, cwd);
     }
     case 'glob':
@@ -75,7 +75,7 @@ export function summarizeToolArgs(
       const parts: string[] = [];
       for (const [, v] of entries.slice(0, 2)) {
         if (typeof v === 'string') {
-          parts.push(v.length > 30 ? `${v.slice(0, 27)  }...` : v);
+          parts.push(v.length > 30 ? `${v.slice(0, 27)}...` : v);
         } else if (typeof v === 'number' || typeof v === 'boolean') {
           parts.push(String(v));
         }
@@ -94,9 +94,9 @@ export function summarizeToolResult(
   const raw =
     typeof result === 'string'
       ? result
-      : (result !== null
+      : result !== null
         ? JSON.stringify(result)
-        : '');
+        : '';
   const parsed: unknown = (() => {
     try {
       return JSON.parse(raw) as unknown;
@@ -112,16 +112,17 @@ export function summarizeToolResult(
         parsed !== null && typeof parsed === 'object'
           ? (parsed as Record<string, unknown>)
           : null;
-      const queries = marker !== null && Array.isArray(marker.queries) ? marker.queries : [];
+      const queries =
+        marker !== null && Array.isArray(marker.queries) ? marker.queries : [];
       return `${queries.length > 0 ? queries.length : 'parallel'} research agent${queries.length === 1 ? '' : 's'} deployed`;
     }
     case 'read': {
       const fp =
         typeof args.file_path === 'string'
           ? args.file_path
-          : (typeof args.path === 'string'
+          : typeof args.path === 'string'
             ? args.path
-            : '');
+            : '';
       const lines = str.split('\n').length;
       return `${stripCwd(fp, cwd)} (${lines} lines)`;
     }
@@ -322,6 +323,7 @@ const FILE_PATH_RE =
   /(?:~\/|[./])?[\w./-]+\.(?:ts|tsx|js|jsx|py|rb|rs|go|java|kt|c|cpp|h|hpp|cs|css|scss|less|html|xml|json|yaml|yml|toml|md|sql|sh|bash|zsh|lua|swift|dart|ex|erl|vue|svelte|tsx?|jsx?)/g;
 
 export function extractFilePaths(text: string, cwd: string): string[] {
+  const guard = new WorkspaceGuard(cwd);
   const found = new Set<string>();
   const matches = text.match(FILE_PATH_RE);
   if (!matches) {
@@ -329,11 +331,13 @@ export function extractFilePaths(text: string, cwd: string): string[] {
   }
   for (const m of matches) {
     const cleaned = m.replace(/[`,\s]*$/, '');
-    const full = cleaned.startsWith('~')
+    const candidate = cleaned.startsWith('~')
       ? (process.env.HOME ?? '') + cleaned.slice(1)
-      : (cleaned.startsWith('./') || cleaned.startsWith('../')
-        ? path.resolve(cwd, cleaned)
-        : cleaned);
+      : cleaned;
+    if (!guard.isAccessible(candidate)) {
+      continue;
+    }
+    const full = guard.constrain(candidate);
     if (fs.existsSync(full)) {
       found.add(full);
     }

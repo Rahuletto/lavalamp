@@ -1,7 +1,8 @@
 import { createAgent, registerProvider } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
-import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
+import { BUILD_MODEL } from '../config/models';
+import { resolveSelectedModel } from '../config/runtime-route';
 import {
   createSessionsTool,
   createSessionContextTool,
@@ -25,6 +26,7 @@ import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
+import { WorkspaceGuard } from '../sandbox/workspace';
 import { createOracleTool } from '../tools/oracle';
 import { createDoomLoopTool } from '../tools/doom-loop';
 import { createRipgrepTool } from '../tools/ripgrep';
@@ -33,58 +35,31 @@ import { createTaskTools } from '../tools/task-tools';
 import { wrapToolExecute } from '../permissions/middleware';
 import { loadAutorun } from '../permissions/autorun';
 import { loadCredentials } from '../auth/credentials';
-import { getGatewayBaseUrl, resolveConfig } from '../config/user-config';
+import { providerRegistrationsFor } from '../config/runtime-route';
 
 function registerProviders(env: Record<string, string>) {
-  const config = resolveConfig();
+  let creds: ReturnType<typeof loadCredentials> = null;
   try {
-    const creds = loadCredentials();
-    if (creds !== null) {
-      const gatewayHeaders =
-        config.gatewayEnabled && config.gatewayId.length > 0
-          ? { 'cf-aig-gateway-id': config.gatewayId }
-          : undefined;
-      registerProvider('cloudflare-workers-ai', {
-        apiKey: creds.apiToken,
-        baseUrl: `https://api.cloudflare.com/client/v4/accounts/${creds.accountId}/ai/v1`,
-        headers: gatewayHeaders,
-      });
+    creds = loadCredentials();
+  } catch {
+    /* credentials not available */
+  }
 
-      const gatewayRoute =
-        config.gatewayEnabled &&
-        config.gatewayId.length > 0 &&
-        config.preferredProviderRoute === 'gateway';
-
-      if (gatewayRoute && env.OPENAI_API_KEY === undefined) {
-        registerProvider('openai', {
-          apiKey: creds.apiToken,
-          baseUrl: getGatewayBaseUrl(creds.accountId, config.gatewayId, 'openai'),
-        });
-      }
-      if (gatewayRoute && env.ANTHROPIC_API_KEY === undefined) {
-        registerProvider('anthropic', {
-          apiKey: creds.apiToken,
-          baseUrl: getGatewayBaseUrl(
-            creds.accountId,
-            config.gatewayId,
-            'anthropic',
-          ),
-        });
-      }
+  for (const registration of providerRegistrationsFor(env, creds)) {
+    const options: {
+      apiKey: string;
+      baseUrl?: string;
+      headers?: Record<string, string>;
+    } = {
+      apiKey: registration.apiKey,
+    };
+    if (registration.baseUrl !== undefined) {
+      options.baseUrl = registration.baseUrl;
     }
-  } catch { /* credentials not available */ }
-
-  if (env.ANTHROPIC_API_KEY !== undefined) {
-    registerProvider('anthropic', { apiKey: env.ANTHROPIC_API_KEY });
-  }
-  if (env.OPENAI_API_KEY !== undefined) {
-    registerProvider('openai', { apiKey: env.OPENAI_API_KEY });
-  }
-  if (env.OPENROUTER_API_KEY !== undefined) {
-    registerProvider('openrouter', {
-      apiKey: env.OPENROUTER_API_KEY,
-      baseUrl: 'https://openrouter.ai/api/v1',
-    });
+    if (registration.headers !== undefined) {
+      options.headers = registration.headers;
+    }
+    registerProvider(registration.provider, options);
   }
 }
 
@@ -92,6 +67,7 @@ registerProviders(process.env as Record<string, string>);
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
+  const guard = new WorkspaceGuard(workspaceRoot as string);
   const tracker = new ChangeTracker();
   const taskStore = new TaskStore();
 
@@ -102,14 +78,19 @@ export default createAgent((ctx) => {
     if (typeof orig !== 'function') {
       return tool;
     }
-    return { ...tool, execute: wrapToolExecute(tool.name, orig as (args: Record<string, unknown>) => Promise<unknown>, workspaceRoot as string) as ToolDefinition['execute']};
+    return {
+      ...tool,
+      execute: wrapToolExecute(
+        tool.name,
+        orig as (args: Record<string, unknown>) => Promise<unknown>,
+        workspaceRoot as string,
+      ) as ToolDefinition['execute'],
+    };
   }
 
-  
-
-  const model = resolveModelWithFallback(
+  const model = resolveSelectedModel(
     BUILD_MODEL,
-    ctx.env as Record<string, string>,
+    ctx.env as Record<string, string | undefined>,
   );
 
   const memoryContext = getMemoryContext(workspaceRoot as string);
@@ -233,13 +214,7 @@ export default createAgent((ctx) => {
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
-      createCodebaseSearchTool({
-        assertAccessible: () => {},
-        assertInside: () => {},
-        isInside: () => true,
-        resolve: (p: string) => `${workspaceRoot}/${p}`,
-        root: workspaceRoot,
-      } as Parameters<typeof createCodebaseSearchTool>[0]),
+      createCodebaseSearchTool(guard),
       gate(createOracleTool()),
       gate(createDoomLoopTool()),
       createRipgrepTool(workspaceRoot as string),

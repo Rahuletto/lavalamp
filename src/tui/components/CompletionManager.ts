@@ -97,7 +97,8 @@ export class CompletionManager {
       );
       this.completionList = matchedSessions.map((s) => s.id);
       this.completionIndex = 0;
-      this.emptyMessage = sessions.length === 0 ? 'No saved sessions' : 'No matching sessions';
+      this.emptyMessage =
+        sessions.length === 0 ? 'No saved sessions' : 'No matching sessions';
       if (this.completionList.length > 0) {
         this.completing = true;
         this.render();
@@ -117,7 +118,8 @@ export class CompletionManager {
         files,
       ).map((r) => r.item);
       this.completionIndex = 0;
-      this.emptyMessage = files.length === 0 ? 'No files in project' : 'No matching files';
+      this.emptyMessage =
+        files.length === 0 ? 'No files in project' : 'No matching files';
       this.completing = true;
       this.render();
       return;
@@ -132,7 +134,8 @@ export class CompletionManager {
         skills,
       ).map((r) => r.item);
       this.completionIndex = 0;
-      this.emptyMessage = skills.length === 0 ? 'No skills installed' : 'No matching skills';
+      this.emptyMessage =
+        skills.length === 0 ? 'No skills installed' : 'No matching skills';
       this.completing = true;
       this.render();
       return;
@@ -153,7 +156,11 @@ export class CompletionManager {
     });
     this.ctx.completionScroll.add(spacer);
 
-    if (this.completionList.length === 0 && this.emptyMessage !== null && this.emptyMessage.length > 0) {
+    if (
+      this.completionList.length === 0 &&
+      this.emptyMessage !== null &&
+      this.emptyMessage.length > 0
+    ) {
       const row = new BoxRenderable(this.ctx.renderer, {
         flexDirection: 'row',
         height: 1,
@@ -215,9 +222,9 @@ export class CompletionManager {
               this.completionType === 'slash'
                 ? (SLASH_COMMAND_DESCRIPTIONS[this.completionList[i] ?? ''] ??
                   '')
-                : (this.completionType === 'session'
+                : this.completionType === 'session'
                   ? typeText
-                  : 'tool'),
+                  : 'tool',
             fg: COLORS.dim,
             id: this.ctx.nextId(),
             overflow: 'hidden',

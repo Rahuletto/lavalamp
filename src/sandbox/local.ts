@@ -8,8 +8,9 @@ import {
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { requestPermission } from '../permissions/middleware';
+import { WorkspaceGuard } from './workspace';
 
 function findShell(): string {
   const { platform } = process;
@@ -52,13 +53,13 @@ interface ShellResult {
   timedOut: boolean;
 }
 
- async function execCommand(
+async function execCommand(
   command: string,
   options: ExecOptions = {},
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
-    const env = { ...process.env, ...options.env};
+    const env = { ...process.env, ...options.env };
 
     const isWin = process.platform === 'win32';
     const shellCmd = isWin ? 'cmd.exe' : detectedShell;
@@ -161,20 +162,20 @@ async function gatedExec(
  * Wrap writeFile with permission gating for `write`/`edit` tools.
  */
 async function gatedWriteFile(
-  path: string,
+  filePath: string,
   content: string | Uint8Array,
   workspaceRoot: string,
-  cwd: string,
+  guard: WorkspaceGuard,
 ): Promise<void> {
   const response = await requestPermission(
     'write',
-    { file_path: path },
+    { file_path: filePath },
     workspaceRoot,
   );
   if (response.decision === 'deny') {
     throw new Error('Permission denied for write');
   }
-  const resolved = resolve(cwd, path);
+  const resolved = guard.constrain(filePath);
   mkdirSync(dirname(resolved), { recursive: true });
   writeFileSync(resolved, content);
 }
@@ -183,39 +184,47 @@ export function local(_options: { env?: Record<string, string> } = {}) {
   return {
     createSessionEnv: async () => {
       const cwd = process.cwd();
+      const guard = new WorkspaceGuard(cwd);
       return {
         cwd,
-        exec:  async (command: string, opts: ExecOptions = {}) =>
-          gatedExec(command, opts, cwd),
+        exec: async (command: string, opts: ExecOptions = {}) => {
+          const safeOptions = { ...opts };
+          if (safeOptions.cwd !== undefined) {
+            safeOptions.cwd = guard.constrain(safeOptions.cwd);
+          }
+          return gatedExec(command, safeOptions, cwd);
+        },
         async exists(path: string): Promise<boolean> {
-          return existsSync(resolve(cwd, path));
+          return existsSync(guard.constrain(path));
         },
         async mkdir(path: string, options?: { recursive?: boolean }) {
-          mkdirSync(resolve(cwd, path), { recursive: options !== undefined ? options.recursive : undefined });
+          mkdirSync(guard.constrain(path), {
+            recursive: options !== undefined ? options.recursive : undefined,
+          });
         },
         async readFile(path: string): Promise<string> {
-          return readFileSync(resolve(cwd, path), 'utf8');
+          return readFileSync(guard.constrain(path), 'utf8');
         },
         async readFileBuffer(path: string): Promise<Uint8Array> {
-          return new Uint8Array(readFileSync(resolve(cwd, path)));
+          return new Uint8Array(readFileSync(guard.constrain(path)));
         },
         async readdir(path: string): Promise<string[]> {
-          return readdirSync(resolve(cwd, path));
+          return readdirSync(guard.constrain(path));
         },
         resolvePath(p: string): string {
-          return resolve(cwd, p);
+          return guard.constrain(p);
         },
         async rm(
           path: string,
           options?: { recursive?: boolean; force?: boolean },
         ) {
-          rmSync(resolve(cwd, path), {
+          rmSync(guard.constrain(path), {
             force: options !== undefined ? options.force : undefined,
             recursive: options !== undefined ? options.recursive : undefined,
           });
         },
         async stat(path: string) {
-          const s = statSync(resolve(cwd, path));
+          const s = statSync(guard.constrain(path));
           return {
             isDirectory: s.isDirectory(),
             isFile: s.isFile(),
@@ -227,7 +236,7 @@ export function local(_options: { env?: Record<string, string> } = {}) {
           path: string,
           content: string | Uint8Array,
         ): Promise<void> {
-          return gatedWriteFile(path, content, cwd, cwd);
+          return gatedWriteFile(path, content, cwd, guard);
         },
       };
     },

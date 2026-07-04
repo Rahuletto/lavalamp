@@ -3,6 +3,7 @@ import { defineTool } from '@flue/runtime';
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 const queryExpertSchema = v.object({
   expert: v.union([
@@ -19,26 +20,27 @@ const queryExpertSchema = v.object({
 });
 
 export function createQueryExpertTool(workspaceRoot: string) {
-  // Locate dist/server.mjs
-  const serverPath = path.join(workspaceRoot, 'dist', 'server.mjs');
+  const serverPath =
+    process.env.LAVALAMP_SERVER_PATH ??
+    path.join(path.dirname(fileURLToPath(import.meta.url)), 'server.mjs');
 
   return defineTool({
     description:
       "Delegate a specialized task to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle). Spectacle is the vision expert that can describe screenshots/images. Returns the expert's response.",
-    execute: async ({ expert, prompt }) => 
+    execute: async ({ expert, prompt }) =>
       new Promise<string>((resolve, reject) => {
         const instanceId = `expert_${randomUUID().slice(0, 8)}`;
         const child = spawn(process.execPath, [serverPath], {
           cwd: workspaceRoot,
           env: {
+            ...process.env,
             FLUE_CLI_ID: instanceId,
             FLUE_CLI_NAME: expert,
             FLUE_CLI_TARGET: 'agent',
             FLUE_INTERNAL_CLI_IPC: '1',
             FLUE_MODE: 'local',
-            HOME: process.env.HOME,
-            NODE_ENV: process.env.NODE_ENV,
-            PATH: process.env.PATH,
+            LAVALAMP_SERVER_PATH: serverPath,
+            LAVALAMP_WORKSPACE: workspaceRoot,
           },
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
         });
@@ -57,11 +59,24 @@ export function createQueryExpertTool(workspaceRoot: string) {
             return;
           }
 
-          if (raw.requestId !== requestId) {return;}
+          if (raw.requestId !== requestId) {
+            return;
+          }
 
-          if (raw.type === 'event' && raw.event !== null && raw.event !== undefined && typeof raw.event === 'object' && (raw.event as Record<string, unknown>).type === 'text_delta') {
+          if (
+            raw.type === 'event' &&
+            raw.event !== null &&
+            raw.event !== undefined &&
+            typeof raw.event === 'object' &&
+            (raw.event as Record<string, unknown>).type === 'text_delta'
+          ) {
             const evt = raw.event as Record<string, unknown>;
-            const text = typeof evt.text === 'string' ? evt.text : (typeof evt.delta === 'string' ? evt.delta : '');
+            const text =
+              typeof evt.text === 'string'
+                ? evt.text
+                : typeof evt.delta === 'string'
+                  ? evt.delta
+                  : '';
             outputText += text ?? '';
           }
 
@@ -72,8 +87,16 @@ export function createQueryExpertTool(workspaceRoot: string) {
 
           if (raw.type === 'error') {
             cleanup();
-            const errObj = raw.error !== null && raw.error !== undefined && typeof raw.error === 'object' ? raw.error as Record<string, unknown> : null;
-            const msg = errObj !== null && typeof errObj.message === 'string' ? errObj.message : 'Expert session failed';
+            const errObj =
+              raw.error !== null &&
+              raw.error !== undefined &&
+              typeof raw.error === 'object'
+                ? (raw.error as Record<string, unknown>)
+                : null;
+            const msg =
+              errObj !== null && typeof errObj.message === 'string'
+                ? errObj.message
+                : 'Expert session failed';
             reject(new Error(msg));
           }
         };
@@ -91,8 +114,7 @@ export function createQueryExpertTool(workspaceRoot: string) {
 
         child.on('message', onMessage);
         child.on('exit', onExit);
-      })
-    ,
+      }),
     name: 'query_expert',
     parameters: queryExpertSchema,
   });

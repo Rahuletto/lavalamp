@@ -25,11 +25,8 @@ import { CompletionManager } from './components/CompletionManager';
 import { QueuePanelManager, SubPanelManager } from './components/QueueSubPanel';
 import { TaskPanelManager } from './components/TaskPanel';
 import { MessageRenderer } from './components/Messages';
-import { ToolUiManager } from './components/ToolUi';
-import {
-  LAVA_LAMP_FRAMES,
-  syntaxStyle,
-} from './art';
+import { ToolUiManager, type ToolGroupEntry } from './components/ToolUi';
+import { LAVA_LAMP_FRAMES, syntaxStyle } from './art';
 import { discoverSkills } from './discover';
 import {
   nameSession,
@@ -51,20 +48,14 @@ import {
 } from '../permissions/autorun';
 import { getDefaultRules, loadRules } from '../permissions/rules';
 import { BackupEngine } from '../storage/backups';
+import { planMutationBackup } from '../storage/mutation-backups';
 import { steerPrompt } from '../storage/steering';
 import { pasteImageFromClipboard } from '../storage/clipboard';
 import { describeImageWithSpectacle } from '../storage/spectacle';
 import { openCodeViewer, openDiffViewer } from './viewers';
-import {
-  configPath,
-  resolveConfig,
-  updateConfig,
-} from '../config/user-config';
-import {
-  BUILD_MODEL,
-  getModelEntry,
-  listModels,
-} from '../config/models';
+import { configPath, resolveConfig, updateConfig } from '../config/user-config';
+import { BUILD_MODEL, getModelEntry, listModels } from '../config/models';
+import { resolveRuntimeRoute, routeSummary } from '../config/runtime-route';
 
 export interface TuiOptions {
   serverPath: string;
@@ -77,10 +68,11 @@ export interface TuiOptions {
 
 function shortenPath(p: string): string {
   const home = process.env.HOME ?? '';
-  if (home && p.startsWith(home)) {return `~${  p.slice(home.length)}`;}
+  if (home && p.startsWith(home)) {
+    return `~${p.slice(home.length)}`;
+  }
   return p;
 }
-
 
 function visiblePrompt(prompt: string): string {
   return prompt.replace(/^<<(?:PLAN|BUILD)_MODE>>\s*/, '');
@@ -89,8 +81,6 @@ function visiblePrompt(prompt: string): string {
 function isAuthError(err: Error): boolean {
   return /\b401\b/.test(err.message);
 }
-
-
 
 function hexToAnsi(hex: string): string {
   const value = hex.replace('#', '');
@@ -103,10 +93,16 @@ function hexToAnsi(hex: string): string {
 function formatAge(ts: number): string {
   const diff = Date.now() - ts;
   const min = Math.floor(diff / 60_000);
-  if (min < 1) {return 'just now';}
-  if (min < 60) {return `${min}m ago`;}
+  if (min < 1) {
+    return 'just now';
+  }
+  if (min < 60) {
+    return `${min}m ago`;
+  }
   const hr = Math.floor(min / 60);
-  if (hr < 24) {return `${hr}h ago`;}
+  if (hr < 24) {
+    return `${hr}h ago`;
+  }
   const d = Math.floor(hr / 24);
   return `${d}d ago`;
 }
@@ -116,8 +112,12 @@ function formatCost(value: number): string {
 }
 
 function formatTokenCount(value: number): string {
-  if (value >= 1_000_000) {return `${(value / 1_000_000).toFixed(2)}m`;}
-  if (value >= 1000) {return `${(value / 1000).toFixed(1)}k`;}
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(2)}m`;
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(1)}k`;
+  }
   return String(value);
 }
 
@@ -134,17 +134,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
     return state.planMode ? COLORS.planAccent : COLORS.accent;
   }
 
-  const {cwd} = options;
+  const { cwd } = options;
   let idCounter = 0;
   function nextId(): string {
     return `el-${++idCounter}`;
   }
   let destroyed = false;
-  let root = {
-    // stub to avoid error if accessed before renderer is initialized, though root will be reassigned
-    add() {},
-    remove() {},
-  } as { add: (...args: unknown[]) => void; remove: (...args: unknown[]) => void };
+  let root: CliRenderer['root'];
   const boxCtx = {
     nextId,
     get renderer() {
@@ -201,8 +197,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const permissionBoxMgr = new PermissionBoxManager({
     cwd: options.cwd,
     nextId: boxCtx.nextId,
-    get renderer() { return boxCtx.renderer; },
-    get root() { return boxCtx.root; },
+    get renderer() {
+      return boxCtx.renderer;
+    },
+    get root() {
+      return boxCtx.root;
+    },
   });
 
   // Wire permission request handling from the server child process
@@ -230,12 +230,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let lastScrollTop = 0;
 
   function requestScroll() {
-    if (destroyed) {return;}
-    if (userHasScrolledUp) {return;}
-    if (scrollPending) {return;}
+    if (destroyed) {
+      return;
+    }
+    if (userHasScrolledUp) {
+      return;
+    }
+    if (scrollPending) {
+      return;
+    }
     scrollPending = true;
     queueMicrotask(() => {
-      if (!destroyed) {messagesScroll.scrollBy(1000);}
+      if (!destroyed) {
+        messagesScroll.scrollBy(1000);
+      }
       scrollPending = false;
     });
   }
@@ -244,8 +252,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     flexDirection: 'row',
     height: 2,
     id: 'header',
-    padding: { left: 1, right: 1 },
     paddingBottom: 1,
+    paddingLeft: 1,
+    paddingRight: 1,
     width: '100%',
   });
   const headerTitle = new TextRenderable(renderer, {
@@ -261,7 +270,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const messagesScroll = new ScrollBoxRenderable(renderer, {
     flexGrow: 1,
     id: 'messages',
-    padding: { left: 1, right: 1 },
+    paddingLeft: 1,
+    paddingRight: 1,
     scrollY: true,
     stickyScroll: false,
     width: '100%',
@@ -273,9 +283,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (currentScrollTop < lastScrollTop) {
       userHasScrolledUp = true;
     } else {
-      const {scrollHeight} = messagesScroll;
+      const { scrollHeight } = messagesScroll;
       const atBottom = scrollHeight - currentScrollTop < 50;
-      if (atBottom) {userHasScrolledUp = false;}
+      if (atBottom) {
+        userHasScrolledUp = false;
+      }
     }
     lastScrollTop = currentScrollTop;
   });
@@ -313,7 +325,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     width: '100%',
   });
   const lavaLampText = new TextRenderable(renderer, {
-    content: LAVA_LAMP_FRAMES[0].join('\n'),
+    content: (LAVA_LAMP_FRAMES[0] ?? []).join('\n'),
     fg: COLORS.accent,
     id: 'lava-lamp-text',
     selectable: false,
@@ -323,16 +335,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   let lavaLampFrame = 0;
   const lavaLampTimer = setInterval(() => {
-    if (destroyed) {return;}
+    if (destroyed) {
+      return;
+    }
     lavaLampFrame = (lavaLampFrame + 1) % LAVA_LAMP_FRAMES.length;
-    lavaLampText.content = LAVA_LAMP_FRAMES[lavaLampFrame].join('\n');
+    lavaLampText.content = (LAVA_LAMP_FRAMES[lavaLampFrame] ?? []).join('\n');
   }, 600);
 
   const taskStatusBar = new BoxRenderable(renderer, {
     flexDirection: 'row',
     height: 1,
     id: 'task-status-bar',
-    padding: { left: 1 },
+    paddingLeft: 1,
     visible: false,
     width: '100%',
   });
@@ -357,7 +371,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 
   function startSpinner() {
-    if (spinnerTimer) {clearInterval(spinnerTimer);}
+    if (spinnerTimer) {
+      clearInterval(spinnerTimer);
+    }
     spinnerFrame = 0;
     updateStatus();
     spinnerTimer = setInterval(() => {
@@ -456,7 +472,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
     flexDirection: 'column',
     flexShrink: 0,
     id: 'spec-approval-box',
-    padding: { bottom: 0, left: 1, right: 1, top: 0 },
+    paddingBottom: 0,
+    paddingLeft: 1,
+    paddingRight: 1,
+    paddingTop: 0,
     visible: false,
     width: '100%',
   });
@@ -480,7 +499,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let specApprovalResolve: ((choice: boolean) => void) | null = null;
 
   function showSpecApprovalBox(resolve: (choice: boolean) => void) {
-    for (const child of specApprovalBody.getChildren()) {child.destroy();}
+    for (const child of specApprovalBody.getChildren()) {
+      child.destroy();
+    }
     specApprovalBody.add(
       new TextRenderable(renderer, {
         content:
@@ -498,7 +519,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function hideSpecApprovalBox(choice: boolean) {
     specApprovalBox.visible = false;
-    for (const child of specApprovalBody.getChildren()) {child.destroy();}
+    for (const child of specApprovalBody.getChildren()) {
+      child.destroy();
+    }
     if (specApprovalResolve) {
       const resolve = specApprovalResolve;
       specApprovalResolve = null;
@@ -517,8 +540,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (
       prompt.startsWith('<<PLAN_MODE>>') ||
       prompt.startsWith('<<BUILD_MODE>>')
-    )
-      {return prompt;}
+    ) {
+      return prompt;
+    }
     return `${planMode ? '<<PLAN_MODE>>' : '<<BUILD_MODE>>'} ${prompt}`;
   }
 
@@ -543,7 +567,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   subManager.onAllComplete = (summary) => {
     refreshSubPanel();
     const followUp = `The parallel research has completed. Here are the findings:\n\n${summary}\n\nPlease analyze these results and continue with your task.`;
-    if (state.processing) {state.queuePending.push(withModeTag(followUp));}
+    if (state.processing) {
+      state.queuePending.push(withModeTag(followUp));
+    }
     refreshQueuePanel();
   };
 
@@ -567,18 +593,26 @@ export async function startTui(options: TuiOptions): Promise<void> {
       state.tasks.push({ id: newId, status: 'pending', title });
     } else if (action === 'complete') {
       const task = state.tasks.find((tk) => tk.id === id);
-      if (task) {task.status = 'completed';}
+      if (task) {
+        task.status = 'completed';
+      }
     } else if (action === 'skip') {
       const task = state.tasks.find((tk) => tk.id === id);
-      if (task) {task.status = 'skipped';}
+      if (task) {
+        task.status = 'skipped';
+      }
     } else if (action === 'edit') {
       const task = state.tasks.find((tk) => tk.id === id);
-      if (task && title) {task.title = title;}
+      if (task && title) {
+        task.title = title;
+      }
     } else if (action === 'delete') {
       state.tasks = state.tasks.filter((tk) => tk.id !== id);
     } else if (action === 'start' || action === 'in_progress') {
       const task = state.tasks.find((tk) => tk.id === id);
-      if (task) {task.status = 'in_progress';}
+      if (task) {
+        task.status = 'in_progress';
+      }
     }
     refreshTaskPanel();
   }
@@ -660,7 +694,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const kids = inputPrefixBox.getChildren();
         while (kids.length > targetHeight) {
           const last = kids.pop();
-          if (last) {last.destroy();}
+          if (last) {
+            last.destroy();
+          }
         }
       }
 
@@ -707,7 +743,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
     flexDirection: 'row',
     height: 1,
     id: 'status-bar',
-    padding: { left: 1, right: 1 },
+    paddingLeft: 1,
+    paddingRight: 1,
     width: '100%',
   });
   const statusSpinner = new TextRenderable(renderer, {
@@ -769,15 +806,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function hideMainTui() {
     for (const child of mainTuiChildren) {
-      root.remove(child);
+      root.remove(child.id);
     }
-    if (viewerOverlay.getParent() === null) {root.add(viewerOverlay);}
+    if (viewerOverlay.parent === null) {
+      root.add(viewerOverlay);
+    }
     viewerOverlay.visible = true;
   }
 
   function showMainTui() {
     viewerOverlay.visible = false;
-    root.remove(viewerOverlay);
+    root.remove(viewerOverlay.id);
     for (const child of mainTuiChildren) {
       root.add(child);
     }
@@ -790,7 +829,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     visible: false,
   });
   messagesScroll.add(planStatusLine);
-
 
   function updateHeader() {
     headerTitle.content = state.planMode ? 'lavalamp [PLAN]' : 'lavalamp';
@@ -806,7 +844,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
     }
   }
-
 
   function updateStatus() {
     refreshSubPanel();
@@ -874,7 +911,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function hideLavaLamp() {
-    if (lavaLampBox.visible) {lavaLampBox.visible = false;}
+    if (lavaLampBox.visible) {
+      lavaLampBox.visible = false;
+    }
   }
 
   function summarizeToolArgsShort(
@@ -886,10 +925,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const cmd =
           typeof args.command === 'string'
             ? args.command
-            : (typeof args.cmd === 'string'
+            : typeof args.cmd === 'string'
               ? args.cmd
-              : '');
-        return cmd.length > 50 ? `${cmd.slice(0, 47)  }...` : cmd;
+              : '';
+        return cmd.length > 50 ? `${cmd.slice(0, 47)}...` : cmd;
       }
       case 'read':
       case 'write':
@@ -897,9 +936,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const fp =
           typeof args.file_path === 'string'
             ? args.file_path
-            : (typeof args.path === 'string'
+            : typeof args.path === 'string'
               ? args.path
-              : '');
+              : '';
         return stripCwd(fp, cwd);
       }
       case 'fetch_url':
@@ -907,10 +946,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const url =
           typeof args.url === 'string'
             ? args.url
-            : (typeof args.query === 'string'
+            : typeof args.query === 'string'
               ? args.query
-              : '');
-        return url.length > 50 ? `${url.slice(0, 47)  }...` : url;
+              : '';
+        return url.length > 50 ? `${url.slice(0, 47)}...` : url;
       }
       case 'ripgrep':
       case 'grep':
@@ -918,20 +957,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const q =
           typeof args.pattern === 'string'
             ? args.pattern
-            : (typeof args.query === 'string'
+            : typeof args.query === 'string'
               ? args.query
-              : '');
-        return q.length > 50 ? `${q.slice(0, 47)  }...` : q;
+              : '';
+        return q.length > 50 ? `${q.slice(0, 47)}...` : q;
       }
       default: {
         const entries = Object.entries(args);
-        if (entries.length === 0) {return '';}
+        if (entries.length === 0) {
+          return '';
+        }
         const parts: string[] = [];
         for (const [, v] of entries.slice(0, 2)) {
-          if (typeof v === 'string')
-            {parts.push(v.length > 30 ? `${v.slice(0, 27)  }...` : v);}
-          else if (typeof v === 'number' || typeof v === 'boolean')
-            {parts.push(String(v));}
+          if (typeof v === 'string') {
+            parts.push(v.length > 30 ? `${v.slice(0, 27)}...` : v);
+          } else if (typeof v === 'number' || typeof v === 'boolean') {
+            parts.push(String(v));
+          }
         }
         return parts.join(' ');
       }
@@ -970,8 +1012,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     taskStatusText.content = '';
   }
 
-  let _userMessageCount = 0;
-
   function addUserLine(content: string) {
     messageRenderer.addUser(content);
   }
@@ -985,7 +1025,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function populateToolEntryContent(
-    entry: { content?: string; label?: string },
+    entry: ToolGroupEntry,
     toolName: string,
     args: Record<string, unknown>,
     resultStr: string,
@@ -1009,18 +1049,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     showMainTui();
     inputField.focus();
-  }
-
-  interface ToolGroupEntry {
-    summary: string;
-    toolName: string;
-    args: Record<string, unknown>;
-    result: string;
-    isError: boolean;
-    durationMs?: number;
-    contentVisible: boolean;
-    contentBox: BoxRenderable;
-    headerLabel: TextRenderable;
   }
 
   function finalizeToolGroup() {
@@ -1071,7 +1099,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let currentThinkingText = '';
   let streamingThinking = false;
   let streamedAnyText = false;
-  let _lastToolBlockId: string | null = null;
   const pendingToolEntries = new Map<string, number>();
   let currentAssistantText = '';
   let accThinking = '';
@@ -1125,7 +1152,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
           ) ||
           /^\}\s*\d+\s*\|/m.test(delta) ||
           /^\d+\s*\|/m.test(delta);
-        if (noisyFlueLog) {break;}
+        if (noisyFlueLog) {
+          break;
+        }
         if (!streamingThinking) {
           streamingThinking = true;
           hideLavaLamp();
@@ -1169,8 +1198,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (currentThinkingBlock) {
           const contentEl =
             currentThinkingBlock.getRenderable('thinking-content');
-          if (contentEl && contentEl instanceof TextRenderable)
-            {contentEl.content = currentThinkingText;}
+          if (contentEl && contentEl instanceof TextRenderable) {
+            contentEl.content = currentThinkingText;
+          }
         }
         break;
       }
@@ -1194,23 +1224,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
           name === 'skip_task'
         ) {
           const action = name.replace('_task', '');
-          handleTaskToolStart({ ...args, action});
+          handleTaskToolStart({ ...args, action });
         }
 
         const summary = summarizeToolArgs(name, args, cwd);
 
-        const _entry = addToolGroupEntry(name, summary, args);
+        addToolGroupEntry(name, summary, args);
 
         state.currentTool = { args, id: `tool-${Date.now()}`, name };
         const grp = toolUiMgr.getActiveGroup();
-        if (grp !== null) {
-          _lastToolBlockId = `toolgroup-${grp.entries.length - 1}`;
-        }
-        if (event.toolCallId !== null && grp !== null) {
-          pendingToolEntries.set(
-            event.toolCallId,
-            grp.entries.length - 1,
-          );
+        if (typeof event.toolCallId === 'string' && grp !== null) {
+          pendingToolEntries.set(event.toolCallId, grp.entries.length - 1);
           accCurrentTool = { args, id: event.toolCallId, name };
         }
         updateTaskStatus(name, args);
@@ -1230,12 +1254,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
                   }
                 })()
               : event.result;
-          if (
-            marker !== null &&
-            typeof marker === 'object'
-          ) {
+          if (marker !== null && typeof marker === 'object') {
             const deployMarker = marker as { type: string; queries: string[] };
-            if (deployMarker.type === 'parallel_deploy' && Array.isArray(deployMarker.queries)) {
+            if (
+              deployMarker.type === 'parallel_deploy' &&
+              Array.isArray(deployMarker.queries)
+            ) {
               subManager
                 .deploy(deployMarker.queries)
                 .catch((error: unknown) =>
@@ -1250,13 +1274,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const activeGrp = toolUiMgr.getActiveGroup();
         if (
           activeGrp !== null &&
-          event.toolCallId !== null &&
+          typeof event.toolCallId === 'string' &&
           pendingToolEntries.has(event.toolCallId)
         ) {
           const idx = pendingToolEntries.get(event.toolCallId) ?? -1;
-          if (idx < 0) {break;}
-          const entry = activeGrp.entries[idx] as ToolGroupEntry | undefined;
-          if (entry !== null) {
+          if (idx < 0) {
+            break;
+          }
+          const entry = activeGrp.entries[idx];
+          if (entry !== undefined) {
             const resultStr = extractResultText(event.result);
             entry.result = resultStr;
             entry.isError = Boolean(event.isError);
@@ -1283,7 +1309,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
           }
         }
         state.currentTool = null;
-        _lastToolBlockId = null;
         clearTaskStatus();
         requestScroll();
         break;
@@ -1353,7 +1378,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     finalizeAssistantStream();
     state.currentTool = null;
-    _lastToolBlockId = null;
     pendingToolEntries.clear();
     streamedAnyText = false;
     requestScroll();
@@ -1376,152 +1400,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function printUsage(result: FlueResult) {
     const u = result.usage;
-    if (u == null) {return;}
+    if (u == null) {
+      return;
+    }
     state.usageTotals.input += u.input;
     state.usageTotals.output += u.output;
     state.usageTotals.cacheRead += u.cacheRead;
     state.usageTotals.cacheWrite += u.cacheWrite;
     state.usageTotals.totalTokens += u.totalTokens;
     state.usageTotals.cost += u.cost.total;
-    const m = result.model != null ? `${result.model.provider}/${result.model.id}` : '';
+    const m =
+      result.model != null ? `${result.model.provider}/${result.model.id}` : '';
     const config = resolveConfig();
     const label = config.usageDisplayMode === 'neurons' ? 'neurons' : 'usage';
     addInfoLine(
       `  ${label}: ${formatTokenCount(u.totalTokens)} tok (${formatCost(u.cost.total)}) | session ${formatTokenCount(state.usageTotals.totalTokens)} tok (${formatCost(state.usageTotals.cost)}) | ${m}`,
       COLORS.dim,
     );
-  }
-
-  function readStringArg(
-    args: Record<string, unknown>,
-    names: string[],
-  ): string | undefined {
-    for (const name of names) {
-      const value = args[name];
-      if (typeof value === 'string' && value.length > 0) {
-        return value;
-      }
-    }
-    return undefined;
-  }
-
-  function extractHashlinePaths(value: unknown): string[] {
-    if (typeof value !== 'string') {
-      return [];
-    }
-
-    const paths: string[] = [];
-    for (const line of value.split('\n')) {
-      const match = /^\[([^#\]]+)#[^\]]+\]/.exec(line.trim());
-      if (match) {
-        paths.push(match[1]);
-      }
-    }
-    return paths;
-  }
-
-  function unquoteShellWord(word: string): string {
-    if (
-      (word.startsWith('"') && word.endsWith('"')) ||
-      (word.startsWith("'") && word.endsWith("'"))
-    ) {
-      return word.slice(1, -1);
-    }
-    return word;
-  }
-
-  function looksLikePath(value: string): boolean {
-    if (value.length === 0 || value.startsWith('-')) {
-      return false;
-    }
-    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(value)) {
-      return false;
-    }
-    return (
-      value.includes('/') ||
-      value.startsWith('.') ||
-      /\.[A-Za-z0-9]{1,8}$/.test(value)
-    );
-  }
-
-  function extractBashMutationPaths(command: string): string[] {
-    const paths: string[] = [];
-    const redirectMatches = command.matchAll(
-      /(?:^|[\s])(?:\d?>|>>|&>)\s*("[^"]+"|'[^']+'|[^\s;&|]+)/g,
-    );
-    for (const match of redirectMatches) {
-      paths.push(unquoteShellWord(match[1]));
-    }
-
-    const words =
-      command.match(/"[^"]+"|'[^']+'|[^\s;&|()<>]+/g)?.map(unquoteShellWord) ??
-      [];
-    const mutatingCommands = new Set([
-      'cp',
-      'install',
-      'mkdir',
-      'mv',
-      'rm',
-      'sed',
-      'tee',
-      'touch',
-      'truncate',
-    ]);
-
-    if (!mutatingCommands.has(words[0] ?? '')) {
-      return paths;
-    }
-
-    for (const word of words.slice(1)) {
-      if (looksLikePath(word)) {
-        paths.push(word);
-      }
-    }
-
-    return [...new Set(paths)];
-  }
-
-  function isReadOnlyBashCommand(command: string): boolean {
-    return (
-      /^\s*sed\s+-n\b/.test(command) ||
-      /^\s*(cat|pwd|ls|rg|grep)\b/.test(command) ||
-      /^\s*find\b/.test(command) && !/\s-(delete|exec)\b/.test(command) ||
-      /^\s*git\s+(status|diff|show|log|branch)\b/.test(command)
-    );
-  }
-
-  function getMutationBackupPlan(
-    name: string,
-    args: Record<string, unknown>,
-  ): { paths: string[] } | null {
-    if (name === 'write' || name === 'edit') {
-      const paths = [
-        readStringArg(args, ['file_path', 'path', 'filePath']),
-        ...extractHashlinePaths(args.patch),
-        ...extractHashlinePaths(args.content),
-        ...extractHashlinePaths(args.input),
-      ].filter((value): value is string => value !== undefined);
-      return paths.length > 0 ? { paths } : null;
-    }
-
-    if (name === 'rename') {
-      const paths = [
-        readStringArg(args, ['oldPath', 'old_path', 'from']),
-        readStringArg(args, ['newPath', 'new_path', 'to']),
-      ].filter((value): value is string => value !== undefined);
-      return paths.length > 0 ? { paths } : null;
-    }
-
-    if (name === 'bash') {
-      const command = readStringArg(args, ['command', 'cmd']) ?? '';
-      if (isReadOnlyBashCommand(command)) {
-        return null;
-      }
-      const paths = extractBashMutationPaths(command);
-      return paths.length > 0 ? { paths } : null;
-    }
-
-    return null;
   }
 
   function createMutationBackup(
@@ -1532,7 +1427,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       return;
     }
 
-    const plan = getMutationBackupPlan(name, args);
+    const plan = planMutationBackup(name, args);
     if (plan === null) {
       return;
     }
@@ -1607,8 +1502,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         },
         onEvent: (event) => {
           handleEvent(event);
-          if (event.type === 'text_delta')
-            {currentAssistantText += event.text ?? event.delta ?? '';}
+          if (event.type === 'text_delta') {
+            currentAssistantText += event.text ?? event.delta ?? '';
+          }
         },
         onResult: (result) => {
           const didStream = streamedAnyText;
@@ -1701,14 +1597,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
   function drainPending() {
     if (state.steerPending.length > 0) {
       const prompt = state.steerPending.shift();
-      if (prompt === null) {return;}
+      if (prompt === undefined) {
+        return;
+      }
       refreshQueuePanel();
       addInfoLine('  (steer)', COLORS.dim);
       return;
     }
     if (state.queuePending.length > 0) {
       const prompt = state.queuePending.shift();
-      if (prompt === null) {return;}
+      if (prompt === undefined) {
+        return;
+      }
       refreshQueuePanel();
       addInfoLine('  (queued)', COLORS.yellow);
     }
@@ -1725,12 +1625,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
     state.historyIndex = -1;
     inputField.setText('');
     if (currentAssistantMd) {
-      messagesScroll.remove(currentAssistantMd);
+      messagesScroll.remove(currentAssistantMd.id);
       currentAssistantMd.destroy();
       currentAssistantMd = null;
     }
     if (currentThinkingBlock) {
-      messagesScroll.remove(currentThinkingBlock);
+      messagesScroll.remove(currentThinkingBlock.id);
       currentThinkingBlock.destroy();
       currentThinkingBlock = null;
       currentThinkingText = '';
@@ -1738,11 +1638,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     const grp = toolUiMgr.getActiveGroup();
     if (grp !== null) {
-      messagesScroll.remove(grp.box);
+      messagesScroll.remove(grp.box.id);
       grp.box.destroy();
       toolUiMgr.clearActiveGroup();
     }
-    _lastToolBlockId = null;
     pendingToolEntries.clear();
     streamedAnyText = false;
     saveSessionSnapshot();
@@ -1758,7 +1657,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     const dimColor = hexToAnsi(COLORS.dim);
     const cyanColor = hexToAnsi(COLORS.cyan);
     const whiteColor = hexToAnsi(COLORS.white);
-    const banner = LAVA_LAMP_FRAMES[0].join('\n');
+    const banner = (LAVA_LAMP_FRAMES[0] ?? []).join('\n');
     process.stdout.write(
       `\n${accentColor}${banner}${reset}\n\n` +
         `${dimColor}session:${reset} ${whiteColor}${sessionId}${reset}\n` +
@@ -1771,7 +1670,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   let savedSessionOnExit: string | null = null;
 
   function saveSessionSnapshot(): string | null {
-    if (savedSessionOnExit !== null) {return savedSessionOnExit;}
+    if (savedSessionOnExit !== null) {
+      return savedSessionOnExit;
+    }
     if (state.processing) {
       if (currentAssistantText || accThinking || accToolCalls.length > 0) {
         state.messages.push({
@@ -1798,7 +1699,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function handleExit() {
-    if (exiting) {return;}
+    if (exiting) {
+      return;
+    }
     exiting = true;
 
     const savedSessionId = saveSessionSnapshot();
@@ -1810,7 +1713,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
       printExitSummary(savedSessionId);
     }
   }
-
 
   function togglePlanMode() {
     setPlanMode(!state.planMode).catch(() => {});
@@ -1824,8 +1726,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     savedAt: number;
     messageCount: number;
   }[] = [];
-  const _sessionPickerOffKey: (() => void) | null = null;
-
   function showSessionPicker(
     sessions: {
       id: string;
@@ -1843,7 +1743,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function resumeSession(index: number) {
     const chosen = sessionPickerSessions[index];
-    if (!chosen) {return;}
+    if (!chosen) {
+      return;
+    }
     closeSessionPicker();
     const messages = loadSession(chosen.id);
     if (messages !== null) {
@@ -1863,6 +1765,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     const rows: { content: string; fg?: string; bold?: boolean }[] = [];
     for (let i = 0; i < sessionPickerSessions.length; i++) {
       const s = sessionPickerSessions[i];
+      if (s === undefined) {
+        continue;
+      }
       const age = formatAge(s.savedAt);
       const marker = i === sessionPickerSelected ? '\u25B6 ' : '  ';
       const nameStr = s.name.slice(0, 36);
@@ -1877,10 +1782,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
   function renderAllMessages() {
     for (const child of messagesScroll.getChildren()) {
-      if (child.id !== 'lava-lamp-box') {child.destroy();}
+      if (child.id !== 'lava-lamp-box') {
+        child.destroy();
+      }
     }
-    if (state.messages.length > 0) {lavaLampBox.visible = false;}
-    _userMessageCount = 0;
+    if (state.messages.length > 0) {
+      lavaLampBox.visible = false;
+    }
     for (const msg of state.messages) {
       renderMessage(msg);
     }
@@ -1895,21 +1803,21 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     addInfoLine(` ~`, accent());
 
-    if (msg.thinking !== null && msg.thinking !== '') {
+    if (msg.thinking !== undefined && msg.thinking !== '') {
       const thinkBox = createThinkingBlock();
       const contentEl = thinkBox.getRenderable('thinking-content');
-      if (contentEl !== null && contentEl instanceof TextRenderable) {
+      if (contentEl instanceof TextRenderable) {
         contentEl.content = msg.thinking;
         contentEl.visible = false;
       }
       const hdr = thinkBox
         .getChildren()
         .find((c) => c instanceof BoxRenderable);
-      if (hdr !== null) {
+      if (hdr instanceof BoxRenderable) {
         const label = hdr
           .getChildren()
           .find((c) => c instanceof TextRenderable);
-        if (label !== null && label instanceof TextRenderable) {
+        if (label instanceof TextRenderable) {
           label.content = 'Reasoning... \u25B8';
           label.fg = COLORS.link;
         }
@@ -1935,7 +1843,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
           tc.durationMs,
         );
       }
-      if (grp) {finalizeToolGroup();}
+      if (grp) {
+        finalizeToolGroup();
+      }
     }
 
     if (msg.content) {
@@ -1943,7 +1853,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         content: msg.content,
         fg: COLORS.white,
         id: nextId(),
-        padding: { left: 1 },
+        paddingLeft: 1,
         syntaxStyle,
         width: '100%',
       });
@@ -1952,8 +1862,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
   }
 
-  async function _handleSlashCommand(raw: string) {
-    const cmd = raw.split(/\s+/)[0].toLowerCase();
+  async function handleSlashCommand(raw: string) {
+    const cmd = raw.split(/\s+/)[0]?.toLowerCase() ?? '';
     const arg = raw.slice(cmd.length).trim();
     switch (cmd) {
       case '/help': {
@@ -1987,7 +1897,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
             fg: accent(),
           });
         }
-        rows.push({ content: '' }, { bold: true, content: '  Keys:', fg: COLORS.white });
+        rows.push(
+          { content: '' },
+          { bold: true, content: '  Keys:', fg: COLORS.white },
+        );
         for (const [key, desc] of [
           ['Tab', 'Autocomplete'],
           ['Shift+Tab / Ctrl+P', 'Toggle plan mode'],
@@ -2006,7 +1919,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
           saveSession(state.messages, sessionName, currentSessionId);
         }
         for (const child of messagesScroll.getChildren()) {
-          if (child.id !== 'lava-lamp-box') {child.destroy();}
+          if (child.id !== 'lava-lamp-box') {
+            child.destroy();
+          }
         }
         lavaLampBox.visible = true;
         state.messages = [];
@@ -2037,11 +1952,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const kept = state.messages.slice(half);
         state.messages = kept;
         for (const child of messagesScroll.getChildren()) {
-          if (child.id !== 'lava-lamp-box') {child.destroy();}
+          if (child.id !== 'lava-lamp-box') {
+            child.destroy();
+          }
         }
         if (state.messages.length > 0) {
           lavaLampBox.visible = false;
-          for (const msg of state.messages) {renderMessage(msg);}
+          for (const msg of state.messages) {
+            renderMessage(msg);
+          }
         } else {
           lavaLampBox.visible = true;
         }
@@ -2055,8 +1974,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
       case '/memory': {
         const memPath = path.join(cwd, 'AGENTS.md');
-        const rows: { content: string; fg?: string; bold?: boolean }[] =
-          [];
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [];
         try {
           const content = fs.readFileSync(memPath, 'utf8');
           const lines = content.split('\n');
@@ -2064,11 +1982,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
           for (const line of lines.slice(0, 30)) {
             rows.push({ content: `  ${line}`, fg: COLORS.gray });
           }
-          if (lines.length > 30)
-            {rows.push({
+          if (lines.length > 30) {
+            rows.push({
               content: `  ... (${lines.length - 30} more lines)`,
               fg: COLORS.dim,
-            });}
+            });
+          }
         } catch {
           rows.push({ content: '  no AGENTS.md found', fg: COLORS.dim });
         }
@@ -2106,15 +2025,24 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
 
         const config = resolveConfig();
-        const current = state.model ?? (
-          config.defaultModel.length > 0 ? config.defaultModel : BUILD_MODEL
-        );
-        const currentEntry = getModelEntry(current);
+        const current =
+          state.model ??
+          (config.defaultModel.length > 0 ? config.defaultModel : BUILD_MODEL);
+        const route = resolveRuntimeRoute({
+          config,
+          env: process.env as Record<string, string | undefined>,
+          model: current,
+        });
+        const currentEntry = route.registryEntry;
         const rows: { content: string; fg?: string; bold?: boolean }[] = [
           { bold: true, content: `  model: ${current}`, fg: COLORS.white },
           {
             content: `  config: ${configPath()}`,
             fg: COLORS.dim,
+          },
+          {
+            content: `  route: ${routeSummary(route)}`,
+            fg: COLORS.gray,
           },
         ];
         if (currentEntry !== undefined) {
@@ -2123,11 +2051,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
             fg: COLORS.gray,
           });
         }
-        rows.push({ content: '' }, {
-          bold: true,
-          content: '  available models:',
-          fg: COLORS.white,
-        });
+        rows.push(
+          { content: '' },
+          {
+            bold: true,
+            content: '  available models:',
+            fg: COLORS.white,
+          },
+        );
         for (const model of listModels()) {
           rows.push({
             content: `  ${model.id}  ${model.vision ? 'vision' : 'text'} ${model.gatewaySupport ? 'gateway' : 'direct'}`,
@@ -2172,6 +2103,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
 
         const config = resolveConfig();
+        const route = resolveRuntimeRoute({
+          config,
+          env: process.env as Record<string, string | undefined>,
+          model: state.model,
+          preferredModel: BUILD_MODEL,
+        });
         showResultPanel('/gateway', [
           {
             bold: true,
@@ -2183,7 +2120,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
             fg: COLORS.gray,
           },
           {
-            content: `  route: ${config.preferredProviderRoute}`,
+            content: `  route: ${routeSummary(route)}`,
             fg: COLORS.gray,
           },
           {
@@ -2220,14 +2157,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
       case '/skills': {
         const skills = discoverSkills(cwd);
-        const rows: { content: string; fg?: string; bold?: boolean }[] =
-          [];
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [];
         if (skills.length === 0) {
           rows.push({ content: '  no skills found', fg: COLORS.dim });
         } else {
           rows.push({ bold: true, content: '  skills:', fg: COLORS.white });
-          for (const s of skills)
-            {rows.push({ content: `  #${s}`, fg: accent() });}
+          for (const s of skills) {
+            rows.push({ content: `  #${s}`, fg: accent() });
+          }
         }
         showResultPanel('/skills', rows);
         break;
@@ -2239,12 +2176,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
           'opencode',
           'opencode.json',
         );
-        const rows: { content: string; fg?: string; bold?: boolean }[] =
-          [];
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [];
         try {
           const raw = fs.readFileSync(mcpConfigPath, 'utf8');
-          const cfg = JSON.parse(raw);
-          const servers: Record<string, unknown> = cfg.mcpServers ?? cfg.mcp ?? {};
+          const cfg = JSON.parse(raw) as {
+            mcpServers?: Record<string, unknown>;
+            mcp?: Record<string, unknown>;
+          };
+          const servers: Record<string, unknown> =
+            cfg.mcpServers ?? cfg.mcp ?? {};
           const names = Object.keys(servers);
           if (names.length === 0) {
             rows.push({
@@ -2259,14 +2199,22 @@ export async function startTui(options: TuiOptions): Promise<void> {
             });
             for (const name of names) {
               const srv = servers[name];
-              const cmd = srv.command ?? '';
-              const args = Array.isArray(srv.args) ? srv.args.join(' ') : '';
+              const server =
+                srv !== null && typeof srv === 'object'
+                  ? (srv as { command?: unknown; args?: unknown })
+                  : {};
+              const cmd =
+                typeof server.command === 'string' ? server.command : '';
+              const args = Array.isArray(server.args)
+                ? server.args.join(' ')
+                : '';
               rows.push({ bold: true, content: `  ${name}`, fg: accent() });
-              if (typeof cmd === 'string' && cmd.length > 0)
-                {rows.push({
+              if (cmd.length > 0) {
+                rows.push({
                   content: `    ${cmd} ${args}`.trim(),
                   fg: COLORS.gray,
-                });}
+                });
+              }
             }
           }
         } catch {
@@ -2277,13 +2225,17 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
       case '/tools': {
         const toolsPath = path.join(options.cwd, 'dist', 'server.mjs');
-        const rows: { content: string; fg?: string; bold?: boolean }[] =
-          [];
+        const rows: { content: string; fg?: string; bold?: boolean }[] = [];
         try {
           const content = fs.readFileSync(toolsPath, 'utf8');
           const toolMatches = content.matchAll(/name:\s*["']([^"']+)["']/g);
           const toolNames = new Set<string>();
-          for (const m of toolMatches) {toolNames.add(m[1]);}
+          for (const m of toolMatches) {
+            const toolName = m[1];
+            if (toolName !== undefined) {
+              toolNames.add(toolName);
+            }
+          }
           if (toolNames.size === 0) {
             rows.push({
               content: '  no tools found in harness',
@@ -2317,9 +2269,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
                 fg:
                   sub.status === 'running'
                     ? COLORS.pink
-                    : (sub.status === 'done'
+                    : sub.status === 'done'
                       ? COLORS.green
-                      : COLORS.red),
+                      : COLORS.red,
               }));
         showResultPanel('/subagents', rows);
         break;
@@ -2352,7 +2304,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
             },
           ],
           (confirmed) => {
-            if (!confirmed) {return;}
+            if (!confirmed) {
+              return;
+            }
             setAllowAll(cwd, true);
             showResultPanel('/sudo', [
               { content: '  sudo enabled: all tools allowed', fg: COLORS.pink },
@@ -2376,14 +2330,20 @@ export async function startTui(options: TuiOptions): Promise<void> {
         for (const rule of permissionRules.length > 0
           ? permissionRules
           : getDefaultRules()) {
+          const qualifier =
+            rule.commandClass !== undefined
+              ? ` (${rule.commandClass} shell)`
+              : rule.argPattern !== undefined
+                ? ` (${rule.argPattern})`
+                : '';
           rows.push({
-            content: `  ${rule.action.padEnd(5)} ${rule.tool}${rule.argPattern !== null ? ` (${rule.argPattern})` : ''}`,
+            content: `  ${rule.action.padEnd(5)} ${rule.tool}${qualifier}`,
             fg:
               rule.action === 'allow'
                 ? COLORS.green
-                : (rule.action === 'deny'
+                : rule.action === 'deny'
                   ? COLORS.red
-                  : COLORS.yellow),
+                  : COLORS.yellow,
           });
         }
         showResultPanel('/permissions', rows);
@@ -2429,7 +2389,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         }
         const lastBackup = backupHistory.pop();
         let restoreMsg = '';
-        if (lastBackup !== null) {
+        if (lastBackup !== undefined) {
           try {
             backupEngine.restoreBackup(lastBackup);
             restoreMsg = ' and restored workspace files';
@@ -2487,12 +2447,23 @@ export async function startTui(options: TuiOptions): Promise<void> {
     handleInterrupt,
     handleSubmit: () => {
       const text = inputField.plainText.trim();
-      if (!text) {return;}
+      if (!text) {
+        return;
+      }
       inputField.setText('');
       if (typeof inputField.onContentChange === 'function') {
-        inputField.onContentChange();
+        inputField.onContentChange(inputField.plainText);
       }
-      _sendPrompt(text).catch(() => {});
+      if (text.startsWith('/')) {
+        handleSlashCommand(text).catch((error: unknown) => {
+          addInfoLine(
+            `  command failed: ${error instanceof Error ? error.message : String(error)}`,
+            COLORS.red,
+          );
+        });
+      } else {
+        _sendPrompt(text).catch(() => {});
+      }
     },
     inputField,
     permissionBox: permissionBoxMgr,
@@ -2509,7 +2480,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
   };
 
   renderer.keyInput.on('keypress', (key: KeyEvent) => {
-    if (viewerOverlay.visible) {return;}
+    if (viewerOverlay.visible) {
+      return;
+    }
     if ((key.ctrl || key.meta) && key.name === 'v') {
       pasteImageFromClipboard(cwd)
         .then((imgPath) => {
@@ -2582,7 +2555,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
     }
     try {
       renderer.destroy();
-    } catch { /* intentionally ignored */ }
+    } catch {
+      /* intentionally ignored */
+    }
     console.error(`[lavalamp] Fatal: ${err.message}`);
     if (savedId !== null) {
       const reset = '\u001B[0m';
@@ -2610,7 +2585,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   updateStatus();
 
   if (options.resumeSession) {
-    if (options.resumeSessionId !== null) {
+    if (typeof options.resumeSessionId === 'string') {
       const messages = loadSession(options.resumeSessionId);
       if (messages !== null) {
         currentSessionId = options.resumeSessionId;

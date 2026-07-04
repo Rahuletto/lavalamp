@@ -1,7 +1,8 @@
 import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
-import { BUILD_MODEL, resolveModelWithFallback } from '../config/models';
+import { BUILD_MODEL } from '../config/models';
+import { resolveSelectedModel } from '../config/runtime-route';
 import { getMemoryContext, createMemoryTools } from '../sessions';
 import { createRipgrepTool } from '../tools/ripgrep';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
@@ -9,11 +10,9 @@ import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-sea
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
 
-  
-
-  const model = resolveModelWithFallback(
+  const model = resolveSelectedModel(
     BUILD_MODEL,
-    ctx.env as Record<string, string>,
+    ctx.env as Record<string, string | undefined>,
   );
   const memoryContext = getMemoryContext(workspaceRoot as string);
 

@@ -1,23 +1,24 @@
 #!/usr/bin/env bun
 import { loadCredentials } from '../auth/credentials';
-import {
-  configPath,
-  resolveConfig,
-  updateConfig,
-} from '../config/user-config';
+import { configPath, resolveConfig, updateConfig } from '../config/user-config';
 import { getModelEntry, listModels } from '../config/models';
+import { resolveRuntimeRoute, routeSummary } from '../config/runtime-route';
 
 const [command, subcommand, key, ...rest] = process.argv.slice(2);
 
 function printConfig(): void {
   const config = resolveConfig();
   const creds = loadCredentials();
+  const route = resolveRuntimeRoute({ config });
+  const gatewayLabel = config.gatewayEnabled
+    ? `on${config.gatewayId ? ` (${config.gatewayId})` : ' (missing id)'}`
+    : config.gatewayId
+      ? `off (saved id: ${config.gatewayId})`
+      : 'off';
   console.log(`config: ${configPath()}`);
-  console.log(`model: ${config.defaultModel || 'default'}`);
-  console.log(
-    `gateway: ${config.gatewayEnabled ? 'on' : 'off'}${config.gatewayId ? ` (${config.gatewayId})` : ''}`,
-  );
-  console.log(`route: ${config.preferredProviderRoute}`);
+  console.log(`model: ${route.model}`);
+  console.log(`gateway: ${gatewayLabel}`);
+  console.log(`route: ${routeSummary(route)}`);
   console.log(`usage display: ${config.usageDisplayMode}`);
   console.log(
     `cloudflare: ${creds ? `account ${creds.accountId.slice(0, 8)}...` : 'not logged in'}`,
@@ -81,6 +82,13 @@ function setConfig(): void {
     }
     case 'gateway-enabled': {
       const enabled = parseBoolean(value);
+      const current = resolveConfig();
+      if (enabled && current.gatewayId.length === 0) {
+        console.error(
+          '[lavalamp] gateway-enabled true requires a gateway id. Run "lavalamp config set gateway <gateway-id>" first.',
+        );
+        process.exit(1);
+      }
       updateConfig({
         gatewayEnabled: enabled,
         preferredProviderRoute: enabled ? 'gateway' : 'direct',
@@ -113,6 +121,8 @@ if (command === 'models') {
 } else if (command === 'config' && subcommand === 'set') {
   setConfig();
 } else {
-  console.error('Usage: lavalamp {models|config show|config set <key> <value>}');
+  console.error(
+    'Usage: lavalamp {models|config show|config set <key> <value>}',
+  );
   process.exit(1);
 }

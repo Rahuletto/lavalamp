@@ -12,7 +12,7 @@ export interface ChunkResult {
 export class VectorDb {
   private readonly db: Database;
 
-  constructor(private readonly workspaceRoot: string) {
+  constructor(workspaceRoot: string) {
     const dir = path.join(workspaceDataDir(workspaceRoot), 'semantic-index');
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -96,15 +96,20 @@ export class VectorDb {
         buffer.byteOffset,
         buffer.byteLength / 4,
       );
+      if (fVec.length !== qVec.length) {
+        continue;
+      }
 
       // Calculate dot product (assuming vectors are normalized by API)
       let dot = 0;
       let lenQ = 0;
       let lenF = 0;
       for (let i = 0; i < qVec.length; i++) {
-        dot += qVec[i] * fVec[i];
-        lenQ += qVec[i] * qVec[i];
-        lenF += fVec[i] * fVec[i];
+        const q = qVec[i] ?? 0;
+        const f = fVec[i] ?? 0;
+        dot += q * f;
+        lenQ += q * q;
+        lenF += f * f;
       }
       const similarity = dot / (Math.sqrt(lenQ) * Math.sqrt(lenF) || 1);
       results.push({
@@ -165,7 +170,11 @@ export async function fetchEmbeddings(
     );
   }
 
-  const result = (await response.json()) as { success: boolean; result: { data: number[][] }; errors: unknown[] };
+  const result = (await response.json()) as {
+    success: boolean;
+    result: { data: number[][] };
+    errors: unknown[];
+  };
   if (!result.success) {
     throw new Error(
       `Cloudflare AI Embeddings failed: ${JSON.stringify(result.errors)}`,

@@ -1,11 +1,12 @@
 import * as v from 'valibot';
 import { defineTool } from '@flue/runtime';
-import { listSessions, getSession, formatSessionSummary } from './store';
-import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-
-const SESSIONS_DIR = join(homedir(), '.agents', 'sessions');
+import {
+  findSessionFilePath,
+  listSessions,
+  getSession,
+  formatSessionSummary,
+} from './store';
+import { readFileSync } from 'node:fs';
 
 export function createSessionsTool() {
   return defineTool({
@@ -49,12 +50,14 @@ export function createPullSessionTool() {
       'Pull the messages and full conversation history of a specific past session. Pass the session ID to load its contents.',
     execute: async (args) => {
       const id = args.sessionId.trim();
-      const filePath = join(SESSIONS_DIR, `${id}.json`);
-      if (!existsSync(filePath)) {
+      const filePath = findSessionFilePath(id);
+      if (filePath === null) {
         return `No session found with ID "${id}".`;
       }
       try {
-        const data = JSON.parse(readFileSync(filePath, 'utf8')) as { messages?: { role?: string; content?: string }[] };
+        const data = JSON.parse(readFileSync(filePath, 'utf8')) as {
+          messages?: { role?: string; content?: string }[];
+        };
         const messages = data.messages ?? [];
         if (messages.length === 0) {
           return `Session "${id}" has no messages.`;

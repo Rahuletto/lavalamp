@@ -10,6 +10,11 @@ interface McpRequest {
   params?: Record<string, unknown>;
 }
 
+interface McpResponse {
+  error?: { message?: string } | null;
+  result?: unknown;
+}
+
 let requestId = 0;
 
 async function mcpCall(
@@ -44,7 +49,7 @@ async function mcpCall(
     return parseSseResponse(text);
   }
 
-  const data = await resp.json();
+  const data = (await resp.json()) as McpResponse;
   if (data.error !== null && data.error !== undefined) {
     throw new Error(
       `MCP error: ${data.error.message ?? JSON.stringify(data.error)}`,
@@ -62,14 +67,22 @@ function parseSseResponse(text: string): unknown {
   }
 
   for (let i = dataLines.length - 1; i >= 0; i--) {
+    const line = dataLines[i];
+    if (line === undefined) {
+      continue;
+    }
     try {
-      const parsed = JSON.parse(dataLines[i]);
+      const parsed = JSON.parse(line) as McpResponse;
       if (parsed.result !== undefined) {
         return parsed.result;
       }
       if (parsed.error !== null && parsed.error !== undefined) {
         const errObj = parsed.error as Record<string, unknown>;
-        throw new Error(typeof errObj.message === 'string' ? errObj.message : JSON.stringify(errObj));
+        throw new Error(
+          typeof errObj.message === 'string'
+            ? errObj.message
+            : JSON.stringify(errObj),
+        );
       }
     } catch {}
   }
@@ -139,8 +152,12 @@ function extractText(result: unknown): string {
     return '';
   }
   if (typeof result !== 'object') {
-    if (typeof result === 'string') {return result;}
-    if (typeof result === 'number' || typeof result === 'boolean') {return String(result);}
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (typeof result === 'number' || typeof result === 'boolean') {
+      return String(result);
+    }
     return '';
   }
   const r = result as Record<string, unknown>;

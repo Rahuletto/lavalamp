@@ -6,7 +6,10 @@ import { workspaceDataDir } from './paths';
 export async function pasteImageFromClipboard(
   workspaceRoot: string,
 ): Promise<string | null> {
-  const attachmentsDir = path.join(workspaceDataDir(workspaceRoot), 'attachments');
+  const attachmentsDir = path.join(
+    workspaceDataDir(workspaceRoot),
+    'attachments',
+  );
   if (!fs.existsSync(attachmentsDir)) {
     fs.mkdirSync(attachmentsDir, { recursive: true });
   }
@@ -18,7 +21,8 @@ export async function pasteImageFromClipboard(
     if (process.platform === 'darwin') {
       // Sniff clipboard info first
       const check = spawnSync('osascript', ['-e', 'clipboard info']);
-      const checkOut = check.stdout !== undefined ? check.stdout.toString() : '';
+      const checkOut =
+        check.stdout !== undefined ? check.stdout.toString() : '';
       if (!checkOut.includes('«class PNGf»') && !checkOut.includes('picture')) {
         return null; // No image in clipboard
       }
@@ -68,7 +72,11 @@ export async function pasteImageFromClipboard(
       }
       // Check for wl-paste
       const resWl = spawnSync('wl-paste', ['-t', 'image/png']);
-      if (resWl.status === 0 && resWl.stdout !== undefined && resWl.stdout.length > 0) {
+      if (
+        resWl.status === 0 &&
+        resWl.stdout !== undefined &&
+        resWl.stdout.length > 0
+      ) {
         fs.writeFileSync(destPath, resWl.stdout);
         return destPath;
       }

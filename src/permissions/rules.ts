@@ -1,11 +1,13 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { classifyShellCommand } from './shell-policy';
 
 export type PermissionAction = 'allow' | 'ask' | 'deny';
 
 export interface PermissionRule {
   tool: string;
   argPattern?: string;
+  commandClass?: 'read' | 'mutation' | 'unknown';
   action: PermissionAction;
   description?: string;
 }
@@ -36,8 +38,8 @@ const DEFAULT_RULES: PermissionRule[] = [
   { action: 'allow', description: 'Skip a task', tool: 'skip_task' },
   {
     action: 'allow',
-    argPattern: '"command":"sed ',
-    description: 'Read file snippets with sed',
+    commandClass: 'read',
+    description: 'Run read-only shell inspection',
     tool: 'bash',
   },
   { action: 'ask', description: 'Create or overwrite file', tool: 'write' },
@@ -83,6 +85,26 @@ function matchArgPattern(
   return argsStr.includes(pattern);
 }
 
+function matchCommandClass(
+  toolName: string,
+  args: Record<string, unknown>,
+  commandClass?: PermissionRule['commandClass'],
+): boolean {
+  if (commandClass === undefined) {
+    return true;
+  }
+  if (toolName !== 'bash') {
+    return false;
+  }
+  const command =
+    typeof args.command === 'string'
+      ? args.command
+      : typeof args.cmd === 'string'
+        ? args.cmd
+        : '';
+  return classifyShellCommand(command).kind === commandClass;
+}
+
 export function matchRules(
   toolName: string,
   args: Record<string, unknown>,
@@ -93,6 +115,9 @@ export function matchRules(
       continue;
     }
     if (!matchArgPattern(args, rule.argPattern)) {
+      continue;
+    }
+    if (!matchCommandClass(toolName, args, rule.commandClass)) {
       continue;
     }
     return rule.action;

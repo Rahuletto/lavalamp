@@ -5,8 +5,11 @@ import {
   writeFileSync,
   chmodSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
+import {
+  configPath as resolveConfigPath,
+  configPathCandidates,
+} from '../storage/paths';
 
 export type ProviderRoute = 'direct' | 'gateway';
 export type UsageDisplayMode = 'usage' | 'neurons';
@@ -27,11 +30,8 @@ export const DEFAULT_CONFIG: Required<LavalampConfig> = {
   usageDisplayMode: 'neurons',
 };
 
-const CONFIG_DIR = join(homedir(), '.config', 'lavalamp');
-const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
-
 export function configPath(): string {
-  return CONFIG_FILE;
+  return resolveConfigPath();
 }
 
 function normalizeConfig(raw: unknown): LavalampConfig {
@@ -68,15 +68,17 @@ function normalizeConfig(raw: unknown): LavalampConfig {
 }
 
 export function loadConfig(): LavalampConfig {
-  if (!existsSync(CONFIG_FILE)) {
-    return {};
+  for (const candidate of configPathCandidates()) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+    try {
+      return normalizeConfig(JSON.parse(readFileSync(candidate, 'utf8')));
+    } catch {
+      return {};
+    }
   }
-
-  try {
-    return normalizeConfig(JSON.parse(readFileSync(CONFIG_FILE, 'utf8')));
-  } catch {
-    return {};
-  }
+  return {};
 }
 
 export function resolveConfig(): Required<LavalampConfig> {
@@ -93,10 +95,11 @@ export function resolveConfig(): Required<LavalampConfig> {
 }
 
 export function saveConfig(config: LavalampConfig): void {
-  mkdirSync(CONFIG_DIR, { recursive: true });
+  const file = configPath();
+  mkdirSync(dirname(file), { recursive: true });
   const normalized = normalizeConfig(config);
-  writeFileSync(CONFIG_FILE, `${JSON.stringify(normalized, null, 2)}\n`);
-  chmodSync(CONFIG_FILE, 0o600);
+  writeFileSync(file, `${JSON.stringify(normalized, null, 2)}\n`);
+  chmodSync(file, 0o600);
 }
 
 export function updateConfig(
@@ -105,12 +108,4 @@ export function updateConfig(
   const next = { ...loadConfig(), ...update };
   saveConfig(next);
   return resolveConfig();
-}
-
-export function getGatewayBaseUrl(
-  accountId: string,
-  gatewayId: string,
-  provider: string,
-): string {
-  return `https://gateway.ai.cloudflare.com/v1/${accountId}/${gatewayId}/${provider}`;
 }

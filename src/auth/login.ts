@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import {
   clearCredentials,
+  credentialsPath,
   loadCredentials,
   saveCredentials,
 } from './credentials';
@@ -87,7 +88,7 @@ async function readWranglerAuthToken(): Promise<string | null> {
     const result = await new Promise<{ stdout: string; exitCode: number }>(
       (resolve) => {
         const proc = spawn('bunx', ['wrangler', 'auth', 'token', '--json'], {
-          env: { ...process.env},
+          env: { ...process.env },
         });
         let stdout = '';
         proc.stdout.on('data', (data: Buffer) => (stdout += data.toString()));
@@ -110,7 +111,7 @@ function hasRequiredScopes(scopes: string[]): boolean {
   return REQUIRED_SCOPES.every((r) => scopes.includes(r));
 }
 
- async function runWranglerLogin(): Promise<boolean> {
+async function runWranglerLogin(): Promise<boolean> {
   return new Promise((resolve) => {
     console.error(`[lavalamp] Opening browser for Cloudflare login...`);
     console.error(`[lavalamp] Required scopes: ${REQUIRED_SCOPES.join(', ')}`);
@@ -143,7 +144,7 @@ function hasRequiredScopes(scopes: string[]): boolean {
   });
 }
 
- async function prompt(question: string): Promise<string> {
+async function prompt(question: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = createInterface({
       input: process.stdin,
@@ -213,8 +214,9 @@ async function fetchAccountIdFromToken(
       },
     });
     const data = (await resp.json()) as CloudflareApiResponse;
-    if (data.success && data.result.length > 0) {
-      return data.result[0].id;
+    const account = data.result[0];
+    if (data.success && account !== undefined) {
+      return account.id;
     }
     return null;
   } catch {
@@ -232,7 +234,7 @@ async function resolveAccountId(oauthToken: string): Promise<string | null> {
     const result = await new Promise<{ stdout: string; exitCode: number }>(
       (resolve) => {
         const proc = spawn('bunx', ['wrangler', 'whoami'], {
-          env: { ...process.env},
+          env: { ...process.env },
           stdio: ['ignore', 'pipe', 'pipe'],
         });
         let stdout = '';
@@ -243,8 +245,9 @@ async function resolveAccountId(oauthToken: string): Promise<string | null> {
 
     if (result.exitCode === 0) {
       const match = /Account ID:\s*([a-f0-9]+)/i.exec(result.stdout);
-      if (match) {
-        return match[1];
+      const accountId = match?.[1];
+      if (accountId !== undefined) {
+        return accountId;
       }
     }
   } catch {}
@@ -308,7 +311,7 @@ export async function login(): Promise<Credentials> {
     const creds = await tryWranglerToken();
     if (creds) {
       saveCredentials(creds);
-      console.error(`[lavalamp] Saved to ~/.config/lavalamp/credentials`);
+      console.error(`[lavalamp] Saved to ${credentialsPath()}`);
       return creds;
     }
     console.error(
@@ -327,7 +330,7 @@ export async function login(): Promise<Credentials> {
     const creds = await tryWranglerToken();
     if (creds) {
       saveCredentials(creds);
-      console.error(`[lavalamp] Saved to ~/.config/lavalamp/credentials`);
+      console.error(`[lavalamp] Saved to ${credentialsPath()}`);
       return creds;
     }
   }
@@ -369,6 +372,6 @@ export async function login(): Promise<Credentials> {
 
   const creds = { accountId, apiToken };
   saveCredentials(creds);
-  console.error(`[lavalamp] Saved to ~/.config/lavalamp/credentials`);
+  console.error(`[lavalamp] Saved to ${credentialsPath()}`);
   return creds;
 }

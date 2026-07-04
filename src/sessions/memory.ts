@@ -1,32 +1,22 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { createHash } from 'node:crypto';
-
-const MEMORY_DIR = join(homedir(), '.agents', 'memory');
-
-function workspaceHash(cwd: string): string {
-  return createHash('sha256').update(cwd).digest('hex').slice(0, 12);
-}
-
-function memoryPath(cwd: string): string {
-  return join(MEMORY_DIR, `${workspaceHash(cwd)}.md`);
-}
+import { memoryDir, memoryPath, memoryPathCandidates } from '../storage/paths';
 
 export function loadMemory(cwd: string): string | null {
-  const path = memoryPath(cwd);
-  if (!existsSync(path)) {
-    return null;
+  for (const path of memoryPathCandidates(cwd)) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    try {
+      return readFileSync(path, 'utf8');
+    } catch {
+      return null;
+    }
   }
-  try {
-    return readFileSync(path, 'utf8');
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 export function saveMemory(cwd: string, content: string): void {
-  mkdirSync(MEMORY_DIR, { recursive: true });
+  mkdirSync(memoryDir(), { recursive: true });
   writeFileSync(memoryPath(cwd), content);
 }
 

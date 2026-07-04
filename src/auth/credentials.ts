@@ -6,11 +6,11 @@ import {
   chmodSync,
   unlinkSync,
 } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
-
-const CREDENTIALS_DIR = join(homedir(), '.config', 'lavalamp');
-const CREDENTIALS_FILE = join(CREDENTIALS_DIR, 'credentials');
+import { dirname } from 'node:path';
+import {
+  credentialsPath as resolveCredentialsPath,
+  credentialsPathCandidates,
+} from '../storage/paths';
 
 export interface Credentials {
   accountId: string;
@@ -18,37 +18,38 @@ export interface Credentials {
 }
 
 export function credentialsPath(): string {
-  return CREDENTIALS_FILE;
+  return resolveCredentialsPath();
 }
 
 export function loadCredentials(): Credentials | null {
-  if (!existsSync(CREDENTIALS_FILE)) {
-    return null;
-  }
-
-  try {
-    const raw = readFileSync(CREDENTIALS_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-
-    if (
-      typeof parsed.accountId === 'string' &&
-      typeof parsed.apiToken === 'string'
-    ) {
-      return { accountId: parsed.accountId, apiToken: parsed.apiToken };
+  for (const candidate of credentialsPathCandidates()) {
+    if (!existsSync(candidate)) {
+      continue;
     }
-    return null;
-  } catch {
-    return null;
+    try {
+      const raw = readFileSync(candidate, 'utf8');
+      const parsed = JSON.parse(raw);
+
+      if (
+        typeof parsed.accountId === 'string' &&
+        typeof parsed.apiToken === 'string'
+      ) {
+        return { accountId: parsed.accountId, apiToken: parsed.apiToken };
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
+  return null;
 }
 
 export function saveCredentials(creds: Credentials): void {
-  if (!existsSync(CREDENTIALS_DIR)) {
-    mkdirSync(CREDENTIALS_DIR, { recursive: true });
-  }
+  const file = credentialsPath();
+  mkdirSync(dirname(file), { recursive: true });
 
-  writeFileSync(CREDENTIALS_FILE, JSON.stringify(creds, null, 2));
-  chmodSync(CREDENTIALS_FILE, 0o600);
+  writeFileSync(file, JSON.stringify(creds, null, 2));
+  chmodSync(file, 0o600);
 }
 
 export function hasCredentials(): boolean {
@@ -56,7 +57,9 @@ export function hasCredentials(): boolean {
 }
 
 export function clearCredentials(): void {
-  if (existsSync(CREDENTIALS_FILE)) {
-    unlinkSync(CREDENTIALS_FILE);
+  for (const file of credentialsPathCandidates()) {
+    if (existsSync(file)) {
+      unlinkSync(file);
+    }
   }
 }
