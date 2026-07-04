@@ -2,7 +2,9 @@ node_modules/
 .env
 dist/
 *.db
-testbench/
+testbench/.agents/
+testbench/.lavalamp/
+testbench/cli.js
 .DS_Store
 .agents/autorun.json
 .agents/rules.json

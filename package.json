@@ -10,6 +10,7 @@
     "build": "flue build --target node",
     "postinstall": "bun run build/postinstall.ts",
     "test": "bun test",
+    "e2e": "bun run build && bun test --timeout=180000 ./testbench/e2e/actual-bin.e2e.ts",
     "typecheck": "tsc --noEmit",
     "dev": "flue build --target node --watch"
   },
@@ -22,7 +23,11 @@
     "valibot": "^1.4.1"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14"
+    "@nigel-dev/opentui-test": "^0.1.0",
+    "@opentui/react": "^0.4.3",
+    "@types/bun": "^1.3.14",
+    "@types/react": "^19.2.17",
+    "react": "^19.2.7"
   },
   "engines": {
     "bun": ">=1.3.14"

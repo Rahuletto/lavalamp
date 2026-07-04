@@ -5,6 +5,7 @@ export const HELP_COMMANDS: [string, string][] = [
   ['/compact', 'Compact context'],
   ['/memory', 'Show project memory'],
   ['/model', 'Show/change model'],
+  ['/models', 'Show/change model'],
   ['/gateway', 'Show/change AI Gateway'],
   ['/usage', 'Show neuron meter'],
   ['/workspace', 'Show workspace'],
@@ -17,8 +18,11 @@ export const HELP_COMMANDS: [string, string][] = [
   ['/plan', 'Toggle plan mode'],
   ['/copy', 'Copy session transcript'],
   ['/undo', 'Undo last change'],
+  ['/paste-image', 'Paste clipboard image'],
   ['/quit', 'Exit'],
 ];
+
+export const SLASH_COMMANDS = HELP_COMMANDS;
 
 export const HELP_KEYS: [string, string][] = [
   ['Tab', 'Autocomplete'],

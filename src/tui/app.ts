@@ -54,8 +54,17 @@ import { pasteImageFromClipboard } from '../storage/clipboard';
 import { describeImageWithSpectacle } from '../storage/spectacle';
 import { openCodeViewer, openDiffViewer } from './viewers';
 import { configPath, resolveConfig, updateConfig } from '../config/user-config';
-import { BUILD_MODEL, getModelEntry, listModels } from '../config/models';
+import { BUILD_MODEL, getModelEntry } from '../config/models';
 import { resolveRuntimeRoute, routeSummary } from '../config/runtime-route';
+import { HELP_COMMANDS, HELP_KEYS } from './slash-data';
+import { createTuiLifetime, formatExitSummary } from './lifecycle';
+import {
+  createModelPickerState,
+  moveModelPickerSelection,
+  selectedModelId,
+  type ModelPickerState,
+} from './model-picker';
+import { mountInputStack } from './input-stack';
 
 export interface TuiOptions {
   serverPath: string;
@@ -124,6 +133,7 @@ function formatTokenCount(value: number): string {
 export async function startTui(options: TuiOptions): Promise<void> {
   const store = new AppStateStore(options.cwd, options.model);
   const state = store.getState();
+  const lifetime = createTuiLifetime();
   const backupEngine = new BackupEngine(options.cwd);
   const backupHistory: string[] = [];
   let turnBackupCreated = false;
@@ -179,6 +189,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     onDestroy: () => {
       saveSessionSnapshot();
       destroyed = true;
+      lifetime.markDestroyed();
       if (spinnerTimer) {
         clearInterval(spinnerTimer);
         spinnerTimer = null;
@@ -313,7 +324,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     width: '100%',
   });
   completionBox.add(completionScroll);
-  root.add(completionBox);
 
   const lavaLampBox = new BoxRenderable(renderer, {
     alignItems: 'center',
@@ -713,10 +723,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
   });
   inputRow.add(inputPrefixBox);
   inputRow.add(inputField);
-  root.add(confirmBoxMgr.box);
-  root.add(permissionBoxMgr.box);
-  root.add(inputSeparatorTop);
-  root.add(inputRow);
+  mountInputStack(root, {
+    completionBox,
+    confirmBox: confirmBoxMgr.box,
+    inputRow,
+    inputSeparatorTop,
+    permissionBox: permissionBoxMgr.box,
+  });
 
   const completion = new CompletionManager({
     accent: (): string => accent(),
@@ -896,18 +909,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   async function setPlanMode(enabled: boolean) {
-    const targetAgent = enabled ? 'plan' : 'build';
     state.planMode = enabled;
     applyModeVisuals();
-    flue.setAgentName(targetAgent);
-    try {
-      await flue.restart();
-    } catch (error) {
-      addInfoLine(
-        `  Error restarting agent: ${(error as Error).message}`,
-        COLORS.red,
-      );
-    }
   }
 
   function hideLavaLamp() {
@@ -1651,20 +1654,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
     updateStatus();
   }
 
-  function printExitSummary(sessionId: string) {
-    const reset = '\u001B[0m';
-    const accentColor = hexToAnsi(COLORS.accent);
-    const dimColor = hexToAnsi(COLORS.dim);
-    const cyanColor = hexToAnsi(COLORS.cyan);
-    const whiteColor = hexToAnsi(COLORS.white);
-    const banner = (LAVA_LAMP_FRAMES[0] ?? []).join('\n');
-    process.stdout.write(
-      `\n${accentColor}${banner}${reset}\n\n` +
-        `${dimColor}session:${reset} ${whiteColor}${sessionId}${reset}\n` +
-        `${dimColor}continue:${reset} ${cyanColor}lavalamp --continue ${sessionId}${reset}\n`,
-    );
-  }
-
   let exiting = false;
   let exitSummaryPrinted = false;
   let savedSessionOnExit: string | null = null;
@@ -1710,7 +1699,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     renderer.destroy();
     if (savedSessionId !== null && !exitSummaryPrinted) {
       exitSummaryPrinted = true;
-      printExitSummary(savedSessionId);
+      process.stdout.write(formatExitSummary(savedSessionId));
     }
   }
 
@@ -1778,6 +1767,130 @@ export async function startTui(options: TuiOptions): Promise<void> {
       });
     }
     showResultPanel('/sessions', rows);
+  }
+
+  let modelPickerActive = false;
+  let modelPickerState: ModelPickerState | null = null;
+
+  function currentModelId(): string {
+    const config = resolveConfig();
+    return (
+      state.model ??
+      (config.defaultModel.length > 0 ? config.defaultModel : BUILD_MODEL)
+    );
+  }
+
+  async function setModel(modelId: string): Promise<boolean> {
+    const model = getModelEntry(modelId);
+    if (model === undefined) {
+      showResultPanel('/model', [
+        { content: `  unknown model: ${modelId}`, fg: COLORS.yellow },
+        { content: '  run /model to list known models', fg: COLORS.dim },
+      ]);
+      return false;
+    }
+    if (state.processing) {
+      showResultPanel('/model', [
+        {
+          content: '  cannot change model while a prompt is running',
+          fg: COLORS.yellow,
+        },
+      ]);
+      return false;
+    }
+    updateConfig({ defaultModel: modelId });
+    process.env.LAVALAMP_MODEL = modelId;
+    state.model = modelId;
+    await flue.restart();
+    showResultPanel('/model', [
+      { content: `  model set: ${modelId}`, fg: COLORS.green },
+    ]);
+    updateStatus();
+    return true;
+  }
+
+  function showModelPicker() {
+    modelPickerState = createModelPickerState(currentModelId());
+    modelPickerActive = true;
+    renderModelPicker();
+  }
+
+  function closeModelPicker() {
+    modelPickerActive = false;
+    modelPickerState = null;
+    hideResultPanel();
+  }
+
+  function renderModelPicker() {
+    const picker = modelPickerState;
+    if (picker === null) {
+      return;
+    }
+    const config = resolveConfig();
+    const current = currentModelId();
+    const route = resolveRuntimeRoute({
+      config,
+      env: process.env as Record<string, string | undefined>,
+      model: current,
+    });
+    const currentEntry = route.registryEntry;
+    const rows: { content: string; fg?: string; bold?: boolean }[] = [
+      { bold: true, content: `  model: ${current}`, fg: COLORS.white },
+      {
+        content: `  config: ${configPath()}`,
+        fg: COLORS.dim,
+      },
+      {
+        content: `  route: ${routeSummary(route)}`,
+        fg: COLORS.gray,
+      },
+    ];
+    if (currentEntry !== undefined) {
+      rows.push({
+        content: `  ${currentEntry.displayName} · ${Math.round(currentEntry.contextWindow / 1000)}k ctx · ${currentEntry.functionCalling ? 'tools' : 'no tools'} · ${currentEntry.vision ? 'vision' : 'text'}`,
+        fg: COLORS.gray,
+      });
+    }
+    rows.push(
+      { content: '' },
+      {
+        bold: true,
+        content: '  available models:',
+        fg: COLORS.white,
+      },
+    );
+    for (let i = 0; i < picker.models.length; i++) {
+      const model = picker.models[i];
+      if (model === undefined) {
+        continue;
+      }
+      const selected = i === picker.selectedIndex;
+      const isCurrent = model.id === current;
+      const marker = selected ? '\u25B6 ' : '  ';
+      const currentTag = isCurrent ? ' current' : '';
+      rows.push({
+        bold: selected,
+        content: `  ${marker}${model.id}  ${model.vision ? 'vision' : 'text'} ${model.gatewaySupport ? 'gateway' : 'direct'}${currentTag}`,
+        fg: selected ? accent() : isCurrent ? COLORS.white : COLORS.gray,
+      });
+    }
+    showResultPanel('/model', rows);
+  }
+
+  async function selectModelFromPicker() {
+    const picker = modelPickerState;
+    if (picker === null) {
+      return;
+    }
+    const modelId = selectedModelId(picker);
+    if (modelId === undefined) {
+      return;
+    }
+    const changed = await setModel(modelId);
+    if (changed) {
+      modelPickerActive = false;
+      modelPickerState = null;
+    }
   }
 
   function renderAllMessages() {
@@ -1870,27 +1983,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         const rows: { content: string; fg?: string; bold?: boolean }[] = [
           { bold: true, content: '  Commands:', fg: COLORS.white },
         ];
-        for (const [name, desc] of [
-          ['/help', 'Show this help'],
-          ['/clear', 'New session'],
-          ['/sessions', 'Switch sessions'],
-          ['/compact', 'Compact context'],
-          ['/memory', 'Show project memory'],
-          ['/model', 'Show/change model'],
-          ['/gateway', 'Show/change AI Gateway'],
-          ['/usage', 'Show neuron meter'],
-          ['/workspace', 'Show workspace'],
-          ['/skills', 'List skills'],
-          ['/mcp', 'List MCP servers'],
-          ['/tools', 'List registered tools'],
-          ['/subagents', 'List subagents'],
-          ['/sudo', 'Dangerously allow every tool'],
-          ['/permissions', 'Show permission rules'],
-          ['/plan', 'Toggle plan mode'],
-          ['/copy', 'Copy session transcript'],
-          ['/undo', 'Undo last change'],
-          ['/quit', 'Exit'],
-        ] as [string, string][]) {
+        for (const [name, desc] of HELP_COMMANDS) {
           rows.push({
             bold: true,
             content: `  ${name.padEnd(14)}${desc}`,
@@ -1901,13 +1994,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
           { content: '' },
           { bold: true, content: '  Keys:', fg: COLORS.white },
         );
-        for (const [key, desc] of [
-          ['Tab', 'Autocomplete'],
-          ['Shift+Tab / Ctrl+P', 'Toggle plan mode'],
-          ['Enter', 'Steer or Submit'],
-          ['Ctrl+C', 'Interrupt / exit'],
-          ['Escape', 'Clear / interrupt'],
-        ] as [string, string][]) {
+        for (const [key, desc] of HELP_KEYS) {
           rows.push({ content: `  ${key.padEnd(14)}${desc}`, fg: COLORS.gray });
         }
         showResultPanel('/help', rows);
@@ -1994,78 +2081,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
         showResultPanel('/memory', rows);
         break;
       }
-      case '/model': {
+      case '/model':
+      case '/models': {
         if (arg.length > 0) {
-          const model = getModelEntry(arg);
-          if (model === undefined) {
-            showResultPanel('/model', [
-              { content: `  unknown model: ${arg}`, fg: COLORS.yellow },
-              { content: '  run /model to list known models', fg: COLORS.dim },
-            ]);
-            break;
-          }
-          if (state.processing) {
-            showResultPanel('/model', [
-              {
-                content: '  cannot change model while a prompt is running',
-                fg: COLORS.yellow,
-              },
-            ]);
-            break;
-          }
-          updateConfig({ defaultModel: arg });
-          process.env.LAVALAMP_MODEL = arg;
-          state.model = arg;
-          await flue.restart();
-          showResultPanel('/model', [
-            { content: `  model set: ${arg}`, fg: COLORS.green },
-          ]);
-          updateStatus();
+          await setModel(arg);
           break;
         }
-
-        const config = resolveConfig();
-        const current =
-          state.model ??
-          (config.defaultModel.length > 0 ? config.defaultModel : BUILD_MODEL);
-        const route = resolveRuntimeRoute({
-          config,
-          env: process.env as Record<string, string | undefined>,
-          model: current,
-        });
-        const currentEntry = route.registryEntry;
-        const rows: { content: string; fg?: string; bold?: boolean }[] = [
-          { bold: true, content: `  model: ${current}`, fg: COLORS.white },
-          {
-            content: `  config: ${configPath()}`,
-            fg: COLORS.dim,
-          },
-          {
-            content: `  route: ${routeSummary(route)}`,
-            fg: COLORS.gray,
-          },
-        ];
-        if (currentEntry !== undefined) {
-          rows.push({
-            content: `  ${currentEntry.displayName} · ${Math.round(currentEntry.contextWindow / 1000)}k ctx · ${currentEntry.functionCalling ? 'tools' : 'no tools'} · ${currentEntry.vision ? 'vision' : 'text'}`,
-            fg: COLORS.gray,
-          });
-        }
-        rows.push(
-          { content: '' },
-          {
-            bold: true,
-            content: '  available models:',
-            fg: COLORS.white,
-          },
-        );
-        for (const model of listModels()) {
-          rows.push({
-            content: `  ${model.id}  ${model.vision ? 'vision' : 'text'} ${model.gatewaySupport ? 'gateway' : 'direct'}`,
-            fg: model.id === current ? accent() : COLORS.gray,
-          });
-        }
-        showResultPanel('/model', rows);
+        showModelPicker();
         break;
       }
       case '/gateway': {
@@ -2496,6 +2518,35 @@ export async function startTui(options: TuiOptions): Promise<void> {
         })
         .catch(() => {});
     }
+    if (modelPickerActive && modelPickerState !== null) {
+      if (key.name === 'up' || (key.name === 'k' && !key.ctrl)) {
+        moveModelPickerSelection(modelPickerState, -1);
+        renderModelPicker();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === 'down' || (key.name === 'j' && !key.ctrl)) {
+        moveModelPickerSelection(modelPickerState, 1);
+        renderModelPicker();
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === 'return') {
+        selectModelFromPicker().catch((error: unknown) => {
+          addInfoLine(
+            `model selection failed: ${error instanceof Error ? error.message : String(error)}`,
+            COLORS.red,
+          );
+        });
+        key.stopPropagation();
+        return;
+      }
+      if (key.name === 'escape') {
+        closeModelPicker();
+        key.stopPropagation();
+        return;
+      }
+    }
     if (sessionPickerActive) {
       if (key.name === 'up' || (key.name === 'k' && !key.ctrl)) {
         sessionPickerSelected = Math.max(0, sessionPickerSelected - 1);
@@ -2611,4 +2662,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
     }
   }
+
+  await lifetime.finished;
 }

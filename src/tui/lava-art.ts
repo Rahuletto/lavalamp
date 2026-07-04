@@ -1,13 +1,3 @@
-import { SyntaxStyle } from '@opentui/core';
-import { COLORS } from './theme';
-import { SLASH_COMMANDS } from './slash-data';
-
-export const ALL_SLASH_COMMANDS = SLASH_COMMANDS.map(([name]) => name);
-
-export const SLASH_COMMAND_DESCRIPTIONS = Object.fromEntries(
-  SLASH_COMMANDS.map(([name, desc]) => [name, desc.toLowerCase()]),
-);
-
 export const LAVA_LAMP_FRAMES = [
   [
     '       _____',
@@ -29,7 +19,6 @@ export const LAVA_LAMP_FRAMES = [
     '              (__',
     '                 -`|E',
   ],
-
   [
     '       _____',
     '      /     \\',
@@ -50,7 +39,6 @@ export const LAVA_LAMP_FRAMES = [
     '              (__',
     '                 -`|E',
   ],
-
   [
     '       _____',
     '      /     \\',
@@ -71,7 +59,6 @@ export const LAVA_LAMP_FRAMES = [
     '              (__',
     '                 -`|E',
   ],
-
   [
     '       _____',
     '      /     \\',
@@ -82,7 +69,7 @@ export const LAVA_LAMP_FRAMES = [
     '   /     |     \\',
     '  /     ( )     \\',
     String.raw`  \      |      /`,
-    String.raw`   \    ( )    /`,
+    String.raw`   \    ( )   /`,
     String.raw`    \   |     /`,
     String.raw`     \/-----\/`,
     '     |       |',
@@ -93,37 +80,3 @@ export const LAVA_LAMP_FRAMES = [
     '                 -`|E',
   ],
 ];
-
-export const syntaxStyle = SyntaxStyle.fromStyles({
-  comment: { fg: '#666666' },
-  constant: { fg: '#79C0FF' },
-  default: { fg: COLORS.white },
-  function: { fg: '#D2A8FF' },
-  keyword: { bold: true, fg: '#FF7B72' },
-  'markup.heading': { bold: true, fg: '#58A6FF' },
-  'markup.heading.1': { bold: true, fg: COLORS.accent },
-  'markup.heading.2': { bold: true, fg: COLORS.accent },
-  'markup.heading.3': { bold: true, fg: '#CC7A5C' },
-  'markup.list': { fg: '#FF7B72' },
-  'markup.raw': { bg: '#333333', fg: COLORS.yellow },
-  number: { fg: '#79C0FF' },
-  operator: { fg: '#FF7B72' },
-  property: { fg: '#79C0FF' },
-  string: { fg: '#A5D6FF' },
-  type: { fg: '#FFA657' },
-  variable: { fg: '#FFA657' },
-});
-
-export const codeSyntaxStyle = SyntaxStyle.fromStyles({
-  comment: { fg: '#8B949E' },
-  constant: { fg: '#79C0FF' },
-  default: { fg: '#C9D1D9' },
-  function: { fg: '#D2A8FF' },
-  keyword: { bold: true, fg: '#FF7B72' },
-  number: { fg: '#79C0FF' },
-  operator: { fg: '#FF7B72' },
-  property: { fg: '#79C0FF' },
-  string: { fg: '#A5D6FF' },
-  type: { fg: '#FFA657' },
-  variable: { fg: '#C9D1D9' },
-});
