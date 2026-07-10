@@ -113,22 +113,25 @@ OpenCode/Claude Code.
 - [x] `explore`, `plan`, `research`, `review` profiles + `task` dispatch + capability boundaries.
 - [x] **spec-mode approval gate** (plan → approve → build).
 - [x] Bundle our skills; load user-global + project-local skill dirs.
-- [x] **Mixture of Experts (MoE)** — language-agnostic expert agents (ui, refactor, logic, database, oracle, research, critique, spectacle) routed via `query_expert`.
+- [x] **Mixture of Experts (MoE)** — specialized experts (ui, refactor, logic, database, oracle, research, critique, spectacle) with distinct preferred models, toolkits, thinking levels, and output contracts; roster in `src/config/experts.ts`, factory in `src/config/create-expert-agent.ts`, routed via `query_expert`.
 - **Exit:** `build` delegates exploration/planning/review/expert tasks; main context stays clean.
 
 ### M5.5 — Session safety & memory
 
 - [x] **Checkpoint / undo / rewind** — file backups per turn; revert from the TUI.
 - [x] **Rules / steering** — inject context dynamically when pattern matches prompt.
-- [ ] **Headless mode** — single-shot `-p` exists; TUI-less interactive REPL/pipe-loop for scripting and CI is the remaining gap. See `src/run.ts`.
+- [x] **Headless mode** — single-shot `-p` and interactive `--repl` REPL with stdin piping, `--output-format json|text`, `--quiet`, `--yes` auto-approve, interactive permission prompts, `/exit`/`/clear`/`/help` commands. See `src/run.ts`.
+- [x] **Live bash output streaming** — child process stdout/stderr stream over IPC in real time (`bash_stream` messages); rendered live in the TUI tool panel and streamed to stdout/stderr in headless `-p`/`--repl` modes.
 - **Exit:** users can safely undo agent changes and carry memory between sessions.
 
-### M6 — spectacle (vision bridge)
+### M6 — spectacle (vision bridge) [DONE]
 
 - [x] Model **capability table** (`@cf/...` → vision/tools/ctx) in `src/config/models.ts` (`MODEL_REGISTRY`/`CAPABILITIES`).
-- [x] TUI image paste and Spectacle bridge (Cloudflare Vision API via `llama-3.2-11b-vision`).
-- [ ] Capability-driven **auto-routing** — skip the spectacle bridge when the active model already has vision (paste flow currently bridges unconditionally).
-- **Exit:** pasting and attaching a screenshot works even on non-vision agents.
+- [x] TUI image paste and Spectacle bridge (Cloudflare Vision API via `llama-4-scout-17b-16e-instruct`, fallback `llama-3.2-11b-vision-instruct`).
+- [x] **Capability-driven auto-routing** — when the active model has `vision: true`, images are passed directly as `PromptImage[]` to the model (no text bridge); non-vision models fall back to the spectacle text bridge.
+- [x] **IPC image passthrough** — post-build `build/patch-server.ts` patches `dist/server.mjs` so `parseIpcAgentMessage` extracts `images` and `invokeDirectAttached` forwards them.
+- [x] In-memory hash cache for repeated image descriptions.
+- **Exit:** pasting and attaching a screenshot works on both vision and non-vision models.
 
 ### M7 — LSP
 
@@ -138,13 +141,7 @@ OpenCode/Claude Code.
 - [ ] Feed diagnostics back to the model after each edit.
 - **Exit:** edits get type/lint feedback in-loop.
 
-### M8 — Plugin system (Postponed)
-
-- [ ] `definePlugin` manifest + loader (bundled → global → project precedence).
-- [ ] Contributions: tools, subagents, skills, commands, hooks, providers, mcpServers, permissions.
-- [ ] **MCP** plugin path via `connectMcpServer`; example plugin shipped.
-
-### M9 — Polish & distribution
+### M8 — Polish & distribution
 
 - [x] Release hardening: package bin points at `bin/lavalamp`, shell args preserve quoted prompts, install PATH uses `INSTALL_DIR`, runtime permission state is ignored.
 - [x] Config/model UX: persisted config, model listing, AI Gateway opt-in, Gateway routes, headless JSON route metadata, and TUI neuron meter.
@@ -184,7 +181,6 @@ OpenCode/Claude Code.
 
 1. ~~**Permission engine design** — Amp-style sequential rules vs simpler deny-list?~~ _(resolved by M4 — Amp-style sequential rules shipped.)_
 2. ~~**review vs plan model split** — unify on one reasoning model or keep separate?~~ _(resolved by M5 — separate profiles shipped; all overridable.)_
-3. **spectacle default tier** — code currently uses `llama-3.2-11b-vision`; `llama-4-scout` (stronger) was the alternative. Still open alongside the auto-routing gap. _(blocks M6)_
-4. ~~**AI Gateway: default-on or opt-in?**~~ _(resolved by M9 — opt-in for v1.)_
-5. **Plugin manifest format** — TS module only, or also static `plugin.json`? _(blocks M8, postponed)_
-6. **Live bash output streaming** — tap into child process stdout during tool execution for real-time terminal output in TUI. Currently bash output only appears after command completes.
+3. ~~**spectacle default tier** — code currently uses `llama-3.2-11b-vision`; `llama-4-scout` (stronger) was the alternative. Still open alongside the auto-routing gap.~~ _(resolved by M6 — `llama-4-scout-17b-16e-instruct` is the primary spectacle model with `llama-3.2-11b-vision-instruct` as fallback; capability-driven auto-routing ships vision images directly to vision-capable models.)_
+4. ~~**AI Gateway: default-on or opt-in?**~~ _(resolved by M8 — opt-in for v1.)_
+5. ~~**Live bash output streaming** — tap into child process stdout during tool execution for real-time terminal output in TUI. Currently bash output only appears after command completes.~~ _(resolved by M5.5 — `bash_stream` IPC messages stream stdout/stderr in real time to the TUI tool panel and to headless stdout/stderr.)_

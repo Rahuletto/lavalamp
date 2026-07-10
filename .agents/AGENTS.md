@@ -101,10 +101,10 @@ bin/lavalamp (bash wrapper)
 
 **Event flow:**
 
-1. User types → `sendPrompt()` → `flue.prompt(text, callbacks)`
+1. User types → `sendPrompt()` → `flue.prompt(text, callbacks, sessionId?, images?)`
 2. FlueProcess sends IPC message to server child process
-3. Server streams events: `text_delta`, `thinking_delta`, `tool_start`, `tool`, `result`
-4. `handleEvent()` updates UI in real-time (streaming markdown, thinking blocks, tool groups)
+3. Server streams events: `text_delta`, `thinking_delta`, `tool_start`, `tool`, `result`, `bash_stream` (live stdout/stderr from `bash` tool)
+4. `handleEvent()` updates UI in real-time (streaming markdown, thinking blocks, tool groups, live bash output)
 5. On result: finalize stream, save session, extract file links, print usage
 
 ---
@@ -123,7 +123,7 @@ bin/lavalamp (bash wrapper)
 - `doom_loop` — recovery when stuck
 - `ripgrep` — wraps `rg` binary with regex, file type, context, case-insensitive, multiline
 - `deploy_parallel_subs` — returns a structured marker for the TUI to spawn up to 3 parallel research agents
-- `query_expert` — delegate to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle)
+- `query_expert` — delegate to a domain expert agent (Mixture of Experts roster in `src/config/experts.ts`: ui, refactor, logic, database, oracle, research, critique, spectacle). Experts are READ-ONLY advisors with distinct models, toolkits, thinking levels, and output contracts.
 - `load_skill` — load a `SKILL.md` on demand from the discovered skill dirs
 - `lsp_hover`, `lsp_definition` — LSP hover + go-to-definition over `typescript-language-server` (refs/rename/diagnostics not yet implemented; oxc wiring pending)
 - `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks`
@@ -159,6 +159,7 @@ bin/lavalamp (bash wrapper)
 - Collapsible tool groups (closed by default, green/red headers based on success/error)
 - Generic tool grouping — consecutive same-tool calls grouped (e.g., `read x3`)
 - Tool output: diffs inline for edit/write, code blocks for read, text for bash/others
+- **Live bash output streaming** — `bash` tool stdout/stderr stream in real time into the tool entry's content box (last 200 lines visible); also streamed to stdout/stderr in headless modes
 - Task status bar above input showing current tool being executed
 - Spinner (braille animation) merged into status bar
 
@@ -299,6 +300,7 @@ Session: prompt · task · shell · skill · fs
 Events: text_delta · thinking_delta · tool_start · tool · task_start · task
         · message_start · message_end · compaction_start · compaction
         · error · log · idle · submission_settled
+        · bash_stream (lavalamp custom — live stdout/stderr from sandbox exec)
 ```
 
 ---
@@ -311,7 +313,7 @@ diff viewer, code viewer, vim keybindings, autocomplete, plan mode, session mana
 Permission engine with PermissionBox UI, bidirectional IPC gating, sandbox-level
 wrapping, autorun/sudo, and user-configurable rules.
 
-**M5 and M5.5 complete.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, auto-merge, explore/plan/research/review profiles, spec-mode approval gate, file-level backups/reverts, context steering, skill loading, and a language-agnostic Mixture of Experts (MoE) routing system (ui, refactor, logic, database, oracle, research, critique, spectacle) are fully implemented.
+**M5 and M5.5 complete.** `deploy_parallel_subs`, `SubAgentManager`, subagent panel, auto-merge, explore/plan/research/review profiles, spec-mode approval gate, file-level backups/reverts, context steering, skill loading, and Mixture of Experts (see §13) are fully implemented.
 
 **Release hardening complete.** The package binary points at the shell wrapper, the wrapper preserves quoted prompts/flags when forwarding to `src/run.ts`, install PATH setup uses the configured `INSTALL_DIR`, and project-local runtime permission state is ignored.
 
@@ -321,4 +323,33 @@ wrapping, autorun/sudo, and user-configurable rules.
 
 **Workspace hygiene complete.** Runtime backups, prompt steering, autorun/sudo state, clipboard attachments, and semantic index data no longer write into `<cwd>/.agents`. They live under OS-native lavalamp data storage (`LOCALAPPDATA`/`APPDATA` on Windows, `~/Library/Application Support/lavalamp` on macOS, `XDG_DATA_HOME` or `~/.local/share/lavalamp` on Linux), with `LAVALAMP_HOME` as an override. Backups are created only when a mutating tool starts and only for concrete target paths from `write`/`edit`/`rename` or obvious shell command paths; lavalamp no longer snapshots the whole workspace. Project-authored `.agents/AGENTS.md`, `.agents/PLAN.md`, `.agents/skills`, and optional `.agents/rules.json` remain workspace files.
 
-**Remaining milestones:** M6 spectacle — capability table done, vision bridge done, **capability-driven auto-routing** pending (paste currently bridges unconditionally). M7 LSP — `lsp_hover`/`lsp_definition` done; **refs/rename/diagnostics + oxc wiring + diagnostic feedback** pending. M5.5 headless — single-shot `-p` done; **interactive REPL/pipe-loop** pending. M9 — live Workers AI catalog refresh, AI Gateway spend/log UX, and final release packaging pending. Plugin system (M8) is explicitly postponed.
+**M6 complete.** Vision bridge ships with capability-driven auto-routing: vision-capable models receive `PromptImage[]` directly via IPC; non-vision models fall back to the spectacle text bridge (`llama-4-scout-17b-16e-instruct`, fallback `llama-3.2-11b-vision-instruct`). A post-build patch (`build/patch-server.ts`) enables image passthrough in the generated Flue IPC server.
+
+**M5.5 complete (including live bash streaming).** Headless `-p`/`--repl` modes and live bash output streaming are fully wired. Child process stdout/stderr stream over IPC as `bash_stream` messages, rendered live in the TUI tool panel and streamed to stdout/stderr in headless modes.
+
+**Remaining milestones:** M7 LSP — `lsp_hover`/`lsp_definition` done; **refs/rename/diagnostics + oxc wiring + diagnostic feedback** pending. M8 — live Workers AI catalog refresh, AI Gateway spend/log UX, and final release packaging pending. The plugin system has been **removed from the roadmap** — not enough user demand to justify the complexity.
+
+---
+
+## 13. Mixture of Experts (MoE)
+
+Experts are **READ-ONLY advisors** spawned via `query_expert` (`FLUE_CLI_NAME=<expert>`).
+The main `build` agent applies edits. Roster source of truth: **`src/config/experts.ts`**.
+Factory: **`src/config/create-expert-agent.ts`**. Thin entrypoints: `src/agents/{ui,refactor,logic,database,oracle,research,critique,spectacle}.ts`.
+
+| Expert | Preferred model family | Toolkit focus | Thinking |
+|--------|------------------------|---------------|----------|
+| `ui` | fast (glm flash) | code search + skills | medium |
+| `refactor` | code (kimi) | code search | medium |
+| `logic` | strong (glm-5.2) | code search + LSP | high |
+| `database` | strong | code search | high |
+| `oracle` | deep (llama 70b) | search + deepwiki + LSP | high |
+| `research` | fast | web + fetch + deepwiki | low |
+| `critique` | deep | code search | high |
+| `spectacle` | vision (llama scout) | none (image→text) | low |
+
+**Overrides:** `LAVALAMP_EXPERT_<ID>_MODEL` per expert; `LAVALAMP_EXPERTS_FOLLOW_SESSION=1` forces session model for all experts (disables model specialization).
+
+**Do not confuse:** the `oracle` *tool* is a cheap second-opinion chat completion; the `oracle` *expert* is a deep codebase analyst with tools.
+
+**Routing:** build instructions inject `expertRoutingGuide()`; `query_expert` description injects `expertRoutingTable()`.
