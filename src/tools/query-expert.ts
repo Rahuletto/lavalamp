@@ -4,6 +4,12 @@ import { spawn } from 'node:child_process';
 import * as path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import {
+  EXPERT_IDS,
+  EXPERT_PROFILES,
+  expertRoutingTable,
+  isExpertId,
+} from '../config/experts';
 
 const queryExpertSchema = v.object({
   expert: v.union([
@@ -19,16 +25,40 @@ const queryExpertSchema = v.object({
   prompt: v.string(),
 });
 
+function toolDescription(): string {
+  return [
+    'Delegate a specialized READ-ONLY task to a domain expert agent (Mixture of Experts).',
+    'Experts return guidance; you apply edits. Pick the expert that matches the domain.',
+    '',
+    expertRoutingTable(),
+    '',
+    'Write a focused prompt: include goal, relevant paths, and constraints.',
+    'Do not use for trivial one-file edits you can finish yourself.',
+  ].join('\n');
+}
+
 export function createQueryExpertTool(workspaceRoot: string) {
   const serverPath =
     process.env.LAVALAMP_SERVER_PATH ??
     path.join(path.dirname(fileURLToPath(import.meta.url)), 'server.mjs');
 
   return defineTool({
-    description:
-      "Delegate a specialized task to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle). Spectacle is the vision expert that can describe screenshots/images. Returns the expert's response.",
-    execute: async ({ expert, prompt }) =>
-      new Promise<string>((resolve, reject) => {
+    description: toolDescription(),
+    execute: async ({ expert, prompt }) => {
+      if (!isExpertId(expert)) {
+        return `Unknown expert "${expert}". Valid: ${EXPERT_IDS.join(', ')}`;
+      }
+
+      const profile = EXPERT_PROFILES[expert];
+      const framedPrompt = [
+        `[expert:${expert} — ${profile.displayName}]`,
+        profile.summary,
+        '',
+        'Task from the main agent:',
+        prompt,
+      ].join('\n');
+
+      return new Promise<string>((resolve, reject) => {
         const instanceId = `expert_${randomUUID().slice(0, 8)}`;
         const child = spawn(process.execPath, [serverPath], {
           cwd: workspaceRoot,
@@ -50,9 +80,8 @@ export function createQueryExpertTool(workspaceRoot: string) {
 
         const onMessage = (raw: Record<string, unknown>) => {
           if (raw.type === 'ready' && raw.instanceId === instanceId) {
-            // Send the prompt once child is ready
             child.send({
-              message: prompt,
+              message: framedPrompt,
               requestId,
               type: 'prompt',
             });
@@ -82,7 +111,12 @@ export function createQueryExpertTool(workspaceRoot: string) {
 
           if (raw.type === 'result') {
             cleanup();
-            resolve(outputText.trim());
+            const body = outputText.trim();
+            resolve(
+              body.length > 0
+                ? `[${expert}] ${body}`
+                : `[${expert}] (empty response)`,
+            );
           }
 
           if (raw.type === 'error') {
@@ -97,13 +131,16 @@ export function createQueryExpertTool(workspaceRoot: string) {
               errObj !== null && typeof errObj.message === 'string'
                 ? errObj.message
                 : 'Expert session failed';
-            reject(new Error(msg));
+            reject(new Error(`[${expert}] ${msg}`));
           }
         };
 
         const onExit = (code: number | null) => {
           cleanup();
-          resolve(outputText.trim() || `Expert exited with code ${code}`);
+          resolve(
+            outputText.trim() ||
+              `[${expert}] Expert exited with code ${code}`,
+          );
         };
 
         const cleanup = () => {
@@ -114,7 +151,8 @@ export function createQueryExpertTool(workspaceRoot: string) {
 
         child.on('message', onMessage);
         child.on('exit', onExit);
-      }),
+      });
+    },
     name: 'query_expert',
     parameters: queryExpertSchema,
   });
