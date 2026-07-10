@@ -41,7 +41,7 @@ export const customReadTool = defineTool({
     const formattedLines = sliced.map((line, i) => `${offset + i + 1}:${line}`).join('\n');
     return `[${args.filePath}#${tag}]\n${formattedLines}`;
   },
-  name: 'read',
+  name: 'read_file',
   parameters: v.object({
     filePath: v.string(),
     limit: v.optional(v.number()),
@@ -80,7 +80,7 @@ export function createWriteTool(tracker: ChangeTracker) {
       }
       return result;
     },
-    name: 'write',
+    name: 'write_file',
     parameters: v.object({
       content: v.string(),
       filePath: v.string(),
@@ -140,7 +140,7 @@ export function createEditTool(tracker: ChangeTracker) {
         return `Error applying patch: ${error.message}`;
       }
     },
-    name: 'edit',
+    name: 'edit_file',
     parameters: v.object({
       patch: v.string(),
     }),
