@@ -21,7 +21,10 @@ import {
   createLoadSkillTool,
   createCodebaseSemanticSearchTool,
   createLspTools,
-  createQueryExpertTool,
+  createAskQuestionTool,
+  customReadTool,
+  customWriteTool,
+  customEditTool,
 } from '../tools';
 
 import { createWebSearchTool } from '../tools/web-search';
@@ -165,6 +168,7 @@ export default createAgent((ctx) => {
     '- `codebase_semantic_search` → semantic code search',
     '- `lsp_hover` / `lsp_definition` / `lsp_references` / `lsp_rename` / `lsp_diagnostics` / `lsp_oxc_diagnostics` → language server/linter queries',
     '- `load_skill` → load a SKILL.md on demand',
+    '- `ask_question` → ask the user one or more interactive questions (select/multiselect/input) for feedback or preferences',
     '',
     expertRoutingGuide(),
   ];
@@ -181,34 +185,12 @@ export default createAgent((ctx) => {
     cwd: workspaceRoot,
     instructions: instructions.join('\n'),
     model,
-    sandbox: (() => {
-      const baseSandbox = local({ env: { PATH: process.env.PATH ?? '' } });
-      return {
-        createSessionEnv: async () => {
-          const env = await baseSandbox.createSessionEnv();
-          const originalWriteFile = env.writeFile;
-          env.writeFile = async (filePath: string, content: string | Uint8Array) => {
-            await originalWriteFile(filePath, content);
-            try {
-              const errors = await getDiagnosticsForFile(workspaceRoot as string, filePath);
-              if (errors.length > 0) {
-                throw new Error(
-                  `Diagnostic check failed after writing ${filePath}:\n${errors.join('\n')}\nNote: The file WAS successfully written to disk. If this error is due to missing imports or dependencies from other files you intend to modify/create next, you can safely ignore this error and proceed to write/edit those files.`
-                );
-              }
-            } catch (err: any) {
-              if (err.message && err.message.includes('Diagnostic check failed')) {
-                throw err;
-              }
-              // Ignore other errors (e.g. if LSP server isn't installed/starts/fails) so it doesn't break basic file writing
-            }
-          };
-          return env;
-        }
-      };
-    })(),
+    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
     thinkingLevel: 'medium',
     tools: [
+      customReadTool,
+      gate(customWriteTool),
+      gate(customEditTool),
       gate(createRenameTool(tracker)),
       gate(createUndoTool(tracker)),
       createHistoryTool(tracker),
@@ -231,6 +213,7 @@ export default createAgent((ctx) => {
       ...createLspTools(workspaceRoot as string),
       createQueryExpertTool(workspaceRoot as string),
       ...createTaskTools(taskStore),
+      createAskQuestionTool(),
     ],
   };
 });

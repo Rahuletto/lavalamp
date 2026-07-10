@@ -147,6 +147,7 @@ OpenCode/Claude Code.
 - [x] Config/model UX: persisted config, model listing, AI Gateway opt-in, Gateway routes, headless JSON route metadata, and TUI neuron meter.
 - [x] Interactive auth preflight: validate/reauthenticate Cloudflare before opening the TUI when the selected route needs Cloudflare.
 - [x] Move runtime backups/steering out of the workspace into OS-native lavalamp data storage; create backups only at mutating tool start, and only for concrete target paths.
+- [x] Interactive question tool: allow agent to prompt user with single-choice, multi-choice, or free-text questions.
 - [ ] Live Workers AI catalog refresh instead of a curated static model registry.
 - [ ] AI Gateway spend/log deep links and account-side observability UX.
 - [ ] Final release packaging.
