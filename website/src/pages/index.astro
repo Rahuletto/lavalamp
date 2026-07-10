@@ -8,9 +8,25 @@ import Layout from '../layouts/Layout.astro';
 		
 		<!-- Row 1: Header -->
 		<header class="grid-cell col-12 nav-header font-mono">
-			<a href="#" class="logo">
-				<span class="logo-text">lavalamp</span>
-				<span class="logo-dot"></span>
+			<a href="#" class="logo" aria-label="lavalamp">
+				<pre class="logo-ascii">       _____
+      /     \
+      |_____|
+      /  _  \
+     /  ( )  \
+    /    `    \
+   /     _     \
+  /     ( )     \
+  \      )\     /
+   \    (  )   /
+    \  ,-(   /
+     \/-----\/
+     |       |
+     /       \
+    /________\--._
+               .-._)
+              (__
+                 -`|E</pre>
 			</a>
 			<nav class="nav-links">
 				<a href="#demo">tui-sandbox</a>
@@ -47,7 +63,7 @@ import Layout from '../layouts/Layout.astro';
 		</section>
 
 		<!-- Row 3: TUI Terminal Showcase (Full Width Column) -->
-		<section class="grid-cell col-12 demo-showcase-cell">
+		<section id="demo" class="grid-cell col-12 demo-showcase-cell">
 			<!-- TUI Terminal Replica -->
 			<div class="tui-wrapper font-mono">
 				<!-- TUI Header -->
@@ -459,20 +475,18 @@ import Layout from '../layouts/Layout.astro';
 		gap: 0.5rem;
 	}
 
-	.logo-text {
-		font-family: var(--font-serif);
-		font-weight: 400;
-		font-size: 1.5rem;
-		letter-spacing: -0.02em;
-		color: var(--color-white);
-		text-transform: lowercase;
+	.logo-ascii {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 0.2rem;
+		line-height: 0.95;
+		color: var(--color-accent);
+		white-space: pre;
+		transition: color 0.1s ease;
 	}
 
-	.logo-dot {
-		width: 7px;
-		height: 7px;
-		background-color: var(--color-accent);
-		border-radius: 0;
+	.logo:hover .logo-ascii {
+		color: var(--color-white);
 	}
 
 	.nav-links {
@@ -575,7 +589,8 @@ import Layout from '../layouts/Layout.astro';
 		flex-direction: column;
 		border: 1px solid var(--color-border);
 		background-color: var(--color-input-bg);
-		max-width: 480px;
+		max-width: 650px;
+		width: 100%;
 	}
 
 	.install-tabs {
@@ -610,18 +625,18 @@ import Layout from '../layouts/Layout.astro';
 	.install-command-row {
 		display: flex;
 		align-items: center;
-		padding: 0.75rem 1rem;
-		gap: 1rem;
+		padding: 1rem 1.25rem;
+		gap: 1.25rem;
 	}
 
 	.shell-prompt {
 		flex-grow: 1;
-		font-size: 0.82rem;
+		font-size: 0.95rem;
 		color: var(--color-white);
 		white-space: nowrap;
 		overflow-x: auto;
 		display: block;
-		padding: 0.2rem 0;
+		padding: 0.3rem 0;
 		scrollbar-width: none;
 		-ms-overflow-style: none;
 	}
@@ -635,8 +650,8 @@ import Layout from '../layouts/Layout.astro';
 		border: 1px solid var(--color-border);
 		color: var(--color-white);
 		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		padding: 0.25rem 0.75rem;
+		font-size: 0.85rem;
+		padding: 0.4rem 1rem;
 		cursor: pointer;
 		transition: all 0.1s ease;
 	}
@@ -1477,6 +1492,20 @@ import Layout from '../layouts/Layout.astro';
 
 	.text-dim {
 		color: var(--color-gray) !important;
+	}
+
+	@media (max-width: 768px) {
+		.nav-header {
+			flex-direction: column;
+			gap: 1.25rem;
+			padding: 1.5rem 1rem;
+			text-align: center;
+		}
+		.nav-links {
+			flex-wrap: wrap;
+			justify-content: center;
+			gap: 0.75rem 1.25rem;
+		}
 	}
 </style>
 

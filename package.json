@@ -13,7 +13,9 @@
     "test": "bun test",
     "e2e": "bun run build && bun test --timeout=180000 ./testbench/e2e/actual-bin.e2e.ts",
     "typecheck": "tsc --noEmit",
-    "dev": "flue build --target node --watch"
+    "dev": "flue build --target node --watch",
+    "website:dev": "bun run --cwd website dev",
+    "website:build": "bun run --cwd website build"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.79.6",
