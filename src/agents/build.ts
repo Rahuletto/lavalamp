@@ -25,6 +25,7 @@ import {
 } from '../tools';
 
 import { createWebSearchTool } from '../tools/web-search';
+import { getDiagnosticsForFile } from '../tools/lsp-client';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
@@ -85,6 +86,7 @@ export default createAgent((ctx) => {
     '- Ranges are TIGHT: cover only lines that change. Use SWAP.BLK for whole functions/blocks.',
     '- After every edit, the tag changes. Re-read before the next edit on the same file.',
     '- If an edit fails or corrupts a file, call `undo` to restore it, then re-read and try again.',
+    '- After every edit or write, critical type/lint errors are checked automatically and returned in-loop if found.',
     '- You can ONLY operate inside the workspace directory.',
     '',
     '## Plan mode',
@@ -161,7 +163,7 @@ export default createAgent((ctx) => {
     '- `deploy_parallel_subs` → deploy up to 3 parallel research agents for independent investigation',
     '- `query_expert` → delegate a specialized READ-ONLY task to a domain expert (ui, refactor, logic, database, oracle, research, critique, spectacle)',
     '- `codebase_semantic_search` → semantic code search',
-    '- `lsp_hover` / `lsp_definition` → language server queries',
+    '- `lsp_hover` / `lsp_definition` / `lsp_references` / `lsp_rename` / `lsp_diagnostics` / `lsp_oxc_diagnostics` → language server/linter queries',
     '- `load_skill` → load a SKILL.md on demand',
     '',
     expertRoutingGuide(),
@@ -179,7 +181,32 @@ export default createAgent((ctx) => {
     cwd: workspaceRoot,
     instructions: instructions.join('\n'),
     model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    sandbox: (() => {
+      const baseSandbox = local({ env: { PATH: process.env.PATH ?? '' } });
+      return {
+        createSessionEnv: async () => {
+          const env = await baseSandbox.createSessionEnv();
+          const originalWriteFile = env.writeFile;
+          env.writeFile = async (filePath: string, content: string | Uint8Array) => {
+            await originalWriteFile(filePath, content);
+            try {
+              const errors = await getDiagnosticsForFile(workspaceRoot as string, filePath);
+              if (errors.length > 0) {
+                throw new Error(
+                  `Diagnostic check failed after writing ${filePath}:\n${errors.join('\n')}\nNote: The file WAS successfully written to disk. If this error is due to missing imports or dependencies from other files you intend to modify/create next, you can safely ignore this error and proceed to write/edit those files.`
+                );
+              }
+            } catch (err: any) {
+              if (err.message && err.message.includes('Diagnostic check failed')) {
+                throw err;
+              }
+              // Ignore other errors (e.g. if LSP server isn't installed/starts/fails) so it doesn't break basic file writing
+            }
+          };
+          return env;
+        }
+      };
+    })(),
     thinkingLevel: 'medium',
     tools: [
       gate(createRenameTool(tracker)),

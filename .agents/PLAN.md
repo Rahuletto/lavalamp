@@ -136,9 +136,9 @@ OpenCode/Claude Code.
 ### M7 — LSP
 
 - [x] `lsp_hover` + `lsp_definition` over a real language server (`textDocument/hover`, `textDocument/definition`) in `src/tools/lsp-client.ts`.
-- [ ] `lsp_references`, `lsp_rename`, `lsp_diagnostics` tools (not yet implemented).
-- [ ] Wire **oxc** (`oxlint --lsp`) as fast supplementary JS/TS diagnostics + autofix.
-- [ ] Feed diagnostics back to the model after each edit.
+- [x] `lsp_references`, `lsp_rename`, `lsp_diagnostics` tools.
+- [x] Wire **oxc** (`oxlint --lsp`) as fast supplementary JS/TS diagnostics + autofix.
+- [x] Feed diagnostics back to the model after each edit.
 - **Exit:** edits get type/lint feedback in-loop.
 
 ### M8 — Polish & distribution
