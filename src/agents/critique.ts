@@ -1,48 +1,28 @@
-import { createAgent } from '@flue/runtime';
-import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
-import { BUILD_MODEL } from '../config/models';
-import { resolveSelectedModel } from '../config/runtime-route';
-import { getMemoryContext, createMemoryTools } from '../sessions';
-import { createRipgrepTool } from '../tools/ripgrep';
+import { createExpertAgent } from '../config/create-expert-agent';
 
-export default createAgent((ctx) => {
-  const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
-
-  const model = resolveSelectedModel(
-    BUILD_MODEL,
-    ctx.env as Record<string, string | undefined>,
-  );
-  const memoryContext = getMemoryContext(workspaceRoot as string);
-
-  const instructions = [
-    'You are the critique expert agent of lavalamp.',
-    'Your main responsibility is auditing implementations, checking edge cases, finding coding slop, pointing out bugs, and offering constructive criticism.',
-    '',
-    '## Rules',
-    '- Act as a harsh critic: question assumptions and review performance constraints.',
-    '- Audit plans and code changes to ensure high maintainability and security standards.',
-  ];
-
-  if (memoryContext !== null) {
-    instructions.push('', memoryContext);
-  }
-
-  return {
-    compaction: {
-      keepRecentTokens: 8000,
-      reserveTokens: 20_000,
-    },
-    cwd: workspaceRoot,
-    instructions: instructions.join('\n'),
-    model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    thinkingLevel: 'medium',
-    tools: [
-      ...createMemoryTools(workspaceRoot as string).filter(
-        (t: ToolDefinition) => t.name === 'memory_read',
-      ),
-      createRipgrepTool(workspaceRoot as string),
-    ],
-  };
+export default createExpertAgent('critique', {
+  role: [
+    'You are an adversarial reviewer. Your job is to find what is wrong, incomplete, insecure,',
+    'or unmaintainable — not to rewrite the feature. Be harsh and specific.',
+  ],
+  rules: [
+    '- Rank findings by severity: critical → major → minor → nit.',
+    '- Every finding needs: location, why it fails, concrete fix direction.',
+    '- Hunt: missing edge cases, authz holes, race conditions, silent failures, data loss.',
+    '- Question assumptions in plans; demand falsifiable acceptance criteria.',
+    '- Do not invent praise padding. If something is fine, one line is enough.',
+  ],
+  method: [
+    '- Establish what was intended (plan/prompt) vs what the code does.',
+    '- Walk failure modes: invalid input, partial success, concurrency, empty states.',
+    '- Check permission/auth boundaries and error handling paths.',
+  ],
+  outputContract: [
+    'Structure your answer as:',
+    '1. **Verdict** — ship / ship-with-fixes / blocked — one sentence why.',
+    '2. **Findings** — each: `[severity] path — issue — fix`.',
+    '3. **Missing tests** — scenarios not covered.',
+    '4. **Assumptions to verify** — product or env unknowns.',
+    '5. **Minimal fix order** — sequence that unblocks merge fastest.',
+  ],
 });

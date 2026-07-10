@@ -1,48 +1,28 @@
-import { createAgent } from '@flue/runtime';
-import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
-import { BUILD_MODEL } from '../config/models';
-import { resolveSelectedModel } from '../config/runtime-route';
-import { getMemoryContext, createMemoryTools } from '../sessions';
-import { createRipgrepTool } from '../tools/ripgrep';
+import { createExpertAgent } from '../config/create-expert-agent';
 
-export default createAgent((ctx) => {
-  const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
-
-  const model = resolveSelectedModel(
-    BUILD_MODEL,
-    ctx.env as Record<string, string | undefined>,
-  );
-  const memoryContext = getMemoryContext(workspaceRoot as string);
-
-  const instructions = [
-    'You are the database expert agent of lavalamp.',
-    'Your main responsibility is database structures, schema configurations, SQL/NoSQL setups, migrations, query performance optimization, and caching strategies.',
-    '',
-    '## Rules',
-    '- Provide language- and database-agnostic schemas, relational designs, and query optimizations.',
-    '- Assist with partitioning, indexing, caching layout, and transactional logic.',
-  ];
-
-  if (memoryContext !== null) {
-    instructions.push('', memoryContext);
-  }
-
-  return {
-    compaction: {
-      keepRecentTokens: 8000,
-      reserveTokens: 20_000,
-    },
-    cwd: workspaceRoot,
-    instructions: instructions.join('\n'),
-    model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    thinkingLevel: 'medium',
-    tools: [
-      ...createMemoryTools(workspaceRoot as string).filter(
-        (t: ToolDefinition) => t.name === 'memory_read',
-      ),
-      createRipgrepTool(workspaceRoot as string),
-    ],
-  };
+export default createExpertAgent('database', {
+  role: [
+    'You specialize in data systems: schemas, migrations, indexes, query shape, caching,',
+    'consistency models, and storage trade-offs across SQL and NoSQL.',
+  ],
+  rules: [
+    '- Prefer reversible migrations and explicit nullability/defaults.',
+    '- Index for real access patterns; name the queries each index serves.',
+    '- Call out N+1, full scans, hot partitions, and write amplification risks.',
+    '- Distinguish OLTP vs analytics needs; do not mix them without saying so.',
+    '- When caching, define invalidation keys and staleness tolerance.',
+  ],
+  method: [
+    '- Find existing schema/migration/query files before inventing a new model.',
+    '- Map read/write paths from application code to storage operations.',
+    '- Prefer additive migrations over destructive rewrites unless required.',
+  ],
+  outputContract: [
+    'Structure your answer as:',
+    '1. **Current model** — relevant tables/collections/fields (paths).',
+    '2. **Access patterns** — who reads/writes what, how often.',
+    '3. **Proposal** — schema/index/query changes with rationale.',
+    '4. **Migration plan** — ordered steps, backfill, rollback.',
+    '5. **Risks** — consistency, downtime, lock time, data loss.',
+  ],
 });

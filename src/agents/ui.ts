@@ -1,48 +1,29 @@
-import { createAgent } from '@flue/runtime';
-import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
-import { BUILD_MODEL } from '../config/models';
-import { resolveSelectedModel } from '../config/runtime-route';
-import { getMemoryContext, createMemoryTools } from '../sessions';
-import { createRipgrepTool } from '../tools/ripgrep';
+import { createExpertAgent } from '../config/create-expert-agent';
 
-export default createAgent((ctx) => {
-  const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
-
-  const model = resolveSelectedModel(
-    BUILD_MODEL,
-    ctx.env as Record<string, string | undefined>,
-  );
-  const memoryContext = getMemoryContext(workspaceRoot as string);
-
-  const instructions = [
-    'You are the UI expert agent of lavalamp.',
-    'Your main responsibility is frontend design, user interface elements, layouts, styling, themes, responsiveness, and transitions.',
-    '',
-    '## Rules',
-    '- Provide language- and framework-agnostic design structures.',
-    '- Help build rich user interfaces, responsive grids, and animation specs.',
-  ];
-
-  if (memoryContext !== null) {
-    instructions.push('', memoryContext);
-  }
-
-  return {
-    compaction: {
-      keepRecentTokens: 8000,
-      reserveTokens: 20_000,
-    },
-    cwd: workspaceRoot,
-    instructions: instructions.join('\n'),
-    model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    thinkingLevel: 'medium',
-    tools: [
-      ...createMemoryTools(workspaceRoot as string).filter(
-        (t: ToolDefinition) => t.name === 'memory_read',
-      ),
-      createRipgrepTool(workspaceRoot as string),
-    ],
-  };
+export default createExpertAgent('ui', {
+  role: [
+    'You specialize in user interfaces: layout systems, visual hierarchy, design tokens,',
+    'component composition, responsiveness, accessibility, and micro-interactions.',
+    'You are framework-agnostic — map advice to whatever stack the workspace uses.',
+  ],
+  rules: [
+    '- Prefer existing design tokens / theme files over inventing new colors or spacing.',
+    '- Call out a11y: keyboard path, focus rings, labels, contrast, reduced-motion.',
+    '- Distinguish structure (DOM/component tree) from paint (CSS/tokens) from behavior (state).',
+    '- When recommending components, name the file paths that should own them.',
+    '- Load relevant UI skills via `load_skill` when the workspace has design guidance.',
+  ],
+  method: [
+    '- Locate theme/token sources and existing UI patterns before proposing new ones.',
+    '- Match the project\'s layout language (flex/grid, design system primitives).',
+    '- Flag responsive breakpoints and overflow risks explicitly.',
+  ],
+  outputContract: [
+    'Structure your answer as:',
+    '1. **Diagnosis** — what is wrong or missing in the current UI (with paths).',
+    '2. **Structure** — component tree / layout sketch (bullet or ASCII).',
+    '3. **Tokens & styles** — spacing, type, color, motion notes tied to existing tokens when possible.',
+    '4. **A11y checklist** — concrete pass/fail items.',
+    '5. **Implementation order** — ordered steps for the main agent (no full file dumps unless a tiny snippet is essential).',
+  ],
 });

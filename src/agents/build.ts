@@ -1,8 +1,10 @@
-import { createAgent, registerProvider } from '@flue/runtime';
+import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL } from '../config/models';
 import { resolveSelectedModel } from '../config/runtime-route';
+import { ensureProviders } from '../config/register-providers';
+import { expertRoutingGuide } from '../config/experts';
 import {
   createSessionsTool,
   createSessionContextTool,
@@ -34,36 +36,8 @@ import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
 import { wrapToolExecute } from '../permissions/middleware';
 import { loadAutorun } from '../permissions/autorun';
-import { loadCredentials } from '../auth/credentials';
-import { providerRegistrationsFor } from '../config/runtime-route';
 
-function registerProviders(env: Record<string, string>) {
-  let creds: ReturnType<typeof loadCredentials> = null;
-  try {
-    creds = loadCredentials();
-  } catch {
-    /* credentials not available */
-  }
-
-  for (const registration of providerRegistrationsFor(env, creds)) {
-    const options: {
-      apiKey: string;
-      baseUrl?: string;
-      headers?: Record<string, string>;
-    } = {
-      apiKey: registration.apiKey,
-    };
-    if (registration.baseUrl !== undefined) {
-      options.baseUrl = registration.baseUrl;
-    }
-    if (registration.headers !== undefined) {
-      options.headers = registration.headers;
-    }
-    registerProvider(registration.provider, options);
-  }
-}
-
-registerProviders(process.env as Record<string, string>);
+ensureProviders();
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
@@ -185,6 +159,12 @@ export default createAgent((ctx) => {
     '- `skip_task` → cancel a task',
     '- `list_tasks` → list all tasks',
     '- `deploy_parallel_subs` → deploy up to 3 parallel research agents for independent investigation',
+    '- `query_expert` → delegate a specialized READ-ONLY task to a domain expert (ui, refactor, logic, database, oracle, research, critique, spectacle)',
+    '- `codebase_semantic_search` → semantic code search',
+    '- `lsp_hover` / `lsp_definition` → language server queries',
+    '- `load_skill` → load a SKILL.md on demand',
+    '',
+    expertRoutingGuide(),
   ];
 
   if (memoryContext !== null) {

@@ -1,48 +1,28 @@
-import { createAgent } from '@flue/runtime';
-import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
-import { BUILD_MODEL } from '../config/models';
-import { resolveSelectedModel } from '../config/runtime-route';
-import { getMemoryContext, createMemoryTools } from '../sessions';
-import { createRipgrepTool } from '../tools/ripgrep';
+import { createExpertAgent } from '../config/create-expert-agent';
 
-export default createAgent((ctx) => {
-  const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
-
-  const model = resolveSelectedModel(
-    BUILD_MODEL,
-    ctx.env as Record<string, string | undefined>,
-  );
-  const memoryContext = getMemoryContext(workspaceRoot as string);
-
-  const instructions = [
-    'You are the logic expert agent of lavalamp.',
-    'Your main responsibility is programming logic, algorithms, type constraints, data structures, and debugging syntax/compilation issues.',
-    '',
-    '## Rules',
-    '- Provide language- and framework-agnostic logical algorithms, structure patterns, and code safety guarantees.',
-    '- Help debug complicated nested logic, conditional gates, and runtime flows.',
-  ];
-
-  if (memoryContext !== null) {
-    instructions.push('', memoryContext);
-  }
-
-  return {
-    compaction: {
-      keepRecentTokens: 8000,
-      reserveTokens: 20_000,
-    },
-    cwd: workspaceRoot,
-    instructions: instructions.join('\n'),
-    model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
-    thinkingLevel: 'medium',
-    tools: [
-      ...createMemoryTools(workspaceRoot as string).filter(
-        (t: ToolDefinition) => t.name === 'memory_read',
-      ),
-      createRipgrepTool(workspaceRoot as string),
-    ],
-  };
+export default createExpertAgent('logic', {
+  role: [
+    'You specialize in pure reasoning over programs: algorithms, data structures, type constraints,',
+    'concurrency/ordering, invariants, and edge-case completeness.',
+  ],
+  rules: [
+    '- Be precise about preconditions, postconditions, and failure modes.',
+    '- Prefer the simplest correct algorithm; state complexity (time/space) when it matters.',
+    '- Call out races, re-entrancy, and partial-failure hazards when concurrency is involved.',
+    '- Use LSP hover/definition when types or symbol origins are ambiguous.',
+    '- Do not redesign UI or schemas unless required for the logic fix.',
+  ],
+  method: [
+    '- Restate the intended behavior in one sentence.',
+    '- Trace the control flow with concrete inputs (happy path + 2–3 adversarial cases).',
+    '- Identify the invariant that is violated when the bug appears.',
+  ],
+  outputContract: [
+    'Structure your answer as:',
+    '1. **Spec** — intended behavior and invariants.',
+    '2. **Trace** — step-by-step of current logic with the failing case.',
+    '3. **Root cause** — the exact condition/state that breaks (with path/symbol).',
+    '4. **Fix** — algorithm or control-flow change; complexity notes if relevant.',
+    '5. **Test cases** — inputs/expected outcomes the main agent should cover.',
+  ],
 });
