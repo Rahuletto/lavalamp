@@ -4,7 +4,7 @@
 # lavalamp
 **lavalamp** is a local, terminal-based AI coding assistant built for Cloudflare. 
 
-Think of it as a local harness that runs on your machine and executes code directly on your workspace. By logging in with your Cloudflare account, it runs **Workers AI** models billed directly to you—no subscription middlemen. If you need other models, you can also plug in your own API keys for Anthropic, OpenAI, or OpenRouter.
+It runs on your machine and edits code directly in your workspace. By logging in with your Cloudflare credentials, it runs **Workers AI** models billed directly to your account. You can also configure your own API keys for Anthropic, OpenAI, or OpenRouter.
 
 ---
 
@@ -12,11 +12,11 @@ Think of it as a local harness that runs on your machine and executes code direc
 
 Here is what makes it different:
 
-* **Cloudflare-First**: You run models on your own Cloudflare account. It reuses your local Wrangler OAuth credentials to authenticate instantly.
-* **Reliable Edits**: Cheap or small models often fail when rewriting entire code files. We solve this by making the agent propose changes as precise, hash-anchored patches, keeping edits fast and extremely stable.
-* **Great Terminal UI**: Built using `@opentui/core` (no bulky web frameworks). It streams markdown, renders interactive toggle boxes for tools and model thinking blocks, and includes full-screen diff and code viewers with Vim bindings (`j`/`k`, `:q`, etc.).
-* **Safety**: The agent operates in a local sandbox. Whenever it tries to run a terminal command or edit a file, the TUI blocks and prompts you to allow, deny, or set up an "always allow" rule. If you step away, it auto-denies after 30 seconds.
-* **Mixture of Experts Design**: The main agent can delegate tasks to specialized, read-only experts (like `logic` for typing issues, `refactor` for cleanups, or `spectacle` for converting pasted terminal screenshots into text descriptions) to preserve context.
+* **Cloudflare-First**: Runs models on your own Cloudflare account. It reuses Wrangler OAuth credentials to log in.
+* **Reliable Edits**: Small models often struggle with whole-file rewrites. The agent uses `hashline` to edit files via precise, hash-anchored patches.
+* **Terminal UI**: Built using `@opentui/core`. It streams markdown, renders toggle boxes for tool calls and thinking blocks, and includes full-screen diff and code viewers with Vim bindings (`j`/`k`, `:q`, etc.).
+* **Permissions**: Every file modification or shell command requires your approval. You can allow, deny, or configure "always allow" rules. Stalled prompts auto-deny after 30 seconds.
+* **Mixture of Experts**: The main agent can delegate analysis to specialized, read-only experts (like `logic` for typing or `spectacle` for converting pasted screenshots) to preserve context.
 
 ---
 
@@ -27,15 +27,15 @@ Here is what makes it different:
 * A Cloudflare account (or API keys for fallback providers like Anthropic/OpenAI).
 
 ### Installation
-The easiest way to install lavalamp is to download the compiled binary using our installer script:
+Install the precompiled binary for your system:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rahuletto/lavalamp/main/install.sh | bash
 ```
 
-**What the script does under the hood:**
-It detects your operating system and CPU architecture (including Apple Silicon translation under Rosetta), downloads the correct precompiled binary from GitHub Releases, moves it to `~/.agents/bin/`, and adds that directory to your shell configuration file (`.zshrc`, `.bashrc`, `.bash_profile`, or `config.fish`).
+**How the installer works:**
+The script detects your OS and architecture (including Rosetta translation on macOS), downloads the platform binary from GitHub Releases, moves it to `~/.agents/bin/`, and appends this path to your shell configuration (`.zshrc`, `.bashrc`, `.bash_profile`, or `config.fish`).
 
-If you prefer building from source, you can clone and build it manually:
+Alternatively, build from source:
 ```bash
 git clone https://github.com/rahuletto/lavalamp.git
 cd lavalamp
@@ -45,11 +45,11 @@ bun link
 ```
 
 ### Log in
-Authenticate with your Cloudflare account:
+Authenticate with Cloudflare:
 ```bash
 lavalamp login
 ```
-You can check your status or remove credentials at any time:
+Check status or log out:
 ```bash
 lavalamp status
 lavalamp logout
@@ -67,29 +67,29 @@ lavalamp [command/flag]
 
 | Command | Action |
 |:---|:---|
-| `lavalamp` | Starts an interactive coding session in the current directory. |
-| `lavalamp ask` | Starts a read-only interactive session (perfect for exploring code without making changes). |
-| `lavalamp ask "your question"` | Asks a single question about the codebase and exits. |
-| `lavalamp models` | Lists all known models, their context window sizes, and supported features. |
-| `lavalamp config show` | Prints your current configuration (default model, AI Gateway status). |
-| `lavalamp config set <key> <value>` | Updates settings (e.g. `lavalamp config set model <model-id>`). |
+| `lavalamp` | Start an interactive coding session in the current directory. |
+| `lavalamp ask` | Start a read-only interactive session to explore code. |
+| `lavalamp ask "your question"` | Ask a single question about the codebase and exit. |
+| `lavalamp models` | List known models, context window sizes, and capabilities. |
+| `lavalamp config show` | Print current configuration (default model, AI Gateway status). |
+| `lavalamp config set <key> <value>` | Update settings (e.g. `lavalamp config set model <model-id>`). |
 
 ### CLI Flags
 
 | Flag | Description |
 |:---|:---|
-| `-p`, `--print "your prompt"` | Run a single instruction, print the response to stdout, and exit. |
-| `--repl` | Run a multi-turn chat directly in your terminal line-by-line (no full-screen UI). |
+| `-p`, `--print "your prompt"` | Run a single instruction, print the response, and exit. |
+| `--repl` | Run a multi-turn chat directly in your terminal line-by-line (no TUI). |
 | `--simple` | Run a plain terminal chat loop (uses a simple `>` prompt and silences spinners/logs). |
-| `--continue [session_id]` | Resumes a previous session. Run it without an ID to choose from history. |
-| `--workspace <path>` | Sets a custom workspace folder (defaults to your current directory). |
+| `--continue [session_id]` | Resume a previous session. Run without an ID to choose from history. |
+| `--workspace <path>` | Set a custom workspace folder (defaults to current directory). |
 | `--model <model_id>` | Use a specific model for this run only. |
-| `--output-format <text\|json>` | Formats stdout output (useful with `-p` or `--repl`). |
-| `--quiet` | Hides diagnostic status messages, only showing the agent's output. |
+| `--output-format <text\|json>` | Format stdout output (useful with `-p` or `--repl`). |
+| `--quiet` | Hide diagnostic status messages, only showing the agent's output. |
 
 ### The `--simple` Flag
 
-If you want to use lavalamp in standard scrollback buffers, pipeline scripts, or screen readers, launch it with `--simple`. It skips the full-screen TUI rendering, replaces the prompt with a minimal `> `, silences background status updates, and outputs clean markdown directly to stdout.
+Use `--simple` to run lavalamp in standard scrollback buffers, pipeline scripts, or screen readers. It skips the full-screen TUI rendering, silences background status updates, and outputs plain text directly to stdout.
 
 ---
 
@@ -98,54 +98,32 @@ If you want to use lavalamp in standard scrollback buffers, pipeline scripts, or
 ### Slash Commands
 Type these commands directly into the prompt input box:
 
-* `/help` — Lists all commands.
-* `/clear` — Clears conversation history and starts fresh.
-* `/plan` — Toggles **Plan Mode** (changes the input bar to a teal accent) to design tasks before building.
-* `/sessions` — Opens a list of past sessions so you can pick one to resume.
-* `/memory` — Views or updates the persistent project memory.
-* `/model` — Lists or switches the active model on the fly.
-* `/workspace` — Changes the workspace directory.
-* `/skills` — Lists or loads customized skills from `.agents/skills`.
-* `/permissions` — Views or updates your security rules.
-* `/autorun` — Manages commands that are allowed to run without prompting you.
-* `/sudo` — Toggles "allow-everything" mode (asks for confirmation first).
-* `/quit` — Saves the current session and exits.
+* `/help` - List all commands.
+* `/clear` - Clear conversation history and start fresh.
+* `/plan` - Toggle Plan Mode (changes input bar to a teal accent) to design tasks before building.
+* `/sessions` - Open a list of past sessions to pick one to resume.
+* `/memory` - View or update the persistent project memory.
+* `/model` - List or switch the active model.
+* `/workspace` - Change the workspace directory.
+* `/skills` - List or load customized skills from `.agents/skills`.
+* `/permissions` - View or update your security rules.
+* `/autorun` - Manage commands allowed to run without prompting.
+* `/sudo` - Toggle allow-everything mode (asks for confirmation first).
+* `/quit` - Save the current session and exit.
 
 ### Full-Screen Keybindings
 When viewing large code blocks or file diffs, the TUI opens a full-screen view. You can navigate it using Vim-style bindings:
-* `j` / `k` — Scroll down / up by line.
-- `Ctrl + d` / `Ctrl + u` — Scroll down / up half a page.
-- `Ctrl + f` / `Ctrl + b` — Scroll down / up full page.
-- `g` / `G` — Jump to top / bottom.
-- `:q` / `Esc` / `q` — Close the viewer and go back to chat.
-
-
----
-
-## Contributing & Development
-
-We use Bun to manage packages and build files:
-
-```bash
-# 1. Install dependencies
-bun install
-
-# 2. Start building server files in watch mode (dist/server.mjs)
-bun run dev
-
-# 3. Build the production target
-bun run build
-
-# 4. Run tests
-bun test
-bun run e2e
-```
+* `j` / `k` - Scroll down / up by line.
+* `Ctrl + d` / `Ctrl + u` - Scroll down / up half a page.
+* `Ctrl + f` / `Ctrl + b` - Scroll down / up full page.
+* `g` / `G` - Jump to top / bottom.
+* `:q` / `Esc` / `q` - Close the viewer and go back to chat.
 
 ---
 
 ## Architecture
 
-To prevent the terminal UI from locking up during compilation, or large codebase searches, **lavalamp** separates layout rendering from agent orchestration using a two-process model.
+To prevent the terminal UI from locking up during compilation, test suites, or large codebase searches, **lavalamp** separates layout rendering from agent orchestration using a two-process model.
 
 ```mermaid
 sequenceDiagram
@@ -197,14 +175,14 @@ sequenceDiagram
 
 ## Permissions & Security
 
-By default, **lavalamp** operates on a **zero-trust permission model**:
-- **Read-only tools** (e.g., `read`, `grep`, `glob`, `ripgrep`) execute silently without prompts.
-- **Destructive/Mutating tools** (e.g., `write`, `edit`, `rename`, `bash` shell execution) trigger an interactive permission prompt in the TUI.
-- Users can choose:
-  - **`[y]` Allow**: Authorize this single command/write.
-  - **`[n]` Deny**: Block execution and return an abort error to the LLM.
-  - **`[a]` Always Allow**: Authorize this and all future matching commands (adds a pattern to `~/.config/lavalamp/autorun.json`).
-- If left unattended, permission requests auto-deny after **30 seconds** for safety.
+By default, **lavalamp** operates on a zero-trust permission model:
+* **Read-only tools** (like `read`, `grep`, `glob`, `ripgrep`) execute silently without prompts.
+* **Destructive/Mutating tools** (like `write`, `edit`, `rename`, `bash` shell execution) trigger an interactive permission prompt in the TUI.
+* Users can choose:
+  * **`[y]` Allow**: Authorize this single command/write.
+  * **`[n]` Deny**: Block execution and return an abort error to the LLM.
+  * **`[a]` Always Allow**: Authorize this and all future matching commands (adds a pattern to `~/.config/lavalamp/autorun.json`).
+* If left unattended, permission requests auto-deny after 30 seconds for safety.
 
 The diagram below shows how the agent evaluates, prompts, and executes tools in the local sandbox:
 
@@ -227,6 +205,7 @@ graph TD
     FeedContext --> Loop
     Loop -->|Done| Respond[Deliver Final Answer & Save Session]
 ```
+
 ---
 
 ## The Toolbelt Ecosystem
@@ -237,50 +216,52 @@ To help you code, search, and refactor, the agent has access to a collection of 
 <summary><b>Complete Catalog of Available Tools</b></summary>
 
 #### File Mutations & Git Operations
-* `read` — Reads a file from the workspace filesystem.
-* `write` — Writes new files directly to the workspace.
-* `edit` — Applies precise, hash-anchored patches to files via `@oh-my-pi/hashline`, eliminating the need to rewrite full files.
-* `rename` — Renames or moves files within the workspace.
-* `undo` — Reverts file mutations by winding back the `ChangeTracker`.
-* `history` — Queries the local mutation history log.
+* `read` - Reads a file from the workspace filesystem.
+* `write` - Writes new files directly to the workspace.
+* `edit` - Applies precise, hash-anchored patches to files via `@oh-my-pi/hashline`, eliminating the need to rewrite full files.
+* `rename` - Renames or moves files within the workspace.
+* `undo` - Reverts file mutations by winding back the `ChangeTracker`.
+* `history` - Queries the local mutation history log.
 
 #### Codebase Exploration & Search
-* `grep` — Searches for string literals within codebase files.
-* `ripgrep` — Wraps the `rg` binary to execute regex-based code searches with glob exclusions, file type filters, and case-insensitivity.
-* `glob` — Locates file paths matching glob patterns.
-* `codebase_search` — Performs fuzzy matching on filenames and file contents.
-* `codebase_semantic_search` — Runs vector-indexed semantic queries across the workspace to map conceptual references.
+* `grep` - Searches for string literals within codebase files.
+* `ripgrep` - Wraps the `rg` binary to execute regex-based code searches with glob exclusions, file type filters, and case-insensitivity.
+* `glob` - Locates file paths matching glob patterns.
+* `codebase_search` - Performs fuzzy matching on filenames and file contents.
+* `codebase_semantic_search` - Runs vector-indexed semantic queries across the workspace to map conceptual references.
 
 #### Workspace Shell Execution
-* `bash` — Executes terminal commands inside the local workspace shell. Stdout and stderr are streamed back in real-time (`bash_stream`) so you can watch compilers, test runs, or bundle scripts execute.
+* `bash` - Executes terminal commands inside the local workspace shell. Stdout and stderr are streamed back in real-time (`bash_stream`) so you can watch compilers, test runs, or bundle scripts execute.
 
 #### Code Intellisense (LSP)
-* `lsp_hover` — Inspects types, functions, and documentation comments at the cursor.
-* `lsp_definition` — Resolves the declaration path of code symbols (Go-To-Definition).
-* `lsp_references` — Resolves where a specific symbol is referenced across the codebase.
-* `lsp_rename` — Performs codebase-wide symbol renaming.
-* `lsp_diagnostics` — Requests compiler and linter warnings from `typescript-language-server` or `oxlint` after edits.
+* `lsp_hover` - Inspects types, functions, and documentation comments at the cursor.
+* `lsp_definition` - Resolves the declaration path of code symbols (Go-To-Definition).
+* `lsp_references` - Resolves where a specific symbol is referenced across the codebase.
+* `lsp_rename` - Performs codebase-wide symbol renaming.
+* `lsp_diagnostics` - Requests compiler and linter warnings from `typescript-language-server` or `oxlint` after edits.
 
 #### Web & Documentation Retrieval
-* `web_search` — Queries the web using DuckDuckGo.
-* `fetch_url` — Fetches a webpage and converts it into markdown using the r.marban.lol reader API.
-* `deepwiki` — Integrates with the DeepWiki MCP to scan repository documentation.
-* `load_skill` — Imports bundled instructions or skills (`.agents/skills/`) on demand.
+* `web_search` - Queries the web using DuckDuckGo.
+* `fetch_url` - Fetches a webpage and converts it into markdown using the r.marban.lol reader API.
+* `deepwiki` - Integrates with the DeepWiki MCP to scan repository documentation.
+* `load_skill` - Imports bundled instructions or skills (`.agents/skills/`) on demand.
 
 #### Delegation & Subagents
-* `deploy_parallel_subs` — Instructs the parent process to spawn up to 3 isolated subagents in parallel to run concurrent research tasks.
-* `query_expert` — Delegates read-only exploration or critiques to specialised experts (e.g. `logic`, `refactor`, `database`) to keep the main agent's context clean.
-* `oracle` — Queries a cheaper secondary model for quick feedback on concepts.
-* `doom_loop` — Triggers loop-recovery protocols when the agent is stuck in repetitive steps.
+* `deploy_parallel_subs` - Instructs the parent process to spawn up to 3 isolated subagents in parallel to run concurrent research tasks.
+* `query_expert` - Delegates read-only exploration or critiques to specialised experts (e.g. `logic`, `refactor`, `database`) to keep the main agent's context clean.
+* `oracle` - Queries a cheaper secondary model for quick feedback on concepts.
+* `doom_loop` - Triggers loop-recovery protocols when the agent is stuck in repetitive steps.
 
 #### Task Orchestration
-* `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks` — Updates task progress, which is tracked visually in the TUI sidebar.
+* `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks` - Updates task progress, which is tracked visually in the TUI sidebar.
 
 #### Persistent Memory & Sessions
-* `memory_read`, `memory_write`, `memory_append` — Reads and updates permanent notes and project guidelines inside the OS-native application directory.
-* `sessions`, `session_context`, `pull_session` — Queries past session metadata, loads full transcripts, and injects session contexts on demand.
+* `memory_read`, `memory_write`, `memory_append` - Reads and updates permanent notes and project guidelines inside the OS-native application directory.
+* `sessions`, `session_context`, `pull_session` - Queries past session metadata, loads full transcripts, and injects session contexts on demand.
 
 </details>
+
+---
 
 ## Semantic Indexing & Session Sharing
 
@@ -335,6 +316,27 @@ If the main agent needs specialized help, it can delegate read-only work to expe
 | `research` | Web searches and API documentation lookups. | `glm-4.7-flash` |
 | `critique` | Security audits and code quality reviews. | `llama-3.3-70b` |
 | `spectacle`| Image/Screenshot translator. | `llama-4-scout` |
+
+---
+
+## Contributing & Development
+
+We use Bun to manage packages and build files:
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Start building server files in watch mode (dist/server.mjs)
+bun run dev
+
+# 3. Build the production target
+bun run build
+
+# 4. Run tests
+bun test
+bun run e2e
+```
 
 ---
 
