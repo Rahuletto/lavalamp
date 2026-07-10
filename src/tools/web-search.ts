@@ -53,47 +53,40 @@ async function searchWeb(
 
 function parseSearchResults(html: string, maxResults: number): SearchResult[] {
   const results: SearchResult[] = [];
+  const blocks = html.split(/<div[^>]*class="[^"]*links_main[^"]*"[^>]*>/i).slice(1);
+
   const resultRegex =
-    /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi;
-  const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+    /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i;
+  const snippetRegex = /<a[^>]*class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i;
 
-  const links: string[] = [];
-  const titles: string[] = [];
-  const snippets: string[] = [];
+  for (const block of blocks) {
+    if (results.length >= maxResults) {
+      break;
+    }
 
-  let match;
-  while (
-    (match = resultRegex.exec(html)) !== null &&
-    links.length < maxResults
-  ) {
-    const href = match[1];
-    const title = match[2];
+    const rMatch = resultRegex.exec(block);
+    if (!rMatch) {
+      continue;
+    }
+
+    const href = rMatch[1];
+    const title = rMatch[2];
     if (href === undefined || title === undefined) {
       continue;
     }
+
     const uddgMatch = href.match(/uddg=([^&]+)/);
     const encodedUrl = uddgMatch?.[1];
     const actualUrl =
       encodedUrl !== undefined ? decodeURIComponent(encodedUrl) : href;
-    links.push(actualUrl);
-    titles.push(title.replaceAll(/<[^>]+>/g, '').trim());
-  }
 
-  while (
-    (match = snippetRegex.exec(html)) !== null &&
-    snippets.length < maxResults
-  ) {
-    const snippet = match[1];
-    if (snippet !== undefined) {
-      snippets.push(snippet.replaceAll(/<[^>]+>/g, '').trim());
-    }
-  }
+    const sMatch = snippetRegex.exec(block);
+    const snippet = sMatch ? sMatch[1] : '';
 
-  for (let i = 0; i < Math.min(links.length, maxResults); i++) {
     results.push({
-      snippet: snippets[i] ?? '',
-      title: titles[i] ?? '',
-      url: links[i] ?? '',
+      snippet: (snippet ?? '').replaceAll(/<[^>]+>/g, '').trim(),
+      title: title.replaceAll(/<[^>]+>/g, '').trim(),
+      url: actualUrl,
     });
   }
 

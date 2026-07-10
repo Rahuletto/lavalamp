@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+
 export interface FileSnapshot {
   path: string;
   content: string | null;
@@ -33,8 +35,10 @@ export class ChangeTracker {
     const restored: string[] = [];
     for (const snap of entry.snapshots) {
       if (snap.content === null) {
-        await Bun.write(snap.path, '');
-        restored.push(`${snap.path} (recreated empty — was new file)`);
+        try {
+          rmSync(snap.path, { force: true });
+        } catch {}
+        restored.push(`${snap.path} (deleted — was new file)`);
       } else {
         await Bun.write(snap.path, snap.content);
         restored.push(snap.path);

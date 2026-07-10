@@ -21,14 +21,14 @@ import {
   createLoadSkillTool,
   createCodebaseSemanticSearchTool,
   createLspTools,
+  createQueryExpertTool,
   createAskQuestionTool,
   customReadTool,
-  customWriteTool,
-  customEditTool,
+  createWriteTool,
+  createEditTool,
 } from '../tools';
 
 import { createWebSearchTool } from '../tools/web-search';
-import { getDiagnosticsForFile } from '../tools/lsp-client';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
@@ -189,8 +189,8 @@ export default createAgent((ctx) => {
     thinkingLevel: 'medium',
     tools: [
       customReadTool,
-      gate(customWriteTool),
-      gate(customEditTool),
+      gate(createWriteTool(tracker)),
+      gate(createEditTool(tracker)),
       gate(createRenameTool(tracker)),
       gate(createUndoTool(tracker)),
       createHistoryTool(tracker),

@@ -37,12 +37,7 @@ export function createTaskTools(store: TaskStore) {
     defineTool({
       description: 'Mark a task as in-progress (being worked on) by its ID.',
       execute: async (args) => {
-        const task = store.get(args.id);
-        if (!task) {
-          throw new Error(`Task #${args.id} not found`);
-        }
-        task.status = 'in_progress';
-        task.updatedAt = new Date().toISOString();
+        const task = store.start(args.id);
         return `Started task #${task.id}: ${task.title}`;
       },
       name: 'start_task',

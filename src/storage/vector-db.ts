@@ -91,11 +91,11 @@ export class VectorDb {
     const results: ChunkResult[] = [];
     for (const row of rows) {
       const buffer = row.embedding;
-      const fVec = new Float32Array(
-        buffer.buffer,
+      const arrayBuffer = buffer.buffer.slice(
         buffer.byteOffset,
-        buffer.byteLength / 4,
+        buffer.byteOffset + buffer.byteLength,
       );
+      const fVec = new Float32Array(arrayBuffer);
       if (fVec.length !== qVec.length) {
         continue;
       }

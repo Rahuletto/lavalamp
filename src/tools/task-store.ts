@@ -25,6 +25,16 @@ export class TaskStore {
     return task;
   }
 
+  start(id: number): Task {
+    const task = this.#tasks.find((t) => t.id === id);
+    if (!task) {
+      throw new Error(`Task #${id} not found`);
+    }
+    task.status = 'in_progress';
+    task.updatedAt = new Date().toISOString();
+    return task;
+  }
+
   complete(id: number): Task {
     const task = this.#tasks.find((t) => t.id === id);
     if (!task) {

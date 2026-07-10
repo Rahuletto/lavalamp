@@ -48,7 +48,7 @@ export function createRipgrepTool(cwd: string) {
       }
 
       const limit = Math.min(args.maxResults ?? MAX_RESULTS, MAX_RESULTS);
-      rgArgs.push('--max-count', String(limit), args.pattern);
+      rgArgs.push('--max-count', String(limit), '-e', args.pattern);
 
       const searchPath =
         args.path !== undefined

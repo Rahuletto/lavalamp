@@ -52,6 +52,16 @@ export class LspClient {
     this.openDocuments.add(uri);
   }
 
+  async closeDoc(uri: string): Promise<void> {
+    if (!this.openDocuments.has(uri)) {
+      return;
+    }
+    await this.notify('textDocument/didClose', {
+      textDocument: { uri },
+    }).catch(() => {});
+    this.openDocuments.delete(uri);
+  }
+
   constructor(
     private readonly workspaceRoot: string,
     private readonly command: string,
@@ -183,6 +193,7 @@ export class LspClient {
         method,
         params,
       });
+      const header = `Content-Length: ${Buffer.byteLength(payload, 'utf8')}\r\n\r\n`;
 
       try {
         this.child.stdin.write(header + payload);
@@ -385,6 +396,7 @@ export async function getDiagnosticsForFile(workspaceRoot: string, filePath: str
     const resolvedPath = guard.constrain(filePath);
 
     await tsserver.start().catch(() => {});
+    await tsserver.closeDoc(uri).catch(() => {});
     await tsserver.ensureDocOpen(uri, resolvedPath).catch(() => {});
     await tsserver.notify('textDocument/didSave', { textDocument: { uri } }).catch(() => {});
 

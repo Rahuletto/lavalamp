@@ -176,5 +176,6 @@ export function skillDirs(workspaceRoot: string): string[] {
 }
 
 function workspaceHash(workspaceRoot: string): string {
-  return createHash('sha256').update(workspaceRoot).digest('hex').slice(0, 12);
+  const resolved = path.resolve(workspaceRoot);
+  return createHash('sha256').update(resolved).digest('hex').slice(0, 12);
 }

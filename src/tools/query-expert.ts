@@ -76,7 +76,14 @@ export function createQueryExpertTool(workspaceRoot: string) {
         });
 
         let outputText = '';
+        let stderrText = '';
         const requestId = `req_${randomUUID()}`;
+
+        if (child.stderr) {
+          child.stderr.on('data', (chunk) => {
+            stderrText += chunk.toString('utf8');
+          });
+        }
 
         const onMessage = (raw: Record<string, unknown>) => {
           if (raw.type === 'ready' && raw.instanceId === instanceId) {
@@ -131,16 +138,26 @@ export function createQueryExpertTool(workspaceRoot: string) {
               errObj !== null && typeof errObj.message === 'string'
                 ? errObj.message
                 : 'Expert session failed';
-            reject(new Error(`[${expert}] ${msg}`));
+            const extra = stderrText.trim() ? `\nStderr:\n${stderrText.trim()}` : '';
+            reject(new Error(`[${expert}] ${msg}${extra}`));
           }
         };
 
         const onExit = (code: number | null) => {
           cleanup();
-          resolve(
-            outputText.trim() ||
-              `[${expert}] Expert exited with code ${code}`,
-          );
+          if (code !== 0 && code !== null) {
+            const extra = stderrText.trim() ? `\nStderr:\n${stderrText.trim()}` : '';
+            reject(
+              new Error(
+                `[${expert}] Expert process crashed with code ${code}.${extra}`,
+              ),
+            );
+          } else {
+            resolve(
+              outputText.trim() ||
+                `[${expert}] Expert exited with code ${code}`,
+            );
+          }
         };
 
         const cleanup = () => {

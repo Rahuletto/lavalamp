@@ -7,4 +7,4 @@ export { createCodebaseSemanticSearchTool } from './codebase-semantic-search';
 export { createLspTools } from './lsp-client';
 export { createQueryExpertTool } from './query-expert';
 export { createAskQuestionTool } from './ask-question';
-export { customReadTool, customWriteTool, customEditTool } from './file-tools';
+export { customReadTool, createWriteTool, createEditTool } from './file-tools';
