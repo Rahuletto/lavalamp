@@ -370,13 +370,18 @@ export class FlueProcess {
     const requestId = `req_${randomUUID()}`;
     this.pending.set(requestId, callbacks);
 
-    this.child.send({
-      images: images ?? undefined,
-      message,
-      requestId,
-      sessionId,
-      type: 'prompt',
-    });
+    try {
+      this.child.send({
+        images: images ?? undefined,
+        message,
+        requestId,
+        sessionId,
+        type: 'prompt',
+      });
+    } catch (error) {
+      this.pending.delete(requestId);
+      throw error;
+    }
 
     return requestId;
   }

@@ -22,7 +22,7 @@ export class QuestionBoxManager extends BaseBoxManager<Record<string, any>> {
   private currentInputText = '';
 
   constructor(ctx: BaseBoxContext) {
-    super(ctx, 'question-box', COLORS.accent || COLORS.teal || '#00D7D7');
+    super(ctx, 'question-box', COLORS.accent);
   }
 
   protected getDefaultValue(): Record<string, any> {

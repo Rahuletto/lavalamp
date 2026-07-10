@@ -267,10 +267,6 @@ const lspRenameSchema = v.object({
   newName: v.string(),
 });
 
-const lspFileSchema = v.object({
-  filePath: v.string(),
-});
-
 const lspDiagnosticsSchema = v.object({
   filePath: v.optional(v.string()),
 });

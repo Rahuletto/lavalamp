@@ -13,6 +13,7 @@ export interface LavalampE2EHarnessOptions {
   rows?: number;
   cols?: number;
   timeoutMs?: number;
+  args?: string[];
 }
 
 export interface LavalampE2EHarness {
@@ -120,19 +121,21 @@ export function createLavalampE2EHarness(
       if (home !== undefined && home.length > 0) {
         env.LAVALAMP_HOME = home;
       }
+      const cmdArgs = [
+        join(E2E_DIR, 'pty-bridge.py'),
+        '--rows',
+        String(rows),
+        '--cols',
+        String(cols),
+        '--',
+        join(REPO_ROOT, 'bin', 'lavalamp'),
+        '--workspace',
+        options.workspace,
+        ...(options.args ?? []),
+      ];
       child = spawn(
         'python3',
-        [
-          join(E2E_DIR, 'pty-bridge.py'),
-          '--rows',
-          String(rows),
-          '--cols',
-          String(cols),
-          '--',
-          join(REPO_ROOT, 'bin', 'lavalamp'),
-          '--workspace',
-          options.workspace,
-        ],
+        cmdArgs,
         {
           cwd: REPO_ROOT,
           env,

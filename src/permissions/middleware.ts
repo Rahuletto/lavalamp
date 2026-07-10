@@ -180,9 +180,8 @@ export function rejectAllPending(): void {
     p.resolve({ decision: 'deny', requestId: id, type: 'permission_response' });
   }
   pending.clear();
-  for (const [id, p] of pendingQuestions) {
-    const qDefault = p.resolve as any; // Safe fallback resolver
-    qDefault({});
+  for (const [, pendingQuestion] of pendingQuestions) {
+    pendingQuestion.resolve({});
   }
   pendingQuestions.clear();
 }

@@ -17,6 +17,7 @@ import type {
   FlueResult,
   PermissionRequestMsg,
   PromptImage,
+  QuestionRequestMsg,
 } from './ipc';
 import { SubAgentManager } from './subs';
 import { COLORS } from './theme';
@@ -71,6 +72,8 @@ import {
   type ModelPickerState,
 } from './model-picker';
 import { mountInputStack } from './input-stack';
+import { attachmentsForPrompt, type AttachedImage } from './attachments';
+import { formatTuiError } from './errors';
 
 export interface TuiOptions {
   serverPath: string;
@@ -143,7 +146,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   const backupEngine = new BackupEngine(options.cwd);
   const backupHistory: string[] = [];
   let turnBackupCreated = false;
-  const attachedImages: { tag: string; path: string }[] = [];
+  const attachedImages: AttachedImage[] = [];
   let imageCounter = 0;
 
   function accent(): string {
@@ -872,7 +875,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
   messagesScroll.add(planStatusLine);
 
   function updateHeader() {
-    headerTitle.content = state.planMode ? 'lavalamp [PLAN]' : 'lavalamp';
+    headerTitle.content = state.planMode
+      ? 'lavalamp [PLAN]'
+      : options.agentName === 'explore'
+        ? 'lavalamp [ASK]'
+        : 'lavalamp';
     headerTitle.fg = accent();
     statusPath.content = shortenPath(cwd);
   }
@@ -906,7 +913,8 @@ export async function startTui(options: TuiOptions): Promise<void> {
       statusSpinner.content = `${SPINNER_FRAMES[spinnerFrame]} `;
       statusSpinner.fg = accent();
       statusSpinner.visible = true;
-      statusText.content = '';
+      statusText.content = 'waiting for model...';
+      statusText.fg = COLORS.dim;
     } else if (state.queuePending.length > 0) {
       statusSpinner.content = '';
       statusSpinner.visible = false;
@@ -1429,11 +1437,10 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function formatErrorMessage(err: Error): string {
-    const message = err.message.trim();
     if (isAuthError(err)) {
       return 'authentication failed (401). Restart lavalamp to re-authenticate.';
     }
-    return message.split('\n')[0] ?? 'Unknown error';
+    return formatTuiError(err);
   }
 
   function printUsage(result: FlueResult) {
@@ -1501,12 +1508,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
 
     let imageDescriptionContext = '';
     const promptImages: PromptImage[] = [];
-    if (attachedImages.length > 0) {
+    const promptAttachments = attachmentsForPrompt(prompt, attachedImages);
+    attachedImages.length = 0;
+    if (promptAttachments.length > 0) {
       const modelId = currentModelId();
       const modelEntry = getModelEntry(modelId);
       const modelHasVision = modelEntry?.vision ?? false;
 
-      for (const img of attachedImages) {
+      for (const img of promptAttachments) {
         if (modelHasVision) {
           // Vision-capable model: pass the image directly as a PromptImage
           try {
@@ -1543,7 +1552,6 @@ export async function startTui(options: TuiOptions): Promise<void> {
           }
         }
       }
-      attachedImages.length = 0; // Clear after processing
     }
 
     const steeredPrompt = steerPrompt(prompt, cwd) + imageDescriptionContext;

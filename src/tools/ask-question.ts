@@ -19,12 +19,11 @@ export function createAskQuestionTool() {
     description:
       'Ask the user one or more interactive questions (single-choice, multi-choice, or free-text input). Use this when you need user preferences, design decisions, clarification, or feedback on options before proceeding.',
     execute: async (args) => {
-      const questions = args.questions as any[];
-      const answers = await askUserQuestions(questions);
-      return {
+      const answers = await askUserQuestions(args.questions);
+      return JSON.stringify({
         answers,
         message: 'Questions answered successfully.',
-      };
+      });
     },
     name: 'ask_question',
     parameters: askQuestionSchema,

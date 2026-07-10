@@ -43,4 +43,25 @@ describe('real bin/lavalamp e2e', () => {
       await rm(workspace, { force: true, recursive: true });
     }
   }, 180000);
+
+  test('boots in ask mode and renders the [ASK] header', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'lavalamp-e2e-ask-workspace-'));
+    const app = createLavalampE2EHarness({ workspace, args: ['ask'] });
+
+    try {
+      await app.start();
+      await app.waitForText('[lavalamp] Authenticating...', 10000);
+      await app.waitForText(
+        '[lavalamp] Authentication complete. Opening TUI...',
+        150000,
+      );
+      await app.waitForBoot();
+
+      await app.waitForText('lavalamp [ASK]');
+      expect(app.cleanOutput()).toContain('lavalamp [ASK]');
+    } finally {
+      await app.stop();
+      await rm(workspace, { force: true, recursive: true });
+    }
+  }, 180000);
 });

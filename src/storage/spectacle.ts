@@ -19,6 +19,7 @@ export async function describeImageWithSpectacle(
   if (!creds) {
     return `[Vision Offline: Cloudflare credentials not found]`;
   }
+  const { accountId, apiToken } = creds;
 
   if (!fs.existsSync(imagePath)) {
     return `[Vision Error: Image file not found at ${imagePath}]`;
@@ -36,7 +37,7 @@ export async function describeImageWithSpectacle(
     const imageArray = [...buffer];
 
     async function tryModel(model: string): Promise<string> {
-      const url = `https://api.cloudflare.com/client/v4/accounts/${creds.accountId}/ai/v1/run/${model}`;
+      const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/run/${model}`;
       const response = await fetch(url, {
         body: JSON.stringify({
           image: imageArray,
@@ -44,7 +45,7 @@ export async function describeImageWithSpectacle(
             'Describe this screenshot/image in detail. List all user interface elements, labels, buttons, console output, syntax errors, or text exactly as they appear.',
         }),
         headers: {
-          Authorization: `Bearer ${creds.apiToken}`,
+          Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
         method: 'POST',

@@ -15,6 +15,7 @@ USAGE:
   lavalamp                       Start interactive session in current directory
   lavalamp -p "PROMPT"           Run a single prompt and exit
   lavalamp --repl                TUI-less interactive REPL (multi-turn, stdin pipe)
+  lavalamp --simple              Plain stdin/stdout chat (no TUI rendering)
   lavalamp --continue            Resume a previous session
   lavalamp --workspace /path     Set workspace directory (default: cwd)
   lavalamp --model MODEL         Override default model
@@ -30,6 +31,7 @@ PIPE MODE:
 OPTIONS:
   -p, --print PROMPT             Run a single prompt and exit (aliases: --inline, -i)
       --repl                     TUI-less interactive REPL (multi-turn, no UI)
+      --simple                   Plain text chat mode (no TUI/ASCII art)
       --yes, --auto-approve      Auto-approve all tool calls (for --repl / -p in CI)
   -c, --continue                 Resume a previous session
   -w, --workspace PATH           Set workspace directory
@@ -77,11 +79,17 @@ case "${1:-}" in
   config|models)
     exec bun run "${REPO_DIR}/src/cli/config.ts" "$@"
     ;;
+  ask)
+    shift
+    set -- "--ask" "$@"
+    ;;
 esac
 
 # Parse args
+ASK_MODE=false
 PRINT_MODE=false
 REPL_MODE=false
+SIMPLE_MODE=false
 PRINT_PROMPT=""
 WORKSPACE=""
 MODEL=""
@@ -92,6 +100,15 @@ AUTO_APPROVE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -a|--ask|ask)
+      ASK_MODE=true
+      shift
+      if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
+        PRINT_MODE=true
+        PRINT_PROMPT="$1"
+        shift
+      fi
+      ;;
     -p|--print|--inline|-i)
       PRINT_MODE=true
       shift
@@ -105,6 +122,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --repl)
       REPL_MODE=true
+      shift
+      ;;
+    --simple)
+      SIMPLE_MODE=true
       shift
       ;;
     --yes|--auto-approve)
@@ -174,6 +195,9 @@ export LAVALAMP_WORKSPACE="${WORKSPACE:-$(pwd)}"
 if [ -n "$MODEL" ]; then
   export LAVALAMP_MODEL="$MODEL"
 fi
+if [ "$ASK_MODE" = true ]; then
+  export LAVALAMP_ASK=1
+fi
 
 if [ "$PRINT_MODE" = true ]; then
   EXTRA_ARGS=(-p)
@@ -188,7 +212,15 @@ if [ "$PRINT_MODE" = true ]; then
     EXTRA_ARGS+=(--yes)
   fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
+  cd "$REPO_DIR" && PORT=48392 bun src/run.ts "${EXTRA_ARGS[@]}"
+elif [ "$SIMPLE_MODE" = true ]; then
+  EXTRA_ARGS=(--simple --quiet)
+  EXTRA_ARGS+=(--output-format "$OUTPUT_FORMAT")
+  if [ "$AUTO_APPROVE" = true ]; then
+    EXTRA_ARGS+=(--yes)
+  fi
+
+  cd "$REPO_DIR" && PORT=48392 bun src/run.ts "${EXTRA_ARGS[@]}"
 elif [ "$REPL_MODE" = true ]; then
   EXTRA_ARGS=(--repl)
   EXTRA_ARGS+=(--output-format "$OUTPUT_FORMAT")
@@ -199,7 +231,7 @@ elif [ "$REPL_MODE" = true ]; then
     EXTRA_ARGS+=(--yes)
   fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
+  cd "$REPO_DIR" && PORT=48392 bun src/run.ts "${EXTRA_ARGS[@]}"
 else
   EXTRA_ARGS=()
   if [ "$RESUME_SESSION" = true ]; then
@@ -209,5 +241,5 @@ else
     fi
   fi
 
-  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
+  cd "$REPO_DIR" && PORT=48392 bun src/run.ts "${EXTRA_ARGS[@]}"
 fi

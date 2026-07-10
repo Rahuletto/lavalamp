@@ -51,7 +51,7 @@ describe('Interactive Question Tool', () => {
       ],
     });
 
-    expect(result).toEqual({
+    expect(JSON.parse(result)).toEqual({
       answers: { test: 'world' },
       message: 'Questions answered successfully.',
     });
