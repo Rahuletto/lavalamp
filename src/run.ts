@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
 import * as readline from 'node:readline';
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import {
   FlueProcess,
   type FlueEvent,
@@ -12,6 +13,10 @@ import { BUILD_MODEL } from './config/models';
 import { resolveRuntimeRoute } from './config/runtime-route';
 import { login, validateCredentials } from './auth/login';
 import { loadCredentials } from './auth/credentials';
+import { lavalampDataDir } from './storage/paths';
+
+// @ts-ignore
+import serverCode from '../dist/server.mjs' with { type: 'text' };
 
 const workspaceRoot = process.env.LAVALAMP_WORKSPACE ?? process.cwd();
 const config = resolveConfig();
@@ -20,8 +25,25 @@ const model =
   env.LAVALAMP_MODEL ??
   (config.defaultModel.length > 0 ? config.defaultModel : undefined);
 
+const subcommand = process.argv[2];
+if (subcommand === 'login' || subcommand === 'logout' || subcommand === 'status') {
+  await import('./cli/auth');
+  process.exit(0);
+}
+if (subcommand === 'config' || subcommand === 'models') {
+  await import('./cli/config');
+  process.exit(0);
+}
+
 const repoRoot = resolve(import.meta.dir, '..');
-const serverPath = join(repoRoot, 'dist', 'server.mjs');
+let serverPath = join(repoRoot, 'dist', 'server.mjs');
+
+if (!existsSync(serverPath)) {
+  const dataDir = lavalampDataDir();
+  mkdirSync(dataDir, { recursive: true });
+  serverPath = join(dataDir, 'server.mjs');
+  writeFileSync(serverPath, serverCode, 'utf8');
+}
 
 function findFlag(flags: string[]): number {
   for (const f of flags) {
@@ -39,6 +61,31 @@ function findFlagValue(flags: string[]): string | null {
     return null;
   }
   return process.argv[idx + 1] ?? null;
+}
+
+const versionIdx = findFlag(['-v', '--version']);
+const helpIdx = findFlag(['-h', '--help']);
+
+if (versionIdx !== -1) {
+  console.log('lavalamp 0.1.0');
+  process.exit(0);
+}
+
+if (helpIdx !== -1) {
+  console.log(`lavalamp — AI coding harness
+
+USAGE:
+  lavalamp                       Start interactive session in current directory
+  lavalamp -p "PROMPT"           Run a single prompt and exit
+  lavalamp --repl                TUI-less interactive REPL (multi-turn, stdin pipe)
+  lavalamp --continue            Resume a previous session
+  lavalamp --workspace /path     Set workspace directory (default: cwd)
+  lavalamp --model MODEL         Override default model
+  lavalamp models                List known models
+  lavalamp config show           Show persisted config
+  lavalamp config set KEY VALUE  Persist model/Gateway config
+`);
+  process.exit(0);
 }
 
 const printIdx = findFlag(['-p', '--print', '--inline']);
