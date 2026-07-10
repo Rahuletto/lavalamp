@@ -1,6 +1,7 @@
 import type { KeyEvent, TextareaRenderable } from '@opentui/core';
 import type { AppStateStore } from '../storage/Store';
 import type { PermissionBoxManager } from '../components/PermissionBox';
+import type { QuestionBoxManager } from '../components/QuestionBox';
 import type { ConfirmBoxManager } from '../components/ConfirmBox';
 import type { ResultPanelManager } from '../components/ResultPanel';
 import type { CompletionManager } from '../components/CompletionManager';
@@ -12,6 +13,7 @@ export interface KeybindingsContext {
   store: AppStateStore;
   inputField: TextareaRenderable;
   permissionBox: PermissionBoxManager;
+  questionBox: QuestionBoxManager;
   confirmBox: ConfirmBoxManager;
   resultPanel: ResultPanelManager;
   completion: CompletionManager;
@@ -36,6 +38,7 @@ export function handleKeyPress(key: KeyEvent, ctx: KeybindingsContext): void {
     store,
     inputField,
     permissionBox,
+    questionBox,
     confirmBox,
     resultPanel,
     completion,
@@ -148,6 +151,13 @@ export function handleKeyPress(key: KeyEvent, ctx: KeybindingsContext): void {
     confirmBox.getAcceptReturn()
   ) {
     confirmBox.hide(true);
+    key.stopPropagation();
+    return;
+  }
+
+  // Question Box answers
+  if (questionBox.isVisible()) {
+    questionBox.handleKeyPress(key);
     key.stopPropagation();
     return;
   }

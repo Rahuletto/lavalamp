@@ -6,10 +6,9 @@ describe('LSP Tools & Diagnostics integration', () => {
   const workspaceRoot = path.resolve('.');
 
   test('getSharedLspClients returns initialized instances', () => {
-    const { guard, tsserver, oxlint } = getSharedLspClients(workspaceRoot);
+    const { guard, tsserver } = getSharedLspClients(workspaceRoot);
     expect(guard).toBeDefined();
     expect(tsserver).toBeDefined();
-    expect(oxlint).toBeDefined();
   });
 
   test('createLspTools returns 6 tools', () => {

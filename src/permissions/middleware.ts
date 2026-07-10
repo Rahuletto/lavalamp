@@ -29,6 +29,11 @@ function ensureRules(cwd: string): PermissionRule[] {
   return rules;
 }
 
+const pendingQuestions = new Map<
+  string,
+  { resolve: (answers: Record<string, any>) => void }
+>();
+
 function installIpcListener(): void {
   if (ipcListenerInstalled) {
     return;
@@ -39,14 +44,23 @@ function installIpcListener(): void {
       return;
     }
     const msg = raw as Record<string, unknown>;
-    if (msg.type !== 'permission_response') {
+    if (msg.type === 'permission_response') {
+      const requestId = msg.requestId as string;
+      const p = pending.get(requestId);
+      if (p) {
+        pending.delete(requestId);
+        p.resolve(msg as unknown as PermissionResponse);
+      }
       return;
     }
-    const requestId = msg.requestId as string;
-    const p = pending.get(requestId);
-    if (p) {
-      pending.delete(requestId);
-      p.resolve(msg as unknown as PermissionResponse);
+    if (msg.type === 'question_response') {
+      const requestId = msg.requestId as string;
+      const p = pendingQuestions.get(requestId);
+      if (p) {
+        pendingQuestions.delete(requestId);
+        p.resolve(msg.answers as Record<string, any>);
+      }
+      return;
     }
   });
 }
@@ -166,4 +180,44 @@ export function rejectAllPending(): void {
     p.resolve({ decision: 'deny', requestId: id, type: 'permission_response' });
   }
   pending.clear();
+  for (const [id, p] of pendingQuestions) {
+    const qDefault = p.resolve as any; // Safe fallback resolver
+    qDefault({});
+  }
+  pendingQuestions.clear();
+}
+
+/**
+ * Request answers for one or more questions from the TUI process via IPC.
+ * If the process is not connected to IPC, returns default values.
+ */
+export async function askUserQuestions(
+  questions: any[],
+): Promise<Record<string, any>> {
+  installIpcListener();
+
+  const requestId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const request = {
+    questions,
+    requestId,
+    type: 'question_request',
+  };
+
+  return new Promise<Record<string, any>>((resolve) => {
+    pendingQuestions.set(requestId, { resolve });
+
+    // Send IPC message to TUI parent process
+    if (process.send) {
+      process.send(request);
+    } else {
+      // No IPC channel (running standalone / headless) — return default options
+      pendingQuestions.delete(requestId);
+      const defaults: Record<string, any> = {};
+      for (const q of questions) {
+        defaults[q.id] = q.default ?? (q.type === 'multiselect' ? [] : '');
+      }
+      resolve(defaults);
+    }
+  });
 }

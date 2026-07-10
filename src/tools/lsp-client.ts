@@ -20,6 +20,7 @@ export class LspClient {
   private readonly diagnostics = new Map<string, unknown[]>();
   onDiagnostics?: (uri: string, diagnostics: unknown[]) => void;
   private readonly openDocuments = new Set<string>();
+  private spawnFailed = false;
 
   async ensureDocOpen(uri: string, filePath: string): Promise<void> {
     if (this.openDocuments.has(uri)) {
@@ -61,6 +62,9 @@ export class LspClient {
     if (this.child) {
       return;
     }
+    if (this.spawnFailed) {
+      throw new Error(`LSP server failed to start previously for command: ${this.command}`);
+    }
 
     try {
       this.child = spawn(this.command, this.args, {
@@ -68,6 +72,7 @@ export class LspClient {
         stdio: ['pipe', 'pipe', 'ignore'],
       });
     } catch (error) {
+      this.spawnFailed = true;
       this.child = null;
       throw error;
     }
@@ -79,6 +84,7 @@ export class LspClient {
       });
     }
     this.child.on('error', (err) => {
+      this.spawnFailed = true;
       this.rejectPending(err);
     });
     this.child.once('exit', () => {
@@ -318,7 +324,6 @@ function formatDiagnostic(
 // --- Tool factory ---
 
 let sharedTsserver: LspClient | null = null;
-let sharedOxlint: LspClient | null = null;
 let sharedGuard: WorkspaceGuard | null = null;
 
 export function getSharedLspClients(workspaceRoot: string) {
@@ -327,61 +332,93 @@ export function getSharedLspClients(workspaceRoot: string) {
     sharedTsserver = new LspClient(sharedGuard.root, 'typescript-language-server', [
       '--stdio',
     ]);
-    sharedOxlint = new LspClient(sharedGuard.root, 'bunx', [
-      'oxlint',
-      '--lsp',
-    ]);
   }
-  return { guard: sharedGuard!, oxlint: sharedOxlint, tsserver: sharedTsserver };
+  return { guard: sharedGuard!, tsserver: sharedTsserver };
+}
+
+function parseOxcJson(stdout: string, workspaceRoot: string): string[] {
+  try {
+    const parsed = JSON.parse(stdout) as Array<{
+      file: string;
+      diagnostics: Array<{
+        severity: string;
+        message: string;
+        line: number;
+        column: number;
+        rule?: string;
+      }>;
+    }>;
+    const lines: string[] = [];
+    for (const file of parsed) {
+      const rel = file.file.startsWith(workspaceRoot)
+        ? file.file.slice(workspaceRoot.length + 1)
+        : file.file;
+      for (const diag of file.diagnostics) {
+        const isErr = diag.severity === 'error' || diag.severity === 'Error';
+        if (isErr) {
+          const rule = diag.rule ? ` [${diag.rule}]` : '';
+          lines.push(
+            `${rel}:${diag.line}:${diag.column} Error${rule}: ${diag.message}`
+          );
+        }
+      }
+    }
+    return lines;
+  } catch {
+    return [];
+  }
 }
 
 export async function getDiagnosticsForFile(workspaceRoot: string, filePath: string): Promise<string[]> {
-  const { guard, tsserver, oxlint } = getSharedLspClients(workspaceRoot);
+  const { guard, tsserver } = getSharedLspClients(workspaceRoot);
 
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   if (!['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'].includes(ext)) {
     return [];
   }
 
+  const reports: string[] = [];
+
+  // 1. Run tsserver diagnostics
   try {
     const uri = pathToFileURL(guard.constrain(filePath)).href;
     const resolvedPath = guard.constrain(filePath);
 
-    await Promise.all([
-      tsserver.start().catch(() => {}),
-      oxlint.start().catch(() => {}),
-    ]);
-
-    await Promise.all([
-      tsserver.ensureDocOpen(uri, resolvedPath).catch(() => {}),
-      oxlint.ensureDocOpen(uri, resolvedPath).catch(() => {}),
-    ]);
-
-    await Promise.all([
-      tsserver.notify('textDocument/didSave', { textDocument: { uri } }).catch(() => {}),
-      oxlint.notify('textDocument/didSave', { textDocument: { uri } }).catch(() => {}),
-    ]);
+    await tsserver.start().catch(() => {});
+    await tsserver.ensureDocOpen(uri, resolvedPath).catch(() => {});
+    await tsserver.notify('textDocument/didSave', { textDocument: { uri } }).catch(() => {});
 
     await new Promise((r) => setTimeout(r, 300));
 
     const tsDiags = tsserver.getDiagnostics(uri) as LspDiagnostic[];
-    const oxcDiags = oxlint.getDiagnostics(uri) as LspDiagnostic[];
-
-    const reports: string[] = [];
     for (const d of tsDiags) {
       if ((d.severity ?? 1) === 1) {
         reports.push(formatDiagnostic(d, workspaceRoot, uri));
       }
     }
-    for (const d of oxcDiags) {
-      if ((d.severity ?? 1) === 1) {
-        reports.push(formatDiagnostic(d, workspaceRoot, uri));
+  } catch {}
+
+  // 2. Run oxlint CLI diagnostics
+  try {
+    const resolvedPath = guard.constrain(filePath);
+    const { execFileSync } = await import('node:child_process');
+    try {
+      const result = execFileSync('bunx', ['oxlint', '--format=json', resolvedPath], {
+        cwd: workspaceRoot,
+        encoding: 'utf8',
+        maxBuffer: 10 * 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 5000,
+      });
+      reports.push(...parseOxcJson(result, workspaceRoot));
+    } catch (error: any) {
+      if (error && 'stdout' in error) {
+        reports.push(...parseOxcJson(error.stdout, workspaceRoot));
       }
     }
-    return reports;
-  } catch {
-    return [];
-  }
+  } catch {}
+
+  return reports;
 }
 
 const lspOxcDiagnosticsSchema = v.object({
@@ -390,17 +427,14 @@ const lspOxcDiagnosticsSchema = v.object({
 });
 
 export function createLspTools(workspaceRoot: string) {
-  const { guard, tsserver, oxlint } = getSharedLspClients(workspaceRoot);
+  const { guard, tsserver } = getSharedLspClients(workspaceRoot);
 
   function uriFor(filePath: string): string {
     return pathToFileURL(guard.constrain(filePath)).href;
   }
 
   async function ensureStarted(): Promise<void> {
-    await Promise.all([
-      tsserver.start(),
-      oxlint.start().catch(() => {}),
-    ]);
+    await tsserver.start();
   }
 
   const hoverTool = defineTool({

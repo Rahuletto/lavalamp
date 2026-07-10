@@ -60,9 +60,16 @@ export interface PermissionRequestMsg {
   args: Record<string, unknown>;
 }
 
+export interface QuestionRequestMsg {
+  type: 'question_request';
+  requestId: string;
+  questions: any[];
+}
+
 export type PermissionDecision = 'allow' | 'deny';
 
 export type OnPermissionRequest = (request: PermissionRequestMsg) => void;
+export type OnQuestionRequest = (request: QuestionRequestMsg) => void;
 
 export interface BashStreamChunk {
   type: 'bash_stream';
@@ -84,6 +91,7 @@ export class FlueProcess {
   private readonly pending = new Map<string, PromptCallbacks>();
   private shutdownRequested = false;
   onPermissionRequest?: OnPermissionRequest;
+  onQuestionRequest?: OnQuestionRequest;
   onBashStream?: OnBashStream;
 
   private readonly handleChildMessage = (raw: Record<string, unknown>) => {
@@ -100,6 +108,13 @@ export class FlueProcess {
     if (raw.type === 'permission_request') {
       if (this.onPermissionRequest != null) {
         this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
+      }
+      return;
+    }
+
+    if (raw.type === 'question_request') {
+      if (this.onQuestionRequest != null) {
+        this.onQuestionRequest(raw as unknown as QuestionRequestMsg);
       }
       return;
     }
@@ -186,6 +201,20 @@ export class FlueProcess {
       decision,
       requestId,
       type: 'permission_response',
+    });
+  }
+
+  sendQuestionResponse(
+    requestId: string,
+    answers: Record<string, any>,
+  ): void {
+    if (!this.child) {
+      return;
+    }
+    this.child.send({
+      answers,
+      requestId,
+      type: 'question_response',
     });
   }
 

@@ -25,6 +25,7 @@ import { AppStateStore } from './storage/Store';
 import { handleKeyPress } from './events/Keybindings';
 import { ConfirmBoxManager } from './components/ConfirmBox';
 import { PermissionBoxManager } from './components/PermissionBox';
+import { QuestionBoxManager } from './components/QuestionBox';
 import { ResultPanelManager } from './components/ResultPanel';
 import { CompletionManager } from './components/CompletionManager';
 import { QueuePanelManager, SubPanelManager } from './components/QueueSubPanel';
@@ -220,6 +221,15 @@ export async function startTui(options: TuiOptions): Promise<void> {
       return boxCtx.root;
     },
   });
+  const questionBoxMgr = new QuestionBoxManager({
+    nextId: boxCtx.nextId,
+    get renderer() {
+      return boxCtx.renderer;
+    },
+    get root() {
+      return boxCtx.root;
+    },
+  });
 
   // Wire permission request handling from the server child process
   flue.onPermissionRequest = (request: PermissionRequestMsg) => {
@@ -235,6 +245,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
           choice === 'allow' ? 'allow' : 'deny',
         );
       }
+    })().catch(() => {});
+  };
+  flue.onQuestionRequest = (request: QuestionRequestMsg) => {
+    (async () => {
+      const answers = await questionBoxMgr.show(request.questions);
+      flue.sendQuestionResponse(request.requestId, answers);
     })().catch(() => {});
   };
   flue.onBashStream = (chunk: string, stream: 'stdout' | 'stderr') => {
@@ -462,6 +478,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
   // Let confirmBoxMgr and permissionBoxMgr reuse confirmBox/permissionBox from root
   const confirmBox = confirmBoxMgr.box;
   const permissionBox = permissionBoxMgr.box;
+  const questionBox = questionBoxMgr.box;
 
   function showConfirm(
     title: string,
@@ -817,6 +834,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     resultBox,
     confirmBox,
     permissionBox,
+    questionBox,
     specApprovalBox,
     queuePanelMgr.box,
     taskBox,
@@ -2537,6 +2555,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     },
     inputField,
     permissionBox: permissionBoxMgr,
+    questionBox: questionBoxMgr,
     queuePanelRefresh: refreshQueuePanel,
     requestScroll,
     resultPanel: resultPanelMgr,
