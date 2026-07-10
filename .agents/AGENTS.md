@@ -73,7 +73,8 @@ and **Cloudflare login**.
 ```
 bin/lavalamp (bash wrapper)
   └─> bun run src/run.ts
-        ├─ [-p mode] → FlueProcess → direct stdout streaming
+        ├─ [-p mode] → FlueProcess → direct stdout streaming (single-shot)
+        ├─ [--repl mode] → FlueProcess → TUI-less interactive REPL / stdin pipe loop
         └─ [interactive] → startTui()
               │
               ├─ FlueProcess (ipc.ts)
@@ -117,12 +118,16 @@ bin/lavalamp (bash wrapper)
 - `fetch_url` — Reader API (r.marban.lol) for clean markdown
 - `deepwiki` — DeepWiki MCP for repo docs
 - `codebase_search` — filename + content search
+- `codebase_semantic_search` — vector-indexed semantic code search
 - `oracle` — second opinion from a different model
 - `doom_loop` — recovery when stuck
 - `ripgrep` — wraps `rg` binary with regex, file type, context, case-insensitive, multiline
 - `deploy_parallel_subs` — returns a structured marker for the TUI to spawn up to 3 parallel research agents
+- `query_expert` — delegate to a domain expert agent (ui, refactor, logic, database, oracle, research, critique, spectacle)
+- `load_skill` — load a `SKILL.md` on demand from the discovered skill dirs
+- `lsp_hover`, `lsp_definition` — LSP hover + go-to-definition over `typescript-language-server` (refs/rename/diagnostics not yet implemented; oxc wiring pending)
 - `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks`
-- `sessions`, `session_context` — session introspection
+- `sessions`, `session_context`, `pull_session` — session introspection + transcript pull
 - `memory_read`, `memory_write`, `memory_append` — persistent project memory
 
 **Flue built-in tools:**
@@ -237,7 +242,7 @@ Overridable via:
 lavalamp/
 ├── bin/lavalamp              # Bash entry script (flag parsing, login/logout)
 ├── src/
-│   ├── run.ts                # Main entry (-p print mode, --continue resume, TUI launch)
+│   ├── run.ts                # Main entry (-p single-shot, --repl headless REPL, --continue resume, TUI launch)
 │   ├── config/models.ts      # Model registry, capability table, fallback logic
 │   ├── agents/build.ts       # Primary agent definition (model, instructions, 20+ tools)
 │   ├── sandbox/              # Local sandbox (shell exec, file I/O, workspace guard)
@@ -316,4 +321,4 @@ wrapping, autorun/sudo, and user-configurable rules.
 
 **Workspace hygiene complete.** Runtime backups, prompt steering, autorun/sudo state, clipboard attachments, and semantic index data no longer write into `<cwd>/.agents`. They live under OS-native lavalamp data storage (`LOCALAPPDATA`/`APPDATA` on Windows, `~/Library/Application Support/lavalamp` on macOS, `XDG_DATA_HOME` or `~/.local/share/lavalamp` on Linux), with `LAVALAMP_HOME` as an override. Backups are created only when a mutating tool starts and only for concrete target paths from `write`/`edit`/`rename` or obvious shell command paths; lavalamp no longer snapshots the whole workspace. Project-authored `.agents/AGENTS.md`, `.agents/PLAN.md`, `.agents/skills`, and optional `.agents/rules.json` remain workspace files.
 
-**Remaining milestones:** spectacle vision bridge (M6), LSP (M7), deeper AI Gateway spend/log UX, and final release packaging. Plugin system (M8) is explicitly postponed.
+**Remaining milestones:** M6 spectacle — capability table done, vision bridge done, **capability-driven auto-routing** pending (paste currently bridges unconditionally). M7 LSP — `lsp_hover`/`lsp_definition` done; **refs/rename/diagnostics + oxc wiring + diagnostic feedback** pending. M5.5 headless — single-shot `-p` done; **interactive REPL/pipe-loop** pending. M9 — live Workers AI catalog refresh, AI Gateway spend/log UX, and final release packaging pending. Plugin system (M8) is explicitly postponed.

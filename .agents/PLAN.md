@@ -120,19 +120,22 @@ OpenCode/Claude Code.
 
 - [x] **Checkpoint / undo / rewind** — file backups per turn; revert from the TUI.
 - [x] **Rules / steering** — inject context dynamically when pattern matches prompt.
-- [ ] **Headless mode** — TUI-less `run`/pipe/stdin for scripting and CI (partially done via `-p`).
+- [ ] **Headless mode** — single-shot `-p` exists; TUI-less interactive REPL/pipe-loop for scripting and CI is the remaining gap. See `src/run.ts`.
 - **Exit:** users can safely undo agent changes and carry memory between sessions.
 
 ### M6 — spectacle (vision bridge)
 
-- [ ] Model **capability table** (`@cf/...` → vision/tools/ctx).
-- [x] TUI image paste and Spectacle bridge (auto-routing images to llama-3.2-11b-vision).
+- [x] Model **capability table** (`@cf/...` → vision/tools/ctx) in `src/config/models.ts` (`MODEL_REGISTRY`/`CAPABILITIES`).
+- [x] TUI image paste and Spectacle bridge (Cloudflare Vision API via `llama-3.2-11b-vision`).
+- [ ] Capability-driven **auto-routing** — skip the spectacle bridge when the active model already has vision (paste flow currently bridges unconditionally).
 - **Exit:** pasting and attaching a screenshot works even on non-vision agents.
 
 ### M7 — LSP
 
-- [x] `lsp` tool over real language servers (hover/defs/refs/rename/diagnostics).
+- [x] `lsp_hover` + `lsp_definition` over a real language server (`textDocument/hover`, `textDocument/definition`) in `src/tools/lsp-client.ts`.
+- [ ] `lsp_references`, `lsp_rename`, `lsp_diagnostics` tools (not yet implemented).
 - [ ] Wire **oxc** (`oxlint --lsp`) as fast supplementary JS/TS diagnostics + autofix.
+- [ ] Feed diagnostics back to the model after each edit.
 - **Exit:** edits get type/lint feedback in-loop.
 
 ### M8 — Plugin system (Postponed)
@@ -179,9 +182,9 @@ OpenCode/Claude Code.
 
 ## 4. Open questions
 
-1. **Permission engine design** — Amp-style sequential rules vs simpler deny-list? _(blocks M4)_
-2. **review vs plan model split** — unify on one reasoning model or keep separate? _(blocks M5)_
-3. **spectacle default tier** — `llama-4-scout` (strong) vs `llama-3.2-11b-vision` (cheaper)? _(blocks M6)_
-4. **AI Gateway: default-on or opt-in?** — lean opt-in for v1. _(blocks M9)_
-5. **Plugin manifest format** — TS module only, or also static `plugin.json`? _(blocks M8)_
+1. ~~**Permission engine design** — Amp-style sequential rules vs simpler deny-list?~~ _(resolved by M4 — Amp-style sequential rules shipped.)_
+2. ~~**review vs plan model split** — unify on one reasoning model or keep separate?~~ _(resolved by M5 — separate profiles shipped; all overridable.)_
+3. **spectacle default tier** — code currently uses `llama-3.2-11b-vision`; `llama-4-scout` (stronger) was the alternative. Still open alongside the auto-routing gap. _(blocks M6)_
+4. ~~**AI Gateway: default-on or opt-in?**~~ _(resolved by M9 — opt-in for v1.)_
+5. **Plugin manifest format** — TS module only, or also static `plugin.json`? _(blocks M8, postponed)_
 6. **Live bash output streaming** — tap into child process stdout during tool execution for real-time terminal output in TUI. Currently bash output only appears after command completes.

@@ -1,5 +1,6 @@
 import { join, resolve } from 'node:path';
-import { FlueProcess } from './tui/ipc';
+import * as readline from 'node:readline';
+import { FlueProcess, type PermissionRequestMsg } from './tui/ipc';
 import { startTui } from './tui/app';
 import { resolveConfig } from './config/user-config';
 import { BUILD_MODEL } from './config/models';
