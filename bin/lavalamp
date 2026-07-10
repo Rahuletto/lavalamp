@@ -14,6 +14,7 @@ lavalamp — AI coding harness
 USAGE:
   lavalamp                       Start interactive session in current directory
   lavalamp -p "PROMPT"           Run a single prompt and exit
+  lavalamp --repl                TUI-less interactive REPL (multi-turn, stdin pipe)
   lavalamp --continue            Resume a previous session
   lavalamp --workspace /path     Set workspace directory (default: cwd)
   lavalamp --model MODEL         Override default model
@@ -22,11 +23,14 @@ USAGE:
   lavalamp config set KEY VALUE  Persist model/Gateway config
 
 PIPE MODE:
-  cat file.ts | lavalamp -p "review this"     Pipe stdin as context
-  echo "question" | lavalamp -p "answer this" Pipe stdin as context
+  cat file.ts | lavalamp -p "review this"     Pipe stdin as context (single-shot)
+  echo "question" | lavalamp -p "answer this" Pipe stdin as context (single-shot)
+  echo -e "read README\nsummarize" | lavalamp --repl  Multi-turn pipe (each line = a turn)
 
 OPTIONS:
   -p, --print PROMPT             Run a single prompt and exit (aliases: --inline, -i)
+      --repl                     TUI-less interactive REPL (multi-turn, no UI)
+      --yes, --auto-approve      Auto-approve all tool calls (for --repl / -p in CI)
   -c, --continue                 Resume a previous session
   -w, --workspace PATH           Set workspace directory
   -m, --model MODEL              Override default model
@@ -77,12 +81,14 @@ esac
 
 # Parse args
 PRINT_MODE=false
+REPL_MODE=false
 PRINT_PROMPT=""
 WORKSPACE=""
 MODEL=""
 RESUME_SESSION=false
 OUTPUT_FORMAT="text"
 QUIET=false
+AUTO_APPROVE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +102,14 @@ while [[ $# -gt 0 ]]; do
         echo "[lavalamp] Error: -p requires a prompt argument" >&2
         exit 1
       fi
+      ;;
+    --repl)
+      REPL_MODE=true
+      shift
+      ;;
+    --yes|--auto-approve)
+      AUTO_APPROVE=true
+      shift
       ;;
     -c|--continue)
       RESUME_SESSION=true
@@ -169,6 +183,20 @@ if [ "$PRINT_MODE" = true ]; then
   EXTRA_ARGS+=(--output-format "$OUTPUT_FORMAT")
   if [ "$QUIET" = true ]; then
     EXTRA_ARGS+=(--quiet)
+  fi
+  if [ "$AUTO_APPROVE" = true ]; then
+    EXTRA_ARGS+=(--yes)
+  fi
+
+  cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"
+elif [ "$REPL_MODE" = true ]; then
+  EXTRA_ARGS=(--repl)
+  EXTRA_ARGS+=(--output-format "$OUTPUT_FORMAT")
+  if [ "$QUIET" = true ]; then
+    EXTRA_ARGS+=(--quiet)
+  fi
+  if [ "$AUTO_APPROVE" = true ]; then
+    EXTRA_ARGS+=(--yes)
   fi
 
   cd "$REPO_DIR" && PORT=48392 bun run src/run.ts "${EXTRA_ARGS[@]}"

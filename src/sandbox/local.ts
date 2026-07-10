@@ -56,6 +56,7 @@ interface ShellResult {
 async function execCommand(
   command: string,
   options: ExecOptions = {},
+  onStream?: (chunk: string, stream: 'stdout' | 'stderr') => void,
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
@@ -97,10 +98,16 @@ async function execCommand(
         return;
       }
       chunks.push(chunk);
+      if (onStream) {
+        onStream(chunk.toString('utf8'), 'stdout');
+      }
     });
 
     proc.stderr.on('data', (chunk: Buffer) => {
       errChunks.push(chunk);
+      if (onStream) {
+        onStream(chunk.toString('utf8'), 'stderr');
+      }
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +152,7 @@ async function gatedExec(
   command: string,
   options: ExecOptions = {},
   workspaceRoot: string,
+  onStream?: (chunk: string, stream: 'stdout' | 'stderr') => void,
 ): Promise<ShellResult> {
   const response = await requestPermission('bash', { command }, workspaceRoot);
   if (response.decision === 'deny') {
@@ -155,7 +163,7 @@ async function gatedExec(
       timedOut: false,
     };
   }
-  return execCommand(command, options);
+  return execCommand(command, options, onStream);
 }
 
 /**
@@ -192,7 +200,20 @@ export function local(_options: { env?: Record<string, string> } = {}) {
           if (safeOptions.cwd !== undefined) {
             safeOptions.cwd = guard.constrain(safeOptions.cwd);
           }
-          return gatedExec(command, safeOptions, cwd);
+          const canSend = typeof process.send === 'function';
+          return gatedExec(command, safeOptions, cwd, canSend
+            ? (chunk, stream) => {
+                try {
+                  process.send?.({
+                    type: 'bash_stream',
+                    chunk,
+                    stream,
+                  });
+                } catch {
+                  // IPC channel closed — ignore
+                }
+              }
+            : undefined);
         },
         async exists(path: string): Promise<boolean> {
           return existsSync(guard.constrain(path));

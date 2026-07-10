@@ -12,7 +12,12 @@ import type { KeyEvent, CliRenderer } from '@opentui/core';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { FlueProcess } from './ipc';
-import type { FlueEvent, FlueResult, PermissionRequestMsg } from './ipc';
+import type {
+  FlueEvent,
+  FlueResult,
+  PermissionRequestMsg,
+  PromptImage,
+} from './ipc';
 import { SubAgentManager } from './subs';
 import { COLORS } from './theme';
 import type { Message } from './state';
@@ -231,6 +236,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
         );
       }
     })().catch(() => {});
+  };
+  flue.onBashStream = (chunk: string, stream: 'stdout' | 'stderr') => {
+    if (streamingBashEntry !== null) {
+      toolUiMgr.streamToEntry(streamingBashEntry, chunk, stream);
+    }
   };
   root.flexDirection = 'column';
   root.width = '100%';
@@ -1118,6 +1128,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     name: string;
     args: Record<string, unknown>;
   } | null = null;
+  let streamingBashEntry: ToolGroupEntry | null = null;
 
   function handleEvent(event: FlueEvent) {
     switch (event.type) {
@@ -1239,6 +1250,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
         if (typeof event.toolCallId === 'string' && grp !== null) {
           pendingToolEntries.set(event.toolCallId, grp.entries.length - 1);
           accCurrentTool = { args, id: event.toolCallId, name };
+          if (name === 'bash' && grp.entries.length > 0) {
+            streamingBashEntry = grp.entries[grp.entries.length - 1] ?? null;
+          }
         }
         updateTaskStatus(name, args);
         requestScroll();
@@ -1310,6 +1324,9 @@ export async function startTui(options: TuiOptions): Promise<void> {
             });
             accCurrentTool = null;
           }
+        }
+        if (streamingBashEntry !== null) {
+          streamingBashEntry = null;
         }
         state.currentTool = null;
         clearTaskStatus();
@@ -1465,17 +1482,47 @@ export async function startTui(options: TuiOptions): Promise<void> {
     clearResponseAccumulators();
 
     let imageDescriptionContext = '';
+    const promptImages: PromptImage[] = [];
     if (attachedImages.length > 0) {
+      const modelId = currentModelId();
+      const modelEntry = getModelEntry(modelId);
+      const modelHasVision = modelEntry?.vision ?? false;
+
       for (const img of attachedImages) {
-        addInfoLine(
-          `  [spectacle] Describing clipboard image via Workers AI...`,
-          COLORS.dim,
-        );
-        try {
-          const desc = await describeImageWithSpectacle(img.path);
-          imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag}: ${img.path}]\n${desc}`;
-        } catch (error: unknown) {
-          imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag} ERROR: ${error instanceof Error ? error.message : String(error)}]`;
+        if (modelHasVision) {
+          // Vision-capable model: pass the image directly as a PromptImage
+          try {
+            const buffer = fs.readFileSync(img.path);
+            promptImages.push({
+              data: buffer.toString('base64'),
+              mimeType: 'image/png',
+              type: 'image',
+            });
+            addInfoLine(
+              `  [vision] Attached image ${img.tag} → ${modelId}`,
+              COLORS.dim,
+            );
+          } catch {
+            // If reading fails, fall back to spectacle text bridge
+            addInfoLine(
+              `  [spectacle] Image read failed, describing via Workers AI...`,
+              COLORS.dim,
+            );
+            const desc = await describeImageWithSpectacle(img.path);
+            imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag}: ${img.path}]\n${desc}`;
+          }
+        } else {
+          // Non-vision model: use the spectacle text bridge
+          addInfoLine(
+            `  [spectacle] Describing image via llama-4-scout...`,
+            COLORS.dim,
+          );
+          try {
+            const desc = await describeImageWithSpectacle(img.path);
+            imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag}: ${img.path}]\n${desc}`;
+          } catch (error: unknown) {
+            imageDescriptionContext += `\n\n[ATTACHED IMAGE ${img.tag} ERROR: ${error instanceof Error ? error.message : String(error)}]`;
+          }
         }
       }
       attachedImages.length = 0; // Clear after processing
@@ -1594,6 +1641,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
         },
       },
       currentSessionId,
+      promptImages.length > 0 ? promptImages : undefined,
     );
   }
 

@@ -64,14 +64,39 @@ export type PermissionDecision = 'allow' | 'deny';
 
 export type OnPermissionRequest = (request: PermissionRequestMsg) => void;
 
+export interface BashStreamChunk {
+  type: 'bash_stream';
+  chunk: string;
+  stream: 'stdout' | 'stderr';
+}
+
+export type OnBashStream = (chunk: string, stream: 'stdout' | 'stderr') => void;
+
+export interface PromptImage {
+  type: 'image';
+  data: string;
+  mimeType: string;
+}
+
 export class FlueProcess {
   private child: ChildProcess | null = null;
   private ready = false;
   private readonly pending = new Map<string, PromptCallbacks>();
   private shutdownRequested = false;
   onPermissionRequest?: OnPermissionRequest;
+  onBashStream?: OnBashStream;
 
   private readonly handleChildMessage = (raw: Record<string, unknown>) => {
+    if (raw.type === 'bash_stream') {
+      if (this.onBashStream != null) {
+        const chunk = typeof raw.chunk === 'string' ? raw.chunk : '';
+        const stream =
+          raw.stream === 'stderr' ? 'stderr' : 'stdout';
+        this.onBashStream(chunk, stream);
+      }
+      return;
+    }
+
     if (raw.type === 'permission_request') {
       if (this.onPermissionRequest != null) {
         this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
@@ -307,6 +332,7 @@ export class FlueProcess {
     message: string,
     callbacks: PromptCallbacks = {},
     sessionId?: string,
+    images?: PromptImage[],
   ): string {
     if (!this.child || !this.ready) {
       throw new Error('Server not started');
@@ -316,6 +342,7 @@ export class FlueProcess {
     this.pending.set(requestId, callbacks);
 
     this.child.send({
+      images: images ?? undefined,
       message,
       requestId,
       sessionId,

@@ -54,6 +54,41 @@ export class ToolUiManager {
     return this.toolGroup;
   }
 
+  /**
+   * Stream live bash output into an entry's content box. Creates a streaming
+   * text renderable on first chunk, updates it on subsequent chunks, and makes
+   * the content visible so the user sees output in real time.
+   */
+  private streamBuffers = new WeakMap<ToolGroupEntry, { text: string; renderable: TextRenderable }>();
+
+  streamToEntry(entry: ToolGroupEntry, chunk: string, _stream: 'stdout' | 'stderr'): void {
+    let buf = this.streamBuffers.get(entry);
+    if (!buf) {
+      const renderable = new TextRenderable(this.ctx.renderer, {
+        content: '',
+        fg: COLORS.dim,
+        id: this.ctx.nextId(),
+        width: '100%',
+      });
+      entry.contentBox.add(renderable);
+      entry.contentBox.visible = true;
+      entry.contentVisible = true;
+      const cur = getTextContent(entry.headerLabel.content);
+      entry.headerLabel.content = cur.replace(/\u25B8$/, '\u25BC');
+      buf = { renderable, text: '' };
+      this.streamBuffers.set(entry, buf);
+    }
+    buf.text += chunk;
+    // Show last N lines to avoid unbounded growth during long commands
+    const lines = buf.text.split('\n');
+    const MAX_LINES = 200;
+    const visible = lines.length > MAX_LINES
+      ? `  ... (${lines.length - MAX_LINES} lines above)\n${lines.slice(-MAX_LINES).join('\n')}`
+      : buf.text;
+    buf.renderable.content = visible;
+    this.ctx.requestScroll();
+  }
+
   clearActiveGroup(): void {
     this.toolGroup = null;
   }

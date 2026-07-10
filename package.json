@@ -7,7 +7,7 @@
   },
   "type": "module",
   "scripts": {
-    "build": "flue build --target node",
+    "build": "flue build --target node && bun run build/patch-server.ts",
     "postinstall": "bun run build/postinstall.ts",
     "test": "bun test",
     "e2e": "bun run build && bun test --timeout=180000 ./testbench/e2e/actual-bin.e2e.ts",
