@@ -8,69 +8,15 @@ Think of it as a local harness that runs on your machine and executes code direc
 
 ---
 
-## Why this exists (and what it does well)
-
-Most coding assistants run as hosted services or require expensive monthly subscriptions. We wanted something that runs locally, respects our filesystem, uses our own Cloudflare accounts, and works reliably even with smaller, faster models.
+## Why this exists
 
 Here is what makes it different:
 
 * **Cloudflare-First**: You run models on your own Cloudflare account. It reuses your local Wrangler OAuth credentials to authenticate instantly.
-* **Actually Reliable Edits**: Cheap or small models often fail when rewriting entire code files. We solve this by using Pi's core engine with `@oh-my-pi/hashline` under the hood. The agent proposes changes as precise, hash-anchored patches, keeping edits fast and extremely stable.
-* **A Terminal UI that feels premium**: Built using `@opentui/core` (no bulky web frameworks). It streams markdown, renders interactive toggle boxes for tools and model thinking blocks, and includes full-screen diff and code viewers with Vim bindings (`j`/`k`, `:q`, etc.).
-* **Safety you can configure**: The agent operates in a local sandbox. Whenever it tries to run a terminal command or edit a file, the TUI blocks and prompts you to allow, deny, or set up an "always allow" rule. If you step away, it auto-denies after 30 seconds.
-* **Mixture of Experts**: The main agent can delegate tasks to specialized, read-only experts (like `logic` for typing issues, `refactor` for cleanups, or `spectacle` for converting pasted terminal screenshots into text descriptions) to preserve context.
-
----
-
-## Architecture
-
-To prevent the terminal UI from locking up during compilation, test suites, or large codebase searches, **lavalamp** separates layout rendering from agent orchestration using a two-process model.
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Developer
-    participant TUI as OpenTUI (Parent Process)
-    participant Server as Flue Server (Child Process)
-    participant Sandbox as Local Sandbox (Shell/FS)
-    participant Sub as Parallel Subagents (Sub-Processes)
-
-    User->>TUI: Input Prompt
-    TUI->>Server: Send prompt message via Node IPC
-    Server->>Server: Run Agent Loop / Determine Tool Call
-    
-    rect rgb(240, 240, 240)
-        note over TUI, Server: Bidirectional Permission Loop
-        Server->>TUI: request_permission
-        TUI->>User: Render yellow approval card
-        User-->>TUI: Approve (y/a)
-        TUI-->>Server: permission_granted
-    end
-    
-    Server->>Sandbox: Execute Tool Action
-    Sandbox-->>Server: Return subprocess stream
-    Server-->>TUI: Stream live bash output
-    
-    opt Parallel Research
-        Server->>TUI: Intercept deploy_parallel_subs
-        TUI->>Sub: Spawn up to 3 isolated research agents
-        Sub-->>TUI: Return findings
-        TUI->>Server: Feed aggregated context back
-    end
-    
-    Server-->>TUI: Stream final text delta & tool results
-    TUI->>User: Render updated UI & file diffs
-```
-
-### Process Coordination & Bidirectional IPC
-
-* **Parent Process (OpenTUI)**: Responsible for terminal rendering, event handling, autocompleting files/skills/commands, and displaying unified diffs. The parent process is also responsible for managing permissions and orchestrating parallel subagent executions.
-* **Child Process (Flue Server)**: Runs the main agent (`build` or `explore`) under `@flue/runtime`. It manages LLM calls, parses tool definitions, and performs local operations on your files.
-* **Two-Way IPC Channel**: Rather than simple one-way piping, the processes maintain a bidirectional channel:
-  * The parent process pushes user prompts to the server.
-  * The server streams text tokens, reasoning steps, tool statuses, and live tool stdout/stderr (`bash_stream`) back to the TUI.
-  * When the server requests a mutating file change or terminal command, it sends a `permission_request` message and pauses. The TUI captures user approval and sends a `permission_response` back to continue execution.
-* **Parallel Research Subagents**: When the `deploy_parallel_subs` tool is triggered, the TUI interceptor handles launching up to 3 separate child processes running parallel research prompts. When complete, their findings are automatically merged and fed back to the parent agent.
+* **Reliable Edits**: Cheap or small models often fail when rewriting entire code files. We solve this by making the agent propose changes as precise, hash-anchored patches, keeping edits fast and extremely stable.
+* **Great Terminal UI**: Built using `@opentui/core` (no bulky web frameworks). It streams markdown, renders interactive toggle boxes for tools and model thinking blocks, and includes full-screen diff and code viewers with Vim bindings (`j`/`k`, `:q`, etc.).
+* **Safety**: The agent operates in a local sandbox. Whenever it tries to run a terminal command or edit a file, the TUI blocks and prompts you to allow, deny, or set up an "always allow" rule. If you step away, it auto-denies after 30 seconds.
+* **Mixture of Experts Design**: The main agent can delegate tasks to specialized, read-only experts (like `logic` for typing issues, `refactor` for cleanups, or `spectacle` for converting pasted terminal screenshots into text descriptions) to preserve context.
 
 ---
 
@@ -173,13 +119,87 @@ When viewing large code blocks or file diffs, the TUI opens a full-screen view. 
 - `g` / `G` — Jump to top / bottom.
 - `:q` / `Esc` / `q` — Close the viewer and go back to chat.
 
+
+---
+
+## Contributing & Development
+
+We use Bun to manage packages and build files:
+
+```bash
+# 1. Install dependencies
+bun install
+
+# 2. Start building server files in watch mode (dist/server.mjs)
+bun run dev
+
+# 3. Build the production target
+bun run build
+
+# 4. Run tests
+bun test
+bun run e2e
+```
+
+---
+
+## Architecture
+
+To prevent the terminal UI from locking up during compilation, or large codebase searches, **lavalamp** separates layout rendering from agent orchestration using a two-process model.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Developer
+    participant TUI as OpenTUI (Parent Process)
+    participant Server as Flue Server (Child Process)
+    participant Sandbox as Local Sandbox (Shell/FS)
+    participant Sub as Parallel Subagents (Sub-Processes)
+
+    User->>TUI: Input Prompt
+    TUI->>Server: Send prompt message via Node IPC
+    Server->>Server: Run Agent Loop / Determine Tool Call
+    
+    rect rgb(240, 240, 240)
+        note over TUI, Server: Bidirectional Permission Loop
+        Server->>TUI: request_permission
+        TUI->>User: Display permission prompt
+        User-->>TUI: Approve (y/a)
+        TUI-->>Server: permission_granted
+    end
+    
+    Server->>Sandbox: Execute Tool Action
+    Sandbox-->>Server: Return subprocess stream
+    Server-->>TUI: Stream live bash output
+    
+    opt Parallel Research
+        Server->>TUI: Intercept deploy_parallel_subs
+        TUI->>Sub: Spawn up to 3 isolated research agents
+        Sub-->>TUI: Return findings
+        TUI->>Server: Feed aggregated context back
+    end
+    
+    Server-->>TUI: Stream final text delta & tool results
+    TUI->>User: Render updated UI & file diffs
+```
+
+### Process Coordination & Bidirectional IPC
+
+* **Parent Process (OpenTUI)**: Responsible for terminal rendering, event handling, autocompleting files/skills/commands, and displaying unified diffs. The parent process is also responsible for managing permissions and orchestrating parallel subagent executions.
+* **Child Process (Flue Server)**: Runs the main agent (`build` or `explore`) under `@flue/runtime`. It manages LLM calls, parses tool definitions, and performs local operations on your files.
+* **Two-Way IPC Channel**: Rather than simple one-way piping, the processes maintain a bidirectional channel:
+  * The parent process pushes user prompts to the server.
+  * The server streams text tokens, reasoning steps, tool statuses, and live tool stdout/stderr (`bash_stream`) back to the TUI.
+  * When the server requests a mutating file change or terminal command, it sends a `permission_request` message and pauses. The TUI captures user approval and sends a `permission_response` back to continue execution.
+* **Parallel Research Subagents**: When the `deploy_parallel_subs` tool is triggered, the TUI interceptor handles launching up to 3 separate child processes running parallel research prompts. When complete, their findings are automatically merged and fed back to the parent agent.
+
 ---
 
 ## Permissions & Security
 
 By default, **lavalamp** operates on a **zero-trust permission model**:
 - **Read-only tools** (e.g., `read`, `grep`, `glob`, `ripgrep`) execute silently without prompts.
-- **Destructive/Mutating tools** (e.g., `write`, `edit`, `rename`, `bash` shell execution) trigger a yellow-border authorization request in the TUI.
+- **Destructive/Mutating tools** (e.g., `write`, `edit`, `rename`, `bash` shell execution) trigger an interactive permission prompt in the TUI.
 - Users can choose:
   - **`[y]` Allow**: Authorize this single command/write.
   - **`[n]` Deny**: Block execution and return an abort error to the LLM.
@@ -212,55 +232,6 @@ graph TD
 ## The Toolbelt Ecosystem
 
 To help you code, search, and refactor, the agent has access to a collection of tools organized into functional groups. The diagram below illustrates how the toolbelt is structured and how each group communicates with the host environment and external services:
-
-```mermaid
-graph LR
-    subgraph Filesystem [File System & Git Sandbox]
-        read[read]
-        write[write]
-        edit[edit]
-        rename[rename]
-        undo[undo / history]
-    end
-
-    subgraph Searching [Search & Discovery]
-        grep[grep / ripgrep]
-        glob[glob]
-        fuzzy[codebase_search]
-        semantic[codebase_semantic_search]
-    end
-
-    subgraph Terminal [Execution Shell]
-        bash[bash]
-    end
-
-    subgraph Intellisense [LSP Client]
-        lsp[lsp_hover / lsp_definition / lsp_references / lsp_rename / lsp_diagnostics]
-    end
-
-    subgraph WebRetrieval [Web & Documentation]
-        web[web_search / fetch_url]
-        deepwiki[deepwiki / load_skill]
-    end
-
-    subgraph MultiAgent [Orchestration & Delegation]
-        subs[deploy_parallel_subs]
-        expert[query_expert]
-        oracle[oracle / doom_loop]
-    end
-
-    %% Communication targets
-    read & write & rename & undo & grep & glob & fuzzy -->|Direct FS Actions| LocalFS[(Local Workspace Filesystem)]
-    edit -->|Patch Edits| Hashline[hashline Patcher]
-    Hashline --> LocalFS
-    semantic -->|Vector Matches| VecDB[(Semantic Vector DB)]
-    bash -->|bash_stream subprocess| LocalOS[Local Shell OS]
-    lsp -->|JSON-RPC / CLI| LS[TS Language Server & oxlint]
-    web -->|HTTPS Queries| Internet((Internet / reader API))
-    deepwiki -->|Local Read| Docs[(Markdown Wikis & Skills)]
-    subs & expert -->|Node.js IPC fork| Processes[Parallel Subagents & MoE Experts]
-    oracle -->|API call| LLM((Secondary LLM Route))
-```
 
 <details>
 <summary><b>Complete Catalog of Available Tools</b></summary>
@@ -364,27 +335,6 @@ If the main agent needs specialized help, it can delegate read-only work to expe
 | `research` | Web searches and API documentation lookups. | `glm-4.7-flash` |
 | `critique` | Security audits and code quality reviews. | `llama-3.3-70b` |
 | `spectacle`| Image/Screenshot translator. | `llama-4-scout` |
-
----
-
-## Contributing & Development
-
-We use Bun to manage packages and build files:
-
-```bash
-# 1. Install dependencies
-bun install
-
-# 2. Start building server files in watch mode (dist/server.mjs)
-bun run dev
-
-# 3. Build the production target
-bun run build
-
-# 4. Run tests
-bun test
-bun run e2e
-```
 
 ---
 
