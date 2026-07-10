@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="generator" content={Astro.generator} />
+		
+		<!-- SEO Meta Tags -->
+		<title>lavalamp — Cloudflare-Native Local AI Coding Harness</title>
+		<meta name="description" content="lavalamp is a local, terminal-based AI coding assistant built for Cloudflare. Run Workers AI models on your own account with zero-trust permissions, hash-anchored edits, and parallel subagents." />
+		<meta name="keywords" content="lavalamp, cloudflare, AI coding, workers ai, local ai, coding assistant, opentui, hashline, local agent, developer tool" />
+		<meta property="og:title" content="lavalamp — Cloudflare-Native Local AI Coding Harness" />
+		<meta property="og:description" content="Sleek, secure, terminal-based AI coding companion. Runs Workers AI models on your own Cloudflare account with hash-anchored edits and zero-trust permissions." />
+		<meta property="og:type" content="website" />
+		
+		<!-- Google Fonts -->
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..800;1,9..144,300..800&family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>
+
+<style is:global>
+	:root {
+		--color-accent: #FF5F1F;
+		--color-blue: #4DB8FF;
+		--color-border: #22222a;
+		--color-cyan: #06B6D4;
+		--color-dark-bg: #090a0f;
+		--color-dim: #555566;
+		--color-focused-border: #FF5F1F;
+		--color-gray: #888899;
+		--color-green: #00BD7D;
+		--color-input-bg: #111218;
+		--color-input-focused: #151620;
+		--color-link: #B866FF;
+		--color-pink: #FF5EF0;
+		--color-plan-accent: #2DD4BF;
+		--color-red: #FF5B66;
+		--color-white: #ffffff;
+		--color-yellow: #EAB308;
+		
+		--font-serif: 'Fraunces', Georgia, serif;
+		--font-mono: 'JetBrains Mono', monospace;
+	}
+
+	*, *::before, *::after {
+		box-sizing: border-box;
+	}
+
+	html {
+		scroll-behavior: smooth;
+	}
+
+	html,
+	body {
+		margin: 0;
+		padding: 0;
+		width: 100%;
+		min-height: 100%;
+		background-color: var(--color-dark-bg);
+		color: var(--color-white);
+		font-family: var(--font-mono); /* Use monospace by default for that clean developer feel */
+		overflow-x: hidden;
+		line-height: 1.6;
+		letter-spacing: -0.01em;
+	}
+
+	/* Custom Scrollbar */
+	::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+	::-webkit-scrollbar-track {
+		background: #16161e;
+	}
+	::-webkit-scrollbar-thumb {
+		background: #33334d;
+		border-radius: 4px;
+	}
+	::-webkit-scrollbar-thumb:hover {
+		background: var(--color-accent);
+	}
+</style>

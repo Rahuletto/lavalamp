@@ -1,0 +1,2300 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+	<!-- Master Layout Grid Container -->
+	<div class="master-grid">
+		
+		<!-- Row 1: Header -->
+		<header class="grid-cell col-12 nav-header font-mono">
+			<a href="#" class="logo">
+				<span class="logo-text">lavalamp</span>
+				<span class="logo-dot"></span>
+			</a>
+			<nav class="nav-links">
+				<a href="#demo">tui-sandbox</a>
+				<a href="#features">features</a>
+				<a href="#architecture">ipc-flow</a>
+				<a href="#toolbelt">toolbelt</a>
+				<a href="#setup" class="cta-link">install</a>
+			</nav>
+			<a href="https://github.com/rahuletto/lavalamp" target="_blank" rel="noopener noreferrer" class="github-link">
+				github
+			</a>
+		</header>
+
+		<!-- Row 2: Hero Section (Full Width Column) -->
+		<section class="grid-cell col-12 hero-left-cell">
+			<div class="cell-padding hero-intro">
+				<div class="badge font-mono">VERSION 0.1.0 // CLOUDFLARE WORKERS AI</div>
+				<h1 class="hero-title">
+					There are many AI assistants, <br />
+					but this one is <span class="accent-italic">yours.</span>
+				</h1>
+				<p class="hero-desc font-serif">
+					lavalamp is a minimal, local AI coding harness. Run Workers AI workloads directly on your Cloudflare account, billed directly to you. Edits files locally via precise, hash-anchored patches.
+				</p>
+				
+				<!-- Simple CLI Installation command (curl only) -->
+				<div class="install-box font-mono">
+					<div class="install-command-row">
+						<code class="shell-prompt" id="installCmd">curl -fsSL https://lavalamp.marban.lol/install.sh | bash</code>
+						<button type="button" class="install-copy-btn" id="copyInstallBtn">Copy</button>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Row 3: TUI Terminal Showcase (Full Width Column) -->
+		<section class="grid-cell col-12 demo-showcase-cell">
+			<!-- TUI Terminal Replica -->
+			<div class="tui-wrapper font-mono">
+				<!-- TUI Header -->
+				<div class="tui-header">
+					<span class="tui-header-title">lavalamp</span>
+				</div>
+
+				<!-- TUI Scroll View -->
+				<div class="tui-messages" id="tuiMessagesPanel">
+					<!-- Idle ASCII logo -->
+					<div class="tui-lava-lamp-container" id="tuiLavaLampBox">
+						<pre class="tui-lava-lamp-art" id="tuiLavaLampArt">
+       _____
+      /     \
+      |_____|
+      /  _  \
+     /  ( )  \
+    /    `    \
+   /     _     \
+  /     ( )     \
+  \      )\     /
+   \    (  )   /
+    \  ,-(   /
+     \/-----\/
+     |       |
+     /       \
+    /________\--._
+               .-._)
+              (__
+                 -`|E
+						</pre>
+
+					</div>
+
+					<!-- Output streams here -->
+					<div class="tui-chat-stream" id="tuiChatStream"></div>
+				</div>
+
+				<!-- Stacked TUI Panels -->
+				<div class="tui-panel-box" id="tuiTaskBox" style="display: none;">
+					<div class="tui-panel-border">┌ tasks ────────────────────────────────────────────────────────────────────────┐</div>
+					<div class="tui-panel-row" id="task-bst">  [ ] #1 create LRU cache in src/cache.ts</div>
+					<div class="tui-panel-row" id="task-test">  [ ] #2 integrate with db in src/db.ts</div>
+					<div class="tui-panel-border">└────────────────────────────────────────────────────────────────────────────────┘</div>
+				</div>
+
+				<!-- Task Status Spinner Bar -->
+				<div class="tui-task-status-bar" id="tuiTaskStatusBar" style="display: none;">
+					<span class="tui-spinner" id="tuiSpinner">⠋</span>
+					<span class="tui-task-status-text" id="tuiTaskStatusText">idle</span>
+				</div>
+
+				<!-- Completion Box Autocomplete Replica -->
+				<div class="tui-completion-box" id="tuiCompletionBox" style="display: none;">
+					<div class="tui-completion-border">┌────────────────────────────────────────────────────────────────────────────────┐</div>
+					<div class="tui-completion-row active" id="ac-clear"><span>  /clear</span><span class="ac-desc">clear session  </span></div>
+					<div class="tui-completion-row" id="ac-help"><span>  /help</span><span class="ac-desc">show help  </span></div>
+					<div class="tui-completion-row" id="ac-quit"><span>  /quit</span><span class="ac-desc">exit lavalamp  </span></div>
+					<div class="tui-completion-border">└────────────────────────────────────────────────────────────────────────────────┘</div>
+				</div>
+
+				<!-- Input & Dividers -->
+				<div class="tui-separator">────────────────────────────────────────────────────────────────────────────────</div>
+				<div class="tui-input-row" id="tuiInputRow">
+					<span class="tui-prompt-arrow">┃</span>
+					<div class="tui-input-field" id="tuiInputField">Type a prompt...</div>
+				</div>
+				<div class="tui-separator">────────────────────────────────────────────────────────────────────────────────</div>
+
+				<!-- Status Bar -->
+				<div class="tui-status-bar">
+					<span class="tui-status-spinner" id="tuiStatusSpinner"></span>
+					<span class="tui-status-text">model: @cf/zai-org/glm-4.7-flash</span>
+					<span class="tui-status-path">/Users/dev/math-lib</span>
+				</div>
+			</div>
+		</section>
+
+		<!-- Rows 4 & 5: Features (2x2 Grid) -->
+		<section id="features" class="grid-cell col-6 feature-cell">
+			<div class="cell-padding">
+				<div class="feature-meta font-mono">02.1 / ARCHITECTURE</div>
+				<h3 class="feature-heading font-serif">cloudflare workers ai</h3>
+				<p class="feature-text font-mono">
+					No subscription markups. Connects using Wrangler credentials, executing LLM inference tasks billed directly to your account.
+				</p>
+			</div>
+		</section>
+		<section class="grid-cell col-6 feature-cell">
+			<div class="cell-padding">
+				<div class="feature-meta font-mono">02.2 / EFFICIENCY</div>
+				<h3 class="feature-heading font-serif">hashline patches</h3>
+				<p class="feature-text font-mono">
+					Integrated `@oh-my-pi/hashline` diff replacements. Applies target line updates matching specific hashes. Avoids full file transfers.
+				</p>
+			</div>
+		</section>
+		<section class="grid-cell col-6 feature-cell">
+			<div class="cell-padding">
+				<div class="feature-meta font-mono">02.3 / SECURITY</div>
+				<h3 class="feature-heading font-serif">interactive permission gate</h3>
+				<p class="feature-text font-mono">
+					No unexpected changes. Prompts for verification on file updates or bash script execution. Automatically fails if left unattended.
+				</p>
+			</div>
+		</section>
+		<section class="grid-cell col-6 feature-cell">
+			<div class="cell-padding">
+				<div class="feature-meta font-mono">02.4 / FLOW</div>
+				<h3 class="feature-heading font-serif">task lists</h3>
+				<p class="feature-text font-mono">
+					Define task lists before running edits. Status elements update inside border checklists as completions register.
+				</p>
+			</div>
+		</section>
+
+		<!-- Row 6: Two-Process Flow Diagram (Full Width) -->
+		<section id="architecture" class="grid-cell col-12 arch-cell">
+			<div class="section-header font-mono">
+				<span class="sec-number">03 /</span>
+				<h2 class="sec-title">dual-process architecture</h2>
+			</div>
+
+			<div class="arch-brutalist font-mono">
+				<div class="arch-node-box">
+					<div class="node-title">[ parent process ]</div>
+					<div class="node-name font-serif">OpenTUI Core</div>
+					<p class="node-details text-dim font-serif">Manages keyboard inputs, scroll widgets, Vim unified diff panels, and blocks execution until permission is granted.</p>
+				</div>
+				<div class="arch-pipe-box">
+					<div class="pipe-line">────────────────────────────────────</div>
+					<div class="pipe-text">bidirectional node ipc</div>
+					<div class="pipe-line">────────────────────────────────────</div>
+				</div>
+				<div class="arch-node-box">
+					<div class="node-title">[ child process ]</div>
+					<div class="node-name font-serif">Flue Server</div>
+					<p class="node-details text-dim font-serif">Resolves LLM tasks, executes files/bash scripts, tracks project memory logs, and runs semantic vector embeddings.</p>
+				</div>
+			</div>
+		</section>
+
+		<!-- Row 7: Toolbelt Tabs (Full Width) -->
+		<section id="toolbelt" class="grid-cell col-12 toolbelt-cell">
+			<div class="section-header font-mono">
+				<span class="sec-number">04 /</span>
+				<h2 class="sec-title">toolbelt ecosystem</h2>
+			</div>
+
+			<div class="tabs-brutalist">
+				<!-- Tab List -->
+				<div class="tabs-list font-mono" role="tablist">
+					<button class="tabs-btn active" data-tab="mutation" role="tab">mutation</button>
+					<button class="tabs-btn" data-tab="search" role="tab">exploration</button>
+					<button class="tabs-btn" data-tab="lsp" role="tab">intellisense</button>
+					<button class="tabs-btn" data-tab="experts" role="tab">subagents-experts</button>
+				</div>
+
+				<!-- Panels -->
+				<div class="panels-list font-mono">
+					<!-- Mutation -->
+					<div class="panel-item active" id="panel-mutation" role="tabpanel">
+						<table class="brutalist-table">
+							<thead>
+								<tr>
+									<th>Tool</th>
+									<th>Description</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td class="tab-accent-text">read</td>
+									<td>Inspects target line slices or full files.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">write</td>
+									<td>Creates files in workspace.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">edit</td>
+									<td>Applies patches via `@oh-my-pi/hashline`.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">undo / history</td>
+									<td>Reverts file changes via ChangeTracker mutation logs.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Search -->
+					<div class="panel-item" id="panel-search" role="tabpanel">
+						<table class="brutalist-table">
+							<thead>
+								<tr>
+									<th>Tool</th>
+									<th>Description</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td class="tab-accent-text">ripgrep</td>
+									<td>Fast regex codebase search wrapping the `rg` binary.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">codebase_semantic_search</td>
+									<td>Vector-indexed semantic code search using embeddings.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">glob / grep</td>
+									<td>Finds paths or text patterns matching glob filters.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<!-- LSP -->
+					<div class="panel-item" id="panel-lsp" role="tabpanel">
+						<table class="brutalist-table">
+							<thead>
+								<tr>
+									<th>Tool</th>
+									<th>Description</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td class="tab-accent-text">lsp_hover</td>
+									<td>Inspects type declarations and comments.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">lsp_definition</td>
+									<td>Goes directly to a symbol's declaration path.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">lsp_references</td>
+									<td>Finds where a symbol is referenced across files.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">lsp_diagnostics</td>
+									<td>Checks for typescript-language-server and lint warnings.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+
+					<!-- Experts -->
+					<div class="panel-item" id="panel-experts" role="tabpanel">
+						<table class="brutalist-table">
+							<thead>
+								<tr>
+									<th>Tool</th>
+									<th>Description</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td class="tab-accent-text">deploy_parallel_subs</td>
+									<td>Spawns up to 3 parallel Flue processes for deep research.</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">query_expert</td>
+									<td>Spawns a specialized read-only advisor (ui, logic, refactor).</td>
+								</tr>
+								<tr>
+									<td class="tab-accent-text">oracle</td>
+									<td>Fetches conceptual checks from lightweight secondary models.</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Row 8: Setup Guide (Full Width) -->
+		<section id="setup" class="grid-cell col-12 setup-cell font-mono">
+			<div class="section-header">
+				<span class="sec-number">05 /</span>
+				<h2 class="sec-title">quickstart setup</h2>
+			</div>
+
+			<div class="setup-grid">
+				<div class="setup-col">
+					<div class="step-badge">STEP_01</div>
+					<h3 class="step-title font-serif">install binary</h3>
+					<pre class="setup-code">curl -fsSL https://lavalamp.marban.lol/install.sh | bash</pre>
+				</div>
+				<div class="setup-col">
+					<div class="step-badge">STEP_02</div>
+					<h3 class="step-title font-serif">wrangler login</h3>
+					<pre class="setup-code">lavalamp login</pre>
+				</div>
+				<div class="setup-col">
+					<div class="step-badge">STEP_03</div>
+					<h3 class="step-title font-serif">launch harness</h3>
+					<pre class="setup-code">lavalamp</pre>
+				</div>
+			</div>
+
+			<!-- Terminal Configuration Box -->
+			<div class="terminal-config-box">
+				<div class="config-line"><span class="comment-text"># map default model path:</span></div>
+				<div class="config-line">$ lavalamp config set model @cf/zai-org/glm-4.7-flash</div>
+				<div class="config-line"><span class="comment-text"># check configuration details:</span></div>
+				<div class="config-line">$ lavalamp config show</div>
+				<div class="config-line green-text">⚙ Active Profile Configured:</div>
+				<div class="config-line">  Provider: cloudflare-workers-ai</div>
+				<div class="config-line">  Model: @cf/zai-org/glm-4.7-flash</div>
+				<div class="config-line">  AI Gateway: bypass (direct client)</div>
+			</div>
+		</section>
+
+		<!-- Row 9: Footer (Full Width) -->
+		<footer class="grid-cell col-12 footer-cell font-mono">
+			<div class="footer-brand">
+				<pre class="footer-ascii-logo">
+       _____
+      /     \
+      |_____|
+      /  _  \
+     /  ( )  \
+    /    `    \
+   /     _     \
+  /     ( )     \
+  \      )\     /
+   \    (  )   /
+    \  ,-(   /
+     \/-----\/
+     |       |
+     /       \
+    /________\--._
+               .-._)
+              (__
+                 -`|E
+				</pre>
+				<span class="footer-sub font-serif">local cloudflare AI coding harness.</span>
+			</div>
+			<div class="footer-links-grid">
+				<div class="footer-links-col">
+					<span class="col-header">RESOURCES</span>
+					<a href="https://github.com/rahuletto/lavalamp">github-repo</a>
+					<a href="https://github.com/rahuletto/lavalamp/blob/main/LICENSE">mit-license</a>
+				</div>
+				<div class="footer-links-col">
+					<span class="col-header">SYSTEMS</span>
+					<a href="https://astro.build">astro-static</a>
+					<a href="https://flue.dev">flue-runtime</a>
+					<a href="https://developers.cloudflare.com/workers-ai/">workers-ai</a>
+				</div>
+			</div>
+		</footer>
+
+	</div>
+</Layout>
+
+<style is:global>
+	/* =========================================
+	   BRUTALIST GRID DESIGN SYSTEM
+	   ========================================= */
+	
+	/* Layout Master Grid */
+	.master-grid {
+		display: grid;
+		grid-template-columns: repeat(12, 1fr);
+		max-width: 1100px;
+		margin: 0 auto;
+		border-left: 1px solid var(--color-border);
+		border-right: 1px solid var(--color-border);
+		box-sizing: border-box;
+	}
+
+	/* Responsive Grid Cells */
+	.grid-cell {
+		border-bottom: 1px solid var(--color-border);
+		box-sizing: border-box;
+	}
+
+	.col-12 {
+		grid-column: span 12;
+	}
+
+	.col-6 {
+		grid-column: span 12;
+	}
+
+	@media (min-width: 768px) {
+		.col-6 {
+			grid-column: span 6;
+		}
+	}
+
+	.cell-padding {
+		padding: 4rem 2rem;
+	}
+
+	/* Nav Header */
+	.nav-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 1.5rem 2rem;
+	}
+
+	.logo {
+		display: flex;
+		align-items: center;
+		text-decoration: none;
+		gap: 0.5rem;
+	}
+
+	.logo-text {
+		font-family: var(--font-serif);
+		font-weight: 400;
+		font-size: 1.5rem;
+		letter-spacing: -0.02em;
+		color: var(--color-white);
+		text-transform: lowercase;
+	}
+
+	.logo-dot {
+		width: 7px;
+		height: 7px;
+		background-color: var(--color-accent);
+		border-radius: 0;
+	}
+
+	.nav-links {
+		display: flex;
+		gap: 2rem;
+	}
+
+	.nav-links a {
+		color: var(--color-gray);
+		text-decoration: none;
+		font-size: 0.85rem;
+		font-weight: 500;
+		text-transform: lowercase;
+		transition: color 0.1s ease;
+	}
+
+	.nav-links a:hover {
+		color: var(--color-white);
+	}
+
+	.nav-links a.cta-link {
+		color: var(--color-white);
+		border-bottom: 2px solid var(--color-accent);
+	}
+
+	.github-link {
+		text-decoration: none;
+		color: var(--color-gray);
+		font-size: 0.85rem;
+		border-bottom: 1px solid transparent;
+		transition: all 0.1s ease;
+	}
+
+	.github-link:hover {
+		color: var(--color-white);
+		border-bottom-color: var(--color-white);
+	}
+
+	/* Hero Section */
+	.hero-left-cell {
+		display: flex;
+		align-items: center;
+	}
+
+	@media (min-width: 768px) {
+		.hero-left-cell {
+			border-right: 1px solid var(--color-border);
+		}
+	}
+
+	.hero-intro {
+		display: flex;
+		flex-direction: column;
+		gap: 1.5rem;
+	}
+
+	.badge {
+		font-size: 0.72rem;
+		color: var(--color-accent);
+		letter-spacing: 0.08em;
+	}
+
+	.hero-title {
+		font-family: var(--font-serif);
+		font-size: 3.2rem;
+		font-weight: 300;
+		line-height: 1.15;
+		letter-spacing: -0.03em;
+		margin: 0;
+		text-transform: none;
+		color: var(--color-white);
+	}
+
+	.accent-italic {
+		font-style: italic;
+		color: var(--color-accent);
+	}
+
+	.hero-details {
+		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		height: 100%;
+		gap: 2rem;
+		padding: 4rem 2rem;
+	}
+
+	.hero-desc {
+		font-size: 1.1rem;
+		font-weight: 300;
+		color: var(--color-gray);
+		line-height: 1.6;
+		margin: 0;
+		max-width: 480px;
+	}
+
+	/* Brutalist Command Box / Switcher */
+	.install-box {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--color-border);
+		background-color: var(--color-input-bg);
+		max-width: 480px;
+	}
+
+	.install-tabs {
+		display: flex;
+		background-color: #0b0c12;
+		border-bottom: 1px solid var(--color-border);
+	}
+
+	.install-tab {
+		flex-grow: 1;
+		background: none;
+		border: none;
+		color: var(--color-dim);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		padding: 0.5rem 0;
+		cursor: pointer;
+		transition: all 0.1s ease;
+		text-align: center;
+	}
+
+	.install-tab:hover {
+		color: var(--color-white);
+	}
+
+	.install-tab.active {
+		color: var(--color-accent);
+		background-color: var(--color-input-bg);
+		font-weight: bold;
+	}
+
+	.install-command-row {
+		display: flex;
+		align-items: center;
+		padding: 0.75rem 1rem;
+		gap: 1rem;
+	}
+
+	.shell-prompt {
+		flex-grow: 1;
+		font-size: 0.82rem;
+		color: var(--color-white);
+		white-space: nowrap;
+		overflow-x: auto;
+		display: block;
+		padding: 0.2rem 0;
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+
+	.shell-prompt::-webkit-scrollbar {
+		display: none;
+	}
+
+	.install-copy-btn {
+		background-color: transparent;
+		border: 1px solid var(--color-border);
+		color: var(--color-white);
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		padding: 0.25rem 0.75rem;
+		cursor: pointer;
+		transition: all 0.1s ease;
+	}
+
+	.install-copy-btn:hover {
+		background-color: var(--color-white);
+		color: var(--color-dark-bg);
+		border-color: var(--color-white);
+	}
+
+	/* Sandbox TUI Window Section */
+	.sandbox-cell {
+		padding: 4rem 2rem;
+	}
+
+	.section-header {
+		display: flex;
+		align-items: baseline;
+		gap: 0.5rem;
+		margin-bottom: 2.5rem;
+	}
+
+	.sec-number {
+		font-size: 0.85rem;
+		color: var(--color-accent);
+		font-weight: 700;
+	}
+
+	.sec-title {
+		font-family: var(--font-serif);
+		font-size: 1.8rem;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0;
+		text-transform: lowercase;
+	}
+
+	.sandbox-container {
+		display: grid;
+		grid-template-columns: 1fr;
+		align-items: start;
+	}
+
+	/* 1:1 TUI Sandbox Replica (with corner brackets matching pi.dev) */
+	.tui-figure-frame {
+		position: relative;
+		margin: 0;
+		padding: 1.5rem;
+		background-color: #0b0c10;
+		border: 1px solid var(--color-border);
+		box-sizing: border-box;
+	}
+
+	/* Corner Bracket absolute placements */
+	.figure-corner {
+		position: absolute;
+		width: 12px;
+		height: 12px;
+		border: 2px solid var(--color-accent);
+		z-index: 10;
+	}
+
+	.figure-corner--tl {
+		top: -1px;
+		left: -1px;
+		border-right: none;
+		border-bottom: none;
+	}
+
+	.figure-corner--tr {
+		top: -1px;
+		right: -1px;
+		border-left: none;
+		border-bottom: none;
+	}
+
+	.figure-corner--bl {
+		bottom: -1px;
+		left: -1px;
+		border-right: none;
+		border-top: none;
+	}
+
+	.figure-corner--br {
+		bottom: -1px;
+		right: -1px;
+		border-left: none;
+		border-top: none;
+	}
+
+	.tui-wrapper {
+		background-color: #1a1b26;
+		border: 1px solid #333333;
+		display: flex;
+		flex-direction: column;
+		height: 600px;
+		overflow: hidden;
+		box-sizing: border-box;
+		position: relative;
+		padding: 0;
+	}
+
+	.tui-header {
+		padding: 0.75rem 1.5rem;
+		height: auto;
+		display: flex;
+		align-items: center;
+		font-size: 0.82rem;
+		box-sizing: border-box;
+	}
+
+	.tui-header-title {
+		font-weight: bold;
+		color: var(--color-accent);
+	}
+
+	.tui-messages {
+		flex-grow: 1;
+		padding: 1.25rem 1.5rem;
+		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		box-sizing: border-box;
+	}
+
+	.tui-lava-lamp-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		flex-grow: 1;
+		padding: 1rem 0;
+	}
+
+	.tui-lava-lamp-art {
+		color: var(--color-accent);
+		font-size: 0.72rem;
+		line-height: 1.15;
+		margin: 0 0 0.8rem 0;
+		text-align: left;
+		white-space: pre;
+	}
+
+
+
+	.tui-chat-stream {
+		display: none;
+		flex-direction: column;
+		gap: 0.75rem;
+		font-size: 0.8rem;
+		padding-bottom: 0.5rem;
+	}
+
+	.tui-panel-box {
+		padding: 0.25rem 1.5rem;
+		display: flex;
+		flex-direction: column;
+		box-sizing: border-box;
+		margin-bottom: 0.4rem;
+	}
+
+	.tui-panel-border {
+		color: var(--color-accent);
+		font-weight: bold;
+		white-space: nowrap;
+		overflow: hidden;
+		font-size: 0.78rem;
+	}
+
+	.tui-panel-row {
+		color: var(--color-white);
+		font-size: 0.78rem;
+		line-height: 1.35;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.tui-panel-row.active {
+		color: var(--color-accent);
+	}
+
+	.tui-panel-row.done {
+		color: var(--color-dim);
+		text-decoration: line-through;
+	}
+
+	.tui-task-status-bar {
+		padding: 0.25rem 1.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 0.78rem;
+		color: var(--color-green);
+		height: auto;
+		box-sizing: border-box;
+	}
+
+	.tui-spinner {
+		color: var(--color-accent);
+		font-weight: bold;
+	}
+
+	.tui-input-row {
+		background-color: #24283b;
+		padding: 0.75rem 1.5rem;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		height: auto;
+		box-sizing: border-box;
+		border-left: 3px solid transparent;
+		transition: all 0.2s ease;
+	}
+
+	.tui-input-row.plan-active {
+		border-left-color: var(--color-plan-accent);
+	}
+
+	.tui-input-row.plan-active .tui-prompt-arrow {
+		color: var(--color-plan-accent);
+	}
+
+	.tui-prompt-arrow {
+		color: var(--color-accent);
+		font-weight: 700;
+		font-size: 0.82rem;
+	}
+
+	.tui-input-field {
+		flex-grow: 1;
+		font-size: 0.8rem;
+		color: var(--color-white);
+		outline: none;
+	}
+
+	.tui-plan-badge {
+		font-size: 0.7rem;
+		font-weight: 700;
+		background-color: rgba(45, 212, 191, 0.08);
+		color: var(--color-plan-accent);
+		border: 1px solid rgba(45, 212, 191, 0.2);
+		padding: 0.1rem 0.4rem;
+		border-radius: 2px;
+		display: none;
+		letter-spacing: 0.05em;
+	}
+
+	.tui-status-bar {
+		padding: 0.6rem 1.5rem;
+		display: flex;
+		font-size: 0.75rem;
+		color: var(--color-gray);
+		height: auto;
+		box-sizing: border-box;
+	}
+
+	.tui-status-spinner {
+		color: var(--color-accent);
+		font-weight: bold;
+		margin-right: 0.5ch;
+	}
+
+	.tui-status-mode {
+		color: var(--color-plan-accent);
+		margin-right: 1ch;
+		font-weight: bold;
+	}
+
+	.tui-status-text {
+		flex-grow: 1;
+	}
+
+	.tui-status-path {
+		color: var(--color-gray);
+	}
+
+	.tui-separator {
+		color: var(--color-border);
+		white-space: nowrap;
+		overflow: hidden;
+		font-size: 0.75rem;
+		line-height: 1;
+		user-select: none;
+	}
+
+	.tui-completion-box {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		font-family: var(--font-mono);
+		font-size: 0.72rem;
+		box-sizing: border-box;
+		background-color: #1a1b26;
+	}
+
+	.tui-completion-border {
+		color: var(--color-border);
+		white-space: nowrap;
+		overflow: hidden;
+		line-height: 1;
+		user-select: none;
+	}
+
+	.tui-completion-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.15rem 1rem;
+		color: var(--color-gray);
+		user-select: none;
+	}
+
+	.tui-completion-row.active {
+		background-color: rgba(255, 95, 31, 0.12);
+		color: var(--color-accent);
+		font-weight: bold;
+	}
+
+	.tui-completion-row .ac-desc {
+		color: #555566;
+	}
+
+	/* Dynamic stream styles */
+	.sim-prompt {
+		margin: 0.4rem 0;
+	}
+
+	.sim-thinking {
+		color: var(--color-link);
+		margin: 0.4rem 0;
+	}
+
+	.clickable-thinking {
+		cursor: pointer;
+		user-select: none;
+		font-weight: bold;
+	}
+
+	.clickable-thinking:hover {
+		text-decoration: underline;
+	}
+
+	.t-accent {
+		color: var(--color-accent);
+		font-weight: bold;
+	}
+
+	.t-link {
+		color: var(--color-link);
+		text-decoration: underline;
+		cursor: pointer;
+	}
+
+	.t-link:hover {
+		color: var(--color-accent);
+	}
+
+	.sim-thinking-details {
+		color: var(--color-gray);
+		font-size: 0.74rem;
+		margin-top: 0.2rem;
+	}
+
+	.sim-tool-group {
+		margin: 0.4rem 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.sim-tool-group-header {
+		color: var(--color-green);
+		font-weight: bold;
+		font-size: 0.78rem;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.sim-tool-entry {
+		padding-left: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.sim-tool-entry-header {
+		color: var(--color-gray);
+		font-size: 0.74rem;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.sim-tool-entry-body {
+		padding-left: 1rem;
+		font-size: 0.74rem;
+		color: var(--color-white);
+	}
+
+	/* 1:1 Code Viewer Replica */
+	.code-viewer-replica {
+		display: flex;
+		flex-direction: column;
+		width: 100%;
+		margin: 0.3rem 0;
+	}
+
+	.code-viewer-line {
+		display: flex;
+		font-size: 0.72rem;
+		line-height: 1.4;
+	}
+
+	.code-line-num {
+		width: 4ch;
+		text-align: right;
+		padding-right: 1ch;
+		color: #555566;
+		user-select: none;
+	}
+
+	.code-line-sep {
+		color: #333333;
+		margin-right: 1.5ch;
+		user-select: none;
+	}
+
+	.code-line-content {
+		color: #ffffff;
+		white-space: pre;
+	}
+
+	/* Syntax Highlighting Spans */
+	.tok-keyword { color: #FF7B72; font-weight: bold; }
+	.tok-func { color: #D2A8FF; }
+	.tok-type { color: #FFA657; }
+	.tok-string { color: #A5D6FF; }
+	.tok-comment { color: #8B949E; }
+
+	.sim-diff-panel {
+		margin-top: 0.3rem;
+		width: 100%;
+	}
+
+	.sim-diff-header {
+		padding: 0.2rem 0;
+		font-size: 0.72rem;
+		color: var(--color-gray);
+	}
+
+	.sim-diff-body {
+		padding: 0.2rem 0;
+		font-size: 0.72rem;
+		line-height: 1.35;
+	}
+
+	.diff-del { color: var(--color-red); background-color: rgba(255, 91, 102, 0.05); display: block; }
+	.diff-add { color: var(--color-green); background-color: rgba(0, 189, 125, 0.05); display: block; }
+	.diff-ctx { color: var(--color-dim); display: block; }
+
+	.sim-perm-request {
+		margin-top: 0.35rem;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.sim-perm-border {
+		color: var(--color-yellow);
+		font-weight: bold;
+		white-space: nowrap;
+		overflow: hidden;
+		font-size: 0.78rem;
+	}
+
+	.sim-perm-row {
+		color: var(--color-white);
+		font-size: 0.78rem;
+		line-height: 1.35;
+	}
+
+	.sim-perm-btn-row {
+		margin-top: 0.25rem;
+		display: flex;
+		gap: 1.5rem;
+		padding-left: 2ch;
+	}
+
+	.sim-perm-btn {
+		font-family: var(--font-mono);
+		font-size: 0.74rem;
+		cursor: pointer;
+		border: none;
+		background: none;
+		padding: 0;
+		color: var(--color-yellow);
+		border-bottom: 1px dashed var(--color-yellow);
+	}
+
+	.sim-perm-btn:hover {
+		color: var(--color-white);
+		border-bottom-style: solid;
+	}
+
+	/* Features Cells */
+	.feature-cell {
+		transition: background-color 0.15s ease;
+	}
+
+	.feature-cell:hover {
+		background-color: #0d0f17;
+	}
+
+	@media (min-width: 768px) {
+		.feature-cell:nth-child(even) {
+			border-right: 1px solid var(--color-border);
+		}
+	}
+
+	.feature-meta {
+		font-size: 0.7rem;
+		color: var(--color-accent);
+		margin-bottom: 1rem;
+		font-weight: 700;
+	}
+
+	.feature-heading {
+		font-family: var(--font-serif);
+		font-size: 1.8rem;
+		font-weight: 400;
+		letter-spacing: -0.02em;
+		margin: 0 0 1rem 0;
+		text-transform: lowercase;
+		color: var(--color-white);
+	}
+
+	.feature-text {
+		font-size: 0.85rem;
+		color: var(--color-gray);
+		line-height: 1.6;
+		margin: 0;
+	}
+
+	/* Architecture flow (Brutalist Node Flow) */
+	.arch-cell {
+		padding: 4rem 2rem;
+	}
+
+	.arch-brutalist {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 1rem;
+		margin-top: 1rem;
+	}
+
+	@media (min-width: 900px) {
+		.arch-brutalist {
+			flex-direction: row;
+			align-items: center;
+			justify-content: space-between;
+			gap: 1.5rem;
+		}
+	}
+
+	.arch-node-box {
+		border: 1px solid var(--color-border);
+		background-color: var(--color-input-bg);
+		padding: 2rem;
+		flex-grow: 1;
+		flex-basis: 0;
+	}
+
+	.node-title {
+		font-size: 0.72rem;
+		color: var(--color-accent);
+		margin-bottom: 0.5rem;
+		font-weight: 700;
+	}
+
+	.node-name {
+		font-family: var(--font-serif);
+		font-size: 1.5rem;
+		font-weight: 400;
+		margin-bottom: 1rem;
+		color: var(--color-white);
+	}
+
+	.node-details {
+		font-size: 0.88rem;
+		line-height: 1.5;
+		margin: 0;
+	}
+
+	.arch-pipe-box {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		flex-shrink: 0;
+	}
+
+	@media (min-width: 900px) {
+		.arch-pipe-box {
+			width: 140px;
+		}
+	}
+
+	.pipe-line {
+		color: var(--color-border);
+		font-size: 0.75rem;
+		white-space: nowrap;
+		overflow: hidden;
+		width: 100%;
+		text-align: center;
+	}
+
+	.pipe-text {
+		font-size: 0.68rem;
+		color: var(--color-plan-accent);
+		text-transform: uppercase;
+		font-weight: 700;
+		letter-spacing: 0.05em;
+	}
+
+	/* Toolbelt tabs (Brutalist) */
+	.toolbelt-cell {
+		padding: 4rem 2rem;
+	}
+
+	.tabs-brutalist {
+		border: 1px solid var(--color-border);
+	}
+
+	.tabs-list {
+		display: flex;
+		background-color: var(--color-input-bg);
+		border-bottom: 1px solid var(--color-border);
+		overflow-x: auto;
+	}
+
+	.tabs-btn {
+		flex-grow: 1;
+		background: none;
+		border: none;
+		border-bottom: 2px solid transparent;
+		color: var(--color-dim);
+		padding: 1rem 0;
+		font-family: var(--font-mono);
+		font-size: 0.82rem;
+		font-weight: 500;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		text-align: center;
+		white-space: nowrap;
+	}
+
+	.tabs-btn:hover {
+		color: var(--color-white);
+	}
+
+	.tabs-btn.active {
+		color: var(--color-accent);
+		border-bottom-color: var(--color-accent);
+		background-color: var(--color-dark-bg);
+	}
+
+	.panels-list {
+		background-color: var(--color-dark-bg);
+	}
+
+	.panel-item {
+		display: none;
+		padding: 1.5rem;
+	}
+
+	.panel-item.active {
+		display: block;
+	}
+
+	.brutalist-table {
+		width: 100%;
+		border-collapse: collapse;
+		text-align: left;
+		font-size: 0.82rem;
+	}
+
+	.brutalist-table th {
+		color: var(--color-dim);
+		border-bottom: 1px solid var(--color-border);
+		padding-bottom: 0.75rem;
+		font-weight: 600;
+	}
+
+	.brutalist-table td {
+		padding: 1rem 0;
+		border-bottom: 1px solid rgba(255,255,255,0.02);
+		vertical-align: top;
+		line-height: 1.5;
+	}
+
+	.brutalist-table tr:last-child td {
+		border-bottom: none;
+	}
+
+	.tab-accent-text {
+		color: var(--color-accent);
+		font-weight: 700;
+		width: 220px;
+	}
+
+	/* Setup Guide */
+	.setup-cell {
+		padding: 4rem 2rem;
+	}
+
+	.setup-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 1.5rem;
+		margin-bottom: 2.5rem;
+	}
+
+	.setup-col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.step-badge {
+		font-size: 0.7rem;
+		color: var(--color-accent);
+		font-weight: 700;
+	}
+
+	.step-title {
+		font-family: var(--font-serif);
+		font-size: 1.4rem;
+		font-weight: 400;
+		margin: 0;
+		color: var(--color-white);
+		text-transform: lowercase;
+	}
+
+	.setup-code {
+		background-color: var(--color-input-bg);
+		border: 1px solid var(--color-border);
+		padding: 0.75rem 1rem;
+		font-size: 0.82rem;
+		color: var(--color-white);
+		overflow-x: auto;
+		margin: 0;
+	}
+
+	.terminal-config-box {
+		background-color: #0b0c12;
+		border: 1px solid var(--color-border);
+		padding: 1.25rem;
+		font-size: 0.82rem;
+		line-height: 1.6;
+		color: var(--color-white);
+	}
+
+	.config-line {
+		margin-bottom: 0.25rem;
+	}
+
+	.comment-text {
+		color: var(--color-dim);
+	}
+
+	.green-text {
+		color: var(--color-green);
+	}
+
+	/* Footer styling */
+	.footer-cell {
+		padding: 4rem 2rem;
+		display: flex;
+		flex-direction: column;
+		gap: 3rem;
+	}
+
+	.footer-brand {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.footer-ascii-logo {
+		color: var(--color-accent);
+		font-size: 0.62rem;
+		line-height: 1.15;
+		margin: 0 0 1rem 0;
+		text-align: left;
+		white-space: pre;
+	}
+
+	.footer-sub {
+		font-size: 0.9rem;
+		color: var(--color-gray);
+	}
+
+	.footer-links-grid {
+		display: flex;
+		gap: 6rem;
+	}
+
+	.footer-links-col {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+	}
+
+	.col-header {
+		font-size: 0.75rem;
+		color: var(--color-dim);
+		margin-bottom: 0.5rem;
+		font-weight: 700;
+	}
+
+	.footer-links-col a {
+		color: var(--color-gray);
+		text-decoration: none;
+		font-size: 0.82rem;
+		transition: color 0.1s ease;
+	}
+
+	.footer-links-col a:hover {
+		color: var(--color-white);
+	}
+
+	.footer-bottom {
+		font-size: 0.75rem;
+		color: var(--color-dim);
+		border-top: 1px solid rgba(255,255,255,0.02);
+		padding-top: 1.5rem;
+	}
+
+	.text-dim {
+		color: var(--color-gray) !important;
+	}
+</style>
+
+<!-- Script for Interactive Terminal Demo & Copy Installer -->
+<script>
+	// Copy installer script
+	const copyBtn = document.getElementById('copyInstallBtn');
+	
+	if (copyBtn) {
+		copyBtn.addEventListener('click', async () => {
+			// Copy active command
+			const activeCommand = document.querySelector('.shell-prompt:not([hidden])');
+			const installCmdText = activeCommand?.textContent || '';
+			try {
+				await navigator.clipboard.writeText(installCmdText);
+				copyBtn.textContent = 'Copied';
+				setTimeout(() => {
+					copyBtn.textContent = 'Copy';
+				}, 2000);
+			} catch (err) {
+				console.error('Failed to copy text', err);
+			}
+		});
+	}
+
+	// Install tabs switching
+	const installTabs = document.querySelectorAll('[data-install-switcher] .install-tab');
+	const installPrompts = document.querySelectorAll('[data-install-switcher] .shell-prompt');
+
+	installTabs.forEach(tab => {
+		tab.addEventListener('click', () => {
+			const targetTab = tab.getAttribute('data-tab');
+
+			// Update tabs
+			installTabs.forEach(t => t.classList.remove('active'));
+			tab.classList.add('active');
+
+			// Update prompts
+			installPrompts.forEach(p => {
+				if (p.getAttribute('id') === `install-${targetTab}`) {
+					p.removeAttribute('hidden');
+				} else {
+					p.setAttribute('hidden', 'true');
+				}
+			});
+		});
+	});
+
+	// Toolbelt tabs interaction
+	const tabs = document.querySelectorAll('.tabs-btn');
+	const panels = document.querySelectorAll('.panel-item');
+
+	tabs.forEach(tab => {
+		tab.addEventListener('click', () => {
+			const targetPanelId = 'panel-' + tab.getAttribute('data-tab');
+			
+			// Deactivate all
+			tabs.forEach(t => t.classList.remove('active'));
+			panels.forEach(p => p.classList.remove('active'));
+
+			// Activate current
+			tab.classList.add('active');
+			const targetPanel = document.getElementById(targetPanelId);
+			if (targetPanel) targetPanel.classList.add('active');
+		});
+	});
+
+	// EXACT TUI ASCII ART FRAMES (from art.ts)
+	const LAVA_LAMP_FRAMES = [
+		[
+			'       _____',
+			'      /     \\',
+			'      |_____|',
+			'      /  _  \\',
+			'     /  ( )  \\',
+			'    /    `    \\',
+			'   /     _     \\',
+			'  /     ( )     \\',
+			'  \\      )\\     /',
+			'   \\    (  )   /',
+			'    \\  ,-(   /',
+			'     \\/-----\\/',
+			'     |       |',
+			'     /       \\',
+			'    /________\\--._',
+			'               .-._)',
+			'              (__',
+			'                 -`|E',
+		],
+		[
+			'       _____',
+			'      /     \\',
+			'      |_____|',
+			'      /  _  \\',
+			'     /  ( )  \\',
+			'    /    `    \\',
+			'   /    (_)    \\',
+			'  /     ( )     \\',
+			'  \\      ))     /',
+			'   \\    (  )   /',
+			'    \\  ,-(   /',
+			'     \\/-----\\/',
+			'     |       |',
+			'     /       \\',
+			'    /________\\--._',
+			'               .-._)',
+			'              (__',
+			'                 -`|E',
+		],
+		[
+			'       _____',
+			'      /     \\',
+			'      |_____|',
+			'      / (_) \\',
+			"     /  `-'  \\",
+			'    /    _    \\',
+			'   /    ( )    \\',
+			'  /      |      \\',
+			'  \\     ( )     /',
+			'   \\     |     /',
+			'    \\   (_)   /',
+			'     \/-----\\/',
+			'     |       |',
+			'     /       \\',
+			'    /________\\--._',
+			'               .-._)',
+			'              (__',
+			'                 -`|E',
+		],
+		[
+			'       _____',
+			'      /     \\',
+			'      |_____|',
+			'      / .-. \\',
+			'     / (   ) \\',
+			"    /  `-.-'  \\",
+			'   /     |     \\',
+			'  /     ( )     \\',
+			'  \\      |      /',
+			'   \\    ( )    /',
+			'    \\   |     /',
+			'     \/-----\\/',
+			'     |       |',
+			'     /       \\',
+			'    /________\\--._',
+			'               .-._)',
+			'              (__',
+			'                 -`|E',
+		]
+	];
+
+	// Animating ASCII Lava Lamp
+	const tuiLavaLampArt = document.getElementById('tuiLavaLampArt');
+	let lavaFrameIdx = 0;
+	let lavaInterval = setInterval(() => {
+		if (tuiLavaLampArt) {
+			lavaFrameIdx = (lavaFrameIdx + 1) % LAVA_LAMP_FRAMES.length;
+			tuiLavaLampArt.textContent = LAVA_LAMP_FRAMES[lavaFrameIdx].join('\n');
+		}
+	}, 600);
+
+	// TUI Simulation Playback Engine
+	const tuiLavaLampBox = document.getElementById('tuiLavaLampBox');
+	const tuiChatStream = document.getElementById('tuiChatStream');
+	const tuiInputField = document.getElementById('tuiInputField');
+	const tuiInputRow = document.getElementById('tuiInputRow');
+	
+	// Bottom status bar elements
+	const tuiStatusSpinner = document.getElementById('tuiStatusSpinner');
+	
+	// Stacked boxes
+	const tuiTaskBox = document.getElementById('tuiTaskBox');
+	const tuiTaskStatusBar = document.getElementById('tuiTaskStatusBar');
+	const tuiTaskStatusText = document.getElementById('tuiTaskStatusText');
+	const tuiSpinner = document.getElementById('tuiSpinner');
+	const taskBst = document.getElementById('task-bst');
+	const taskTest = document.getElementById('task-test');
+
+	const demoScript = [
+		{
+			type: 'wait',
+			duration: 800
+		},
+		{
+			type: 'input',
+			text: 'Build a resilient, local LRU cache in src/cache.ts with memory limits, and wire it to our database client in src/db.ts'
+		},
+		{
+			type: 'line',
+			html: '<div class="sim-prompt"><span style="color:var(--color-accent); font-weight:bold;">&gt;</span> Build a resilient, local LRU cache in src/cache.ts with memory limits, and wire it to our database client in src/db.ts</div>'
+		},
+		{
+			type: 'status',
+			text: 'compiling task checklist'
+		},
+		{
+			type: 'schedule_tasks',
+			tasks: [
+				{ id: 'bst', text: 'create LRU cache in src/cache.ts', status: 'active' },
+				{ id: 'test', text: 'integrate with db in src/db.ts', status: 'dim' }
+			]
+		},
+		{
+			type: 'thinking_start',
+			text: '▸ thinking... (1.1s)'
+		},
+		{
+			type: 'thinking_delta',
+			text: 'Analyzing database client dependencies in src/db.ts. I need to design a thread-safe LRU cache with O(1) read/write operations and active byte-size memory eviction.'
+		},
+		{
+			type: 'thinking_end'
+		},
+		{
+			type: 'tool_start',
+			name: 'read',
+			details: 'src/db.ts'
+		},
+		{
+			type: 'code_render',
+			code: 'export class DatabaseClient {\n  private connectionString: string;\n  constructor(uri: string) {\n    this.connectionString = uri;\n  }\n  async executeQuery<T>(query: string): Promise<T[]> {\n    // Execute raw SQL query against local SQLite\n    console.log(`Executing: ${query}`);\n    return localDb.run(query);\n  }\n}'
+		},
+		{
+			type: 'thinking_start',
+			text: '▸ thinking... (1.4s)'
+		},
+		{
+			type: 'thinking_delta',
+			text: 'I will implement the LRU cache using a Map for O(1) lookups combined with a doubly linked list for eviction tracking. Eviction will trigger when cache size exceeds the memory budget. Creating src/cache.ts.'
+		},
+		{
+			type: 'thinking_end'
+		},
+		{
+			type: 'tool_start',
+			name: 'write',
+			details: 'src/cache.ts'
+		},
+		{
+			type: 'code_render',
+			code: 'export class LRUCache<K, V> {\n  private maxBytes: number;\n  private currentBytes = 0;\n  private cache = new Map<K, V>();\n\n  constructor(maxBytes: number) {\n    this.maxBytes = maxBytes;\n  }\n  get(key: K): V | undefined {\n    if (!this.cache.has(key)) return undefined;\n    const val = this.cache.get(key)!;\n    this.cache.delete(key);\n    this.cache.set(key, val); // Mark recently used\n    return val;\n  }\n  set(key: K, value: V, sizeBytes: number): void {\n    if (this.cache.has(key)) this.cache.delete(key);\n    while (this.currentBytes + sizeBytes > this.maxBytes) {\n      const oldest = this.cache.keys().next().value;\n      if (!oldest) break;\n      this.cache.delete(oldest);\n    }\n    this.cache.set(key, value);\n  }\n}'
+		},
+		{
+			type: 'permission_gate',
+			path: 'src/cache.ts',
+			lines: 28
+		},
+		{
+			type: 'line',
+			html: '<div><span class="t-accent">✔ Permission Granted.</span> File written.</div>'
+		},
+		{
+			type: 'task_complete',
+			id: 'bst'
+		},
+		{
+			type: 'thinking_start',
+			text: '▸ thinking... (0.9s)'
+		},
+		{
+			type: 'thinking_delta',
+			text: 'LRU cache file created. Now modifying DatabaseClient inside src/db.ts to import and utilize the cache instance for queries.'
+		},
+		{
+			type: 'thinking_end'
+		},
+		{
+			type: 'tool_start',
+			name: 'edit',
+			details: 'src/db.ts'
+		},
+		{
+			type: 'diff',
+			file: 'src/db.ts',
+			changes: [
+				{ type: 'ctx', text: 'export class DatabaseClient {' },
+				{ type: 'add', text: '+  private cache = new LRUCache<string, any>(1024 * 1024); // 1MB cache' },
+				{ type: 'ctx', text: '  async executeQuery<T>(query: string): Promise<T[]> {' },
+				{ type: 'add', text: '+    const cached = this.cache.get(query);' },
+				{ type: 'add', text: '+    if (cached) return cached;' },
+				{ type: 'del', text: '-    return localDb.run(query);' },
+				{ type: 'add', text: '+    const res = await localDb.run(query);' },
+				{ type: 'add', text: '+    this.cache.set(query, res, JSON.stringify(res).length);' },
+				{ type: 'add', text: '+    return res;' }
+			]
+		},
+		{
+			type: 'permission_gate',
+			path: 'src/db.ts',
+			lines: 9
+		},
+		{
+			type: 'line',
+			html: '<div><span class="t-accent">✔ Permission Granted.</span> Edits applied.</div>'
+		},
+		{
+			type: 'thinking_start',
+			text: '▸ thinking... (0.5s)'
+		},
+		{
+			type: 'thinking_delta',
+			text: 'Integration complete. Running unit test suite in src/cache.test.ts and src/db.test.ts to verify correct eviction and caching behavior.'
+		},
+		{
+			type: 'thinking_end'
+		},
+		{
+			type: 'tool_start',
+			name: 'bash',
+			details: 'bun test'
+		},
+		{
+			type: 'tool_body',
+			text: 'Running test suite...\n[████░░░░░░░░░░░░░░░░░░░░░░░░] 15% (3/20 tests)',
+			keep_active: true
+		},
+		{
+			type: 'wait',
+			duration: 400
+		},
+		{
+			type: 'tool_body',
+			text: 'Running test suite...\n[████████████░░░░░░░░░░░░░░░░] 45% (9/20 tests)',
+			keep_active: true
+		},
+		{
+			type: 'wait',
+			duration: 400
+		},
+		{
+			type: 'tool_body',
+			text: 'Running test suite...\n[██████████████████████░░░░░░] 75% (15/20 tests)',
+			keep_active: true
+		},
+		{
+			type: 'wait',
+			duration: 400
+		},
+		{
+			type: 'tool_body',
+			text: 'bun test v1.3.14\n✓ src/cache.test.ts (12ms)\n✓ src/db.test.ts (18ms)\n  ✓ LRU eviction works under memory budget\n  ✓ DB queries cached and returned in <1ms\n\n2 pass, 0 fail (35ms)'
+		},
+		{
+			type: 'task_complete',
+			id: 'test'
+		},
+		{
+			type: 'thinking_start',
+			text: '▸ thinking... (0.4s)'
+		},
+		{
+			type: 'thinking_delta',
+			text: 'All test assertions passed. Eviction and caching logic verified under simulated memory load.'
+		},
+		{
+			type: 'thinking_end'
+		},
+		{
+			type: 'line',
+			html: '<div><span class="t-accent">✔ Completed LRU cache integration in <span class="t-link">src/cache.ts</span> and <span class="t-link">src/db.ts</span>.</span><br/>LRU cache implemented with active memory eviction. Wired db queries to cache client and verified assertions. All checks passed.</div>'
+		}
+	];
+
+	let simTimeout: ReturnType<typeof setTimeout> | null = null;
+	let currentStep = 0;
+	let spinnerInterval: ReturnType<typeof setInterval> | null = null;
+	let bottomSpinnerInterval: ReturnType<typeof setInterval> | null = null;
+
+	const spinnerFrames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+	let spinnerIdx = 0;
+	let bottomSpinnerIdx = 0;
+
+	function startSpinner() {
+		if (spinnerInterval) clearInterval(spinnerInterval);
+		spinnerInterval = setInterval(() => {
+			if (tuiSpinner) {
+				spinnerIdx = (spinnerIdx + 1) % spinnerFrames.length;
+				tuiSpinner.textContent = spinnerFrames[spinnerIdx];
+			}
+		}, 80);
+	}
+
+	function stopSpinner() {
+		if (spinnerInterval) {
+			clearInterval(spinnerInterval);
+			spinnerInterval = null;
+		}
+		if (tuiSpinner) tuiSpinner.textContent = ' ';
+	}
+
+	function startBottomSpinner() {
+		if (bottomSpinnerInterval) clearInterval(bottomSpinnerInterval);
+		if (tuiStatusSpinner) {
+			bottomSpinnerInterval = setInterval(() => {
+				bottomSpinnerIdx = (bottomSpinnerIdx + 1) % spinnerFrames.length;
+				tuiStatusSpinner.textContent = spinnerFrames[bottomSpinnerIdx];
+			}, 80);
+		}
+	}
+
+	function stopBottomSpinner() {
+		if (bottomSpinnerInterval) {
+			clearInterval(bottomSpinnerInterval);
+			bottomSpinnerInterval = null;
+		}
+		if (tuiStatusSpinner) tuiStatusSpinner.textContent = '';
+	}
+
+	async function typeInputText(text: string, element: HTMLElement) {
+		element.textContent = '';
+		const tuiCompletionBox = document.getElementById('tuiCompletionBox');
+		for (let i = 0; i < text.length; i++) {
+			element.textContent += text[i];
+			
+			// Show and filter autocomplete box if typing a slash command
+			if (text.startsWith('/') && tuiCompletionBox) {
+				tuiCompletionBox.style.display = 'flex';
+				const val = element.textContent;
+				const clearRow = document.getElementById('ac-clear');
+				const helpRow = document.getElementById('ac-help');
+				const quitRow = document.getElementById('ac-quit');
+				
+				if (clearRow && helpRow && quitRow) {
+					if (val === '/') {
+						clearRow.style.display = 'flex';
+						helpRow.style.display = 'flex';
+						quitRow.style.display = 'flex';
+						clearRow.className = 'tui-completion-row active';
+						helpRow.className = 'tui-completion-row';
+						quitRow.className = 'tui-completion-row';
+					} else if (val.startsWith('/c')) {
+						clearRow.style.display = 'flex';
+						helpRow.style.display = 'none';
+						quitRow.style.display = 'none';
+						clearRow.className = 'tui-completion-row active';
+					}
+				}
+			}
+			
+			await new Promise(r => setTimeout(r, 25));
+		}
+	}
+
+	function resetTuiWidgets() {
+		// Reset panels & scroll values
+		if (tuiLavaLampBox) tuiLavaLampBox.style.display = 'flex';
+		if (tuiChatStream) {
+			tuiChatStream.style.display = 'none';
+			tuiChatStream.innerHTML = '';
+		}
+		if (tuiInputField) tuiInputField.textContent = 'Type a prompt...';
+		
+		const tuiCompletionBox = document.getElementById('tuiCompletionBox');
+		if (tuiCompletionBox) tuiCompletionBox.style.display = 'none';
+		
+		// Hide stacked boxes
+		if (tuiTaskBox) tuiTaskBox.style.display = 'none';
+		if (tuiTaskStatusBar) tuiTaskStatusBar.style.display = 'none';
+		if (tuiTaskStatusText) tuiTaskStatusText.textContent = 'idle';
+		stopSpinner();
+		stopBottomSpinner();
+
+		// Reset sidebar widgets
+		if (taskBst) taskBst.className = 'tui-panel-row';
+		if (taskTest) taskTest.className = 'tui-panel-row';
+	}
+
+	function highlightCode(code: string) {
+		const lines = code.split('\n');
+		let html = '<div class="code-viewer-replica">';
+		
+		lines.forEach((line, idx) => {
+			let formatted = line
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;");
+			
+			// Separate comments from code to avoid regex collisions inside comments
+			let comment = '';
+			const commentIdx = formatted.indexOf('//');
+			if (commentIdx !== -1) {
+				comment = `<span class="tok-comment">${formatted.substring(commentIdx)}</span>`;
+				formatted = formatted.substring(0, commentIdx);
+			}
+
+			// Highlight string literals and template literals
+			formatted = formatted.replace(/(['"`])(.*?)\1/g, '<span class="tok-string">$1$2$1</span>');
+
+			// Highlight Types
+			formatted = formatted.replace(/\b(number|string|any|Promise|LRUCache|DatabaseClient|Map|V|K|void|boolean)\b/g, '<span class="tok-type">$1</span>');
+
+			// Highlight Functions
+			formatted = formatted.replace(/\b(delete|keys|next|value|JSON|stringify|has|get|set|run|executeQuery|log)\b/g, '<span class="tok-func">$1</span>');
+
+			// Highlight Keywords
+			formatted = formatted.replace(/\b(class|constructor|export|function|const|let|for|while|return|private|new|await|async|import|from|if|else|break)\b/g, '<span class="tok-keyword">$1</span>');
+
+			// Re-append comment if present
+			formatted = formatted + comment;
+
+			html += `
+				<div class="code-viewer-line">
+					<span class="code-line-num">${idx + 1}</span>
+					<span class="code-line-sep">│</span>
+					<span class="code-line-content">${formatted}</span>
+				</div>
+			`;
+		});
+
+		html += '</div>';
+		return html;
+	}
+
+	function runPlayback() {
+		if (currentStep >= demoScript.length) {
+			if (tuiTaskStatusText) tuiTaskStatusText.textContent = 'idle';
+			if (tuiTaskStatusBar) tuiTaskStatusBar.style.display = 'none';
+			stopSpinner();
+			stopBottomSpinner();
+			
+			// Wait 3 seconds, then animate entering the /clear command to loop
+			simTimeout = setTimeout(() => {
+				if (tuiInputField) {
+					typeInputText('/clear', tuiInputField).then(() => {
+						simTimeout = setTimeout(() => {
+							// Append clear line to log
+							const div = document.createElement('div');
+							div.innerHTML = '<div class="sim-prompt"><span style="color:var(--color-accent); font-weight:bold;">&gt;</span> /clear</div>';
+							tuiChatStream?.appendChild(div);
+							tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+							tuiInputField.textContent = '';
+							
+							const tuiCompletionBox = document.getElementById('tuiCompletionBox');
+							if (tuiCompletionBox) tuiCompletionBox.style.display = 'none';
+							
+							// Execute TUI reset and start the next simulation loop
+							simTimeout = setTimeout(startSimulation, 800);
+						}, 400);
+					});
+				} else {
+					startSimulation();
+				}
+			}, 3000);
+			return;
+		}
+
+		const step = demoScript[currentStep];
+
+		if (step.type === 'wait') {
+			simTimeout = setTimeout(() => {
+				currentStep++;
+				runPlayback();
+			}, step.duration);
+		} else if (step.type === 'status') {
+			if (tuiTaskStatusBar) tuiTaskStatusBar.style.display = 'flex';
+			if (tuiTaskStatusText) tuiTaskStatusText.textContent = step.text || 'running';
+			startSpinner();
+			startBottomSpinner();
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 800);
+
+		} else if (step.type === 'input') {
+			if (tuiLavaLampBox) tuiLavaLampBox.style.display = 'none';
+			if (tuiChatStream) tuiChatStream.style.display = 'flex';
+			
+			if (tuiInputField) {
+				typeInputText(step.text || '', tuiInputField).then(() => {
+					simTimeout = setTimeout(() => {
+						tuiInputField.textContent = '';
+						currentStep++;
+						runPlayback();
+					}, 800);
+				});
+			}
+		} else if (step.type === 'line') {
+			const div = document.createElement('div');
+			div.innerHTML = step.html || '';
+			tuiChatStream?.appendChild(div);
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+			
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 800);
+		} else if (step.type === 'schedule_tasks') {
+			if (tuiTaskBox) tuiTaskBox.style.display = 'flex';
+			if (taskBst && step.tasks && step.tasks[0]) {
+				taskBst.className = 'tui-panel-row active';
+				taskBst.textContent = `  [>] #1 ${step.tasks[0].text}`;
+			}
+			if (taskTest && step.tasks && step.tasks[1]) {
+				taskTest.className = 'tui-panel-row';
+				taskTest.textContent = `  [ ] #2 ${step.tasks[1].text}`;
+			}
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 600);
+		} else if (step.type === 'thinking_start') {
+			const div = document.createElement('div');
+			div.className = 'sim-thinking';
+			div.id = 'tui-active-thinking';
+			div.innerHTML = `<span class="thinking-title clickable-thinking">Reasoning... ▼</span><div class="sim-thinking-details" id="tui-thinking-details"></div>`;
+			tuiChatStream?.appendChild(div);
+
+			// Setup click listener for collapse/expand
+			const titleSpan = div.querySelector('.thinking-title');
+			const detailsDiv = div.querySelector('.sim-thinking-details') as HTMLElement;
+			if (titleSpan && detailsDiv) {
+				titleSpan.addEventListener('click', () => {
+					if (detailsDiv.style.display === 'none') {
+						detailsDiv.style.display = 'block';
+						titleSpan.textContent = 'Reasoning... ▼';
+					} else {
+						detailsDiv.style.display = 'none';
+						titleSpan.textContent = 'Reasoning... ▸';
+					}
+				});
+			}
+
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 400);
+		} else if (step.type === 'thinking_delta') {
+			const details = document.getElementById('tui-thinking-details');
+			if (details) {
+				details.textContent = step.text || '';
+				currentStep++;
+				simTimeout = setTimeout(runPlayback, 400);
+			} else {
+				currentStep++;
+				runPlayback();
+			}
+		} else if (step.type === 'thinking_end') {
+			const activeThinking = document.getElementById('tui-active-thinking');
+			if (activeThinking) {
+				activeThinking.removeAttribute('id');
+				const title = activeThinking.querySelector('.thinking-title');
+				const details = activeThinking.querySelector('.sim-thinking-details') as HTMLElement;
+				if (title) title.textContent = 'Reasoning... ▸';
+				if (details) details.style.display = 'none';
+			}
+			currentStep++;
+			runPlayback();
+		} else if (step.type === 'tool_start') {
+			if (tuiTaskStatusBar) tuiTaskStatusBar.style.display = 'flex';
+			if (tuiTaskStatusText) tuiTaskStatusText.textContent = `tool: ${step.name} (${step.details})`;
+			startSpinner();
+			
+			const div = document.createElement('div');
+			div.className = 'sim-tool-group';
+			div.id = 'tui-active-tool';
+			div.innerHTML = `
+				<div class="sim-tool-group-header">✓ ${step.name} ×1 ▼</div>
+				<div class="sim-tool-entry">
+					<div class="sim-tool-entry-header">> ${step.name} ${step.details} ▼</div>
+					<div class="sim-tool-entry-body" id="tui-tool-body"></div>
+				</div>
+			`;
+			tuiChatStream?.appendChild(div);
+
+			// Wire collapse/expand click listeners
+			const groupHdr = div.querySelector('.sim-tool-group-header');
+			const entry = div.querySelector('.sim-tool-entry') as HTMLElement;
+			if (groupHdr && entry) {
+				groupHdr.addEventListener('click', () => {
+					if (entry.style.display === 'none') {
+						entry.style.display = 'flex';
+						groupHdr.textContent = `✓ ${step.name} ×1 ▼`;
+					} else {
+						entry.style.display = 'none';
+						groupHdr.textContent = `✓ ${step.name} ×1 ▸`;
+					}
+				});
+			}
+
+			const entryHdr = div.querySelector('.sim-tool-entry-header');
+			const entryBody = div.querySelector('.sim-tool-entry-body') as HTMLElement;
+			if (entryHdr && entryBody) {
+				entryHdr.addEventListener('click', () => {
+					if (entryBody.style.display === 'none') {
+						entryBody.style.display = 'block';
+						entryHdr.textContent = `> ${step.name} ${step.details} ▼`;
+					} else {
+						entryBody.style.display = 'none';
+						entryHdr.textContent = `> ${step.name} ${step.details} ▸`;
+					}
+				});
+			}
+
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 500);
+		} else if (step.type === 'tool_body') {
+			const toolBody = document.getElementById('tui-tool-body');
+			if (toolBody) {
+				toolBody.textContent = step.text || '';
+				if (!step.keep_active) {
+					toolBody.removeAttribute('id');
+				}
+			}
+			if (!step.keep_active) {
+				const activeTool = document.getElementById('tui-active-tool');
+				if (activeTool) activeTool.removeAttribute('id');
+			}
+			
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 1000);
+		} else if (step.type === 'code_render') {
+			const toolBody = document.getElementById('tui-tool-body');
+			if (toolBody) {
+				toolBody.innerHTML = highlightCode(step.code || '');
+				toolBody.removeAttribute('id');
+			} else {
+				const div = document.createElement('div');
+				div.innerHTML = highlightCode(step.code || '');
+				tuiChatStream?.appendChild(div);
+			}
+			const activeTool = document.getElementById('tui-active-tool');
+			if (activeTool) activeTool.removeAttribute('id');
+			
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 1000);
+		} else if (step.type === 'diff') {
+			const toolBody = document.getElementById('tui-tool-body');
+			const div = document.createElement('div');
+			div.className = 'sim-diff-panel';
+			div.innerHTML = `<div class="sim-diff-header">diff --git a/${step.file} b/${step.file}</div><div class="sim-diff-body" id="tui-diff-body"></div>`;
+			
+			if (toolBody) {
+				toolBody.appendChild(div);
+			} else {
+				tuiChatStream?.appendChild(div);
+			}
+			
+			const diffBody = div.querySelector('#tui-diff-body');
+			if (diffBody && step.changes) {
+				step.changes.forEach(c => {
+					const span = document.createElement('span');
+					if (c.type === 'add') span.className = 'diff-add';
+					else if (c.type === 'del') span.className = 'diff-del';
+					else span.className = 'diff-ctx';
+					span.textContent = c.text;
+					diffBody.appendChild(span);
+				});
+			}
+			
+			if (toolBody) toolBody.removeAttribute('id');
+			const activeTool = document.getElementById('tui-active-tool');
+			if (activeTool) activeTool.removeAttribute('id');
+
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+			currentStep++;
+			simTimeout = setTimeout(runPlayback, 1000);
+		} else if (step.type === 'permission_gate') {
+			if (tuiTaskStatusBar) tuiTaskStatusBar.style.display = 'flex';
+			if (tuiTaskStatusText) tuiTaskStatusText.textContent = 'awaiting permission';
+			stopSpinner();
+
+			const div = document.createElement('div');
+			div.className = 'sim-perm-request';
+			div.id = 'tui-active-perm';
+			div.innerHTML = `
+				<div class="sim-perm-border">┌ Permission Required ─────────────────────────────────────────────────────────┐</div>
+				<div class="sim-perm-row">  Tool: edit</div>
+				<div class="sim-perm-row">  File: ${step.path}</div>
+				<div class="sim-perm-btn-row">
+					<button class="sim-perm-btn" id="tuiAllowBtn">[y] Allow</button>
+					<button class="sim-perm-btn">[n] Deny</button>
+					<button class="sim-perm-btn">[a] Always Allow</button>
+				</div>
+				<div class="sim-perm-row" style="color:var(--color-dim); margin-top:0.25rem;">  Escape to deny · Auto-deny in 30s</div>
+				<div class="sim-perm-border">└────────────────────────────────────────────────────────────────────────────────┘</div>
+			`;
+			tuiChatStream?.appendChild(div);
+			tuiMessagesPanel?.scrollTo(0, tuiMessagesPanel.scrollHeight);
+
+			const allowBtn = document.getElementById('tuiAllowBtn');
+			if (allowBtn) {
+				allowBtn.addEventListener('click', () => {
+					allowBtn.textContent = 'ALLOWED ✔';
+					setTimeout(() => {
+						const activePerm = document.getElementById('tui-active-perm');
+						if (activePerm) activePerm.remove();
+						currentStep++;
+						runPlayback();
+					}, 400);
+				});
+				
+				// Auto click for demo
+				simTimeout = setTimeout(() => {
+					allowBtn.click();
+				}, 1500);
+			}
+		} else if (step.type === 'task_complete') {
+			if (step.id === 'bst' && taskBst) {
+				taskBst.className = 'tui-panel-row done';
+				taskBst.textContent = '  [x] #1 create LRU cache in src/cache.ts';
+				if (taskTest) {
+					taskTest.className = 'tui-panel-row active';
+					taskTest.textContent = '  [>] #2 integrate with db in src/db.ts';
+				}
+			} else if (step.id === 'test' && taskTest) {
+				taskTest.className = 'tui-panel-row done';
+				taskTest.textContent = '  [x] #2 integrate with db in src/db.ts';
+			}
+			currentStep++;
+			runPlayback();
+
+		}
+	}
+
+	function startSimulation() {
+		if (simTimeout) clearTimeout(simTimeout);
+		currentStep = 0;
+		resetTuiWidgets();
+		runPlayback();
+	}
+
+	// Trigger simulation automatically on page load and loop infinitely
+	setTimeout(startSimulation, 1000);
+</script>
