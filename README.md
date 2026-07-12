@@ -308,14 +308,14 @@ If the main agent needs specialized help, it can delegate read-only work to expe
 
 | Expert | Focus Area | Default Model Route |
 |:---|:---|:---|
-| `ui` | Layouts, styling, frontend design, and terminal UI issues. | `glm-4.7-flash` |
 | `refactor` | Clean code standards, deduplication, and refactoring. | `kimi-k2.7-code` |
 | `logic` | Complex algorithmic reasoning and type checks. | `glm-5.2` |
 | `database` | Schema design, SQL queries, migration plans, and indexes. | `glm-5.2` |
 | `oracle` | Global codebase queries and documentation lookups. | `llama-3.3-70b` |
-| `research` | Web searches and API documentation lookups. | `glm-4.7-flash` |
 | `critique` | Security audits and code quality reviews. | `llama-3.3-70b` |
 | `spectacle`| Image/Screenshot translator. | `llama-4-scout` |
+| `ui` | Layouts, styling, frontend design, and terminal UI issues. | `kimi-k2.7-code` |
+| `research` | Web searches and API documentation lookups. | `kimi-k2.7-code` |
 
 ---
 
