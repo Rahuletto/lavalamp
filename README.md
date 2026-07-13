@@ -282,32 +282,26 @@ The diagram below shows how the indexing pipeline is structured, cached, and sto
 
 ```mermaid
 graph TD
-    %% Define Styles
-    classDef workspace fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef database fill:#efebe9,stroke:#4e342e,stroke-width:2px;
-    classDef engine fill:#f1f8e9,stroke:#33691e,stroke-width:2px;
-    classDef query fill:#fff3e0,stroke:#e65100,stroke-width:2px;
-
     %% Source Files & Workspace Hash
-    Files["Source Files (.ts, .py, .go, .rs, etc.)"]:::workspace
-    CWD["Workspace Path"] -->|SHA-256| Hash["12-Char Hash ID"]:::workspace
+    Files["Source Files (.ts, .py, .go, .rs, etc.)"]
+    CWD["Workspace Path"] -->|SHA-256| Hash["12-Char Hash ID"]
 
     %% Unified SQLite DB
-    Hash -->|Resolves Data Folder| SQLite[("Unified SQLite DB<br/>vector-db.db")]:::database
+    Hash -->|Resolves Data Folder| SQLite[("Unified SQLite DB<br/>vector-db.db")]
 
     %% Graph Pipeline
-    Files -->|Incremental AST Parse| GraphEng["Codebase Graph Engine"]:::engine
+    Files -->|Incremental AST Parse| GraphEng["Codebase Graph Engine"]
     GraphEng -->|Cache Payloads & Edges| SQLite
     
     %% Semantic Pipeline
-    Files -->|Sliding Window Chunking| VectorEng["Semantic Vector Engine"]:::engine
+    Files -->|Sliding Window Chunking| VectorEng["Semantic Vector Engine"]
     VectorEng -->|BGE Embeddings Web API| SQLite
 
     %% Query Pipeline
-    Query["Search Query / Intent"]:::query
+    Query["Search Query / Intent"]
     Query -->|codebase_graph| SQLite
     Query -->|codebase_semantic_search| SQLite
-    SQLite -->|Filtered Context / Symbol Match| Context["Injected Context Window"]:::query
+    SQLite -->|Filtered Context / Symbol Match| Context["Injected Context Window"]
 ```
 
 ### How the Unified Storage Works
