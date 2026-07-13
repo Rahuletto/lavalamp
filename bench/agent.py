@@ -2,7 +2,7 @@
 Harbor agent adapter for lavalamp.
 
 Installs lavalamp (bun + repo) inside a Harbor-managed container and drives it
-via the non-interactive print mode (`lavalamp -p "..." --yes --quiet`).
+via the non-interactive print mode (`lavalamp -p "..." --sudo --quiet`).
 
 Usage:
     harbor run -d terminal-bench/terminal-bench-2-1 \
@@ -221,7 +221,7 @@ class LavalampAgent(BaseInstalledAgent):
             "cd /workspace",
         ]
 
-        lavalamp_cmd = "lavalamp -p {prompt} --yes --quiet --output-format json".format(
+        lavalamp_cmd = "lavalamp -p {prompt} --sudo --quiet --output-format json".format(
             prompt=shlex.quote(instruction),
         )
 

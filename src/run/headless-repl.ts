@@ -40,6 +40,7 @@ function defaultQuestionAnswers(
 export async function runRepl(opts: ReplOptions): Promise<void> {
   const isTTY = process.stdin.isTTY ?? false;
   const autoApprove =
+    process.argv.includes('--sudo') ||
     process.argv.includes('--yes') ||
     process.argv.includes('--auto-approve');
   const simple = opts.simpleMode === true;

@@ -111,6 +111,14 @@ Type these commands directly into the prompt input box:
 * `/sudo` - Toggle allow-everything mode (asks for confirmation first).
 * `/quit` - Save the current session and exit.
 
+For unattended headless runs, `--sudo` enables the same allow-everything behavior for that process only:
+
+```bash
+lavalamp --sudo -p "fix the failing tests"
+```
+
+`--sudo` does not elevate Lavalamp to the operating-system root user. It is restricted to `-p`, `--repl`, and `--simple` modes.
+
 ### Full-Screen Keybindings
 When viewing large code blocks or file diffs, the TUI opens a full-screen view. You can navigate it using Vim-style bindings:
 * `j` / `k` - Scroll down / up by line.

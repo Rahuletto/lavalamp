@@ -38,14 +38,14 @@ ANTHROPIC_API_KEY=sk-... harbor run \
 Harbor Docker Container
   └─ LavalampAgent (BaseInstalledAgent, ATIF=True)
        ├─ install()                → apt + bun + git clone lavalamp + bun install + bun run build
-       ├─ run()                    → lavalamp -p "INSTRUCTION" --yes --quiet --output-format json
+       ├─ run()                    → lavalamp -p "INSTRUCTION" --sudo --quiet --output-format json
        │                             └─ copies session JSON out of container for trajectory
        └─ populate_context_post_run() → parses session.json → ATIF Trajectory (Steps + ToolCalls)
 ```
 
 The adapter uses lavalamp's **print mode** (`-p`) which:
 - Takes a single prompt, executes it non-interactively, and exits
-- `--yes` auto-approves all tool calls (required for unattended benchmark runs)
+- `--sudo` dangerously auto-approves all tool calls for the headless run. It does not elevate the operating-system user.
 - `--quiet` suppresses status messages
 - `--output-format json` returns structured output for trajectory parsing
 

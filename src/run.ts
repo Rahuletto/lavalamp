@@ -85,6 +85,7 @@ OPTIONS:
       --repl                     TUI-less interactive REPL
       --simple                   Plain text chat mode
       --yes, --auto-approve      Auto-approve tool calls in headless modes
+      --sudo                     Dangerously auto-approve all tools (headless only; no OS elevation)
   -c, --continue [SESSION_ID]    Resume a previous session
   -w, --workspace PATH           Set workspace directory
   -m, --model MODEL              Override the configured model
@@ -120,8 +121,18 @@ const resumeSessionId =
     : undefined;
 const outputFormatStr = findFlagValue(['--output-format', '--format']) ?? 'text';
 const quiet = process.argv.includes('--quiet');
+const sudoMode = process.argv.includes('--sudo');
 const autoApprove =
-  process.argv.includes('--yes') || process.argv.includes('--auto-approve');
+  sudoMode ||
+  process.argv.includes('--yes') ||
+  process.argv.includes('--auto-approve');
+
+if (sudoMode && !isPrintMode && replIdx === -1 && !simpleMode) {
+  console.error(
+    '[lavalamp] Error: --sudo is only available with -p, --repl, or --simple',
+  );
+  process.exit(1);
+}
 
 if (outputFormatStr !== 'text' && outputFormatStr !== 'json') {
   console.error('[lavalamp] Error: --output-format must be text or json');

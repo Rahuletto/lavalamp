@@ -33,6 +33,7 @@ OPTIONS:
       --repl                     TUI-less interactive REPL (multi-turn, no UI)
       --simple                   Plain text chat mode (no TUI/ASCII art)
       --yes, --auto-approve      Auto-approve all tool calls (for --repl / -p in CI)
+      --sudo                     Dangerously auto-approve all tools (headless only; no OS elevation)
   -c, --continue                 Resume a previous session
   -w, --workspace PATH           Set workspace directory
   -m, --model MODEL              Override default model
@@ -97,6 +98,7 @@ RESUME_SESSION=false
 OUTPUT_FORMAT="text"
 QUIET=false
 AUTO_APPROVE=false
+SUDO_MODE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -130,6 +132,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --yes|--auto-approve)
       AUTO_APPROVE=true
+      shift
+      ;;
+    --sudo)
+      AUTO_APPROVE=true
+      SUDO_MODE=true
       shift
       ;;
     -c|--continue)
@@ -189,6 +196,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [ "$SUDO_MODE" = true ] && [ "$PRINT_MODE" = false ] && [ "$REPL_MODE" = false ] && [ "$SIMPLE_MODE" = false ]; then
+  echo "[lavalamp] Error: --sudo is only available with -p, --repl, or --simple" >&2
+  exit 1
+fi
 
 # Build environment
 export LAVALAMP_WORKSPACE="${WORKSPACE:-$(pwd)}"
