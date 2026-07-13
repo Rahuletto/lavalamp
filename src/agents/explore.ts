@@ -19,6 +19,7 @@ import { createOracleTool } from '../tools/oracle';
 import { createRipgrepTool } from '../tools/ripgrep';
 import { createLoadSkillTool } from '../tools/skills';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
+import { createCodebaseGraphTool } from '../tools/codebase-graph';
 import { createLspTools } from '../tools/lsp-client';
 import { createQueryExpertTool } from '../tools/query-expert';
 import { customReadTool } from '../tools/file-tools';
@@ -54,6 +55,7 @@ export default createAgent((ctx) => {
     '- `oracle` → get second opinion from a different model',
     '- `load_skill` → load instructions for a specific skill',
     '- `codebase_semantic_search` → search codebase semantically',
+    '- `codebase_graph` → query offline definitions, dependencies, and references',
     '- `lsp_hover` → query LSP hover information',
     '- `lsp_definition` → query LSP symbol definition location',
     '- `query_expert` → delegate specialized query to expert agents',
@@ -89,6 +91,7 @@ export default createAgent((ctx) => {
       createRipgrepTool(workspaceRoot as string),
       createLoadSkillTool(workspaceRoot as string),
       createCodebaseSemanticSearchTool(workspaceRoot as string),
+      createCodebaseGraphTool(workspaceRoot as string),
       ...createLspTools(workspaceRoot as string),
       createQueryExpertTool(workspaceRoot as string),
     ].map(withResultBudget),

@@ -22,6 +22,7 @@ import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
 import { createLoadSkillTool } from '../tools/skills';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
+import { createCodebaseGraphTool } from '../tools/codebase-graph';
 import { withResultBudget } from '../tools/result-budget';
 
 export default createAgent((ctx) => {
@@ -61,6 +62,7 @@ export default createAgent((ctx) => {
     '- `list_tasks` → list all tasks',
     '- `load_skill` → load instructions for a specific skill',
     '- `codebase_semantic_search` → search codebase semantically',
+    '- `codebase_graph` → query offline definitions, dependencies, and references',
   ];
 
   if (memoryContext !== null) {
@@ -93,6 +95,7 @@ export default createAgent((ctx) => {
       createRipgrepTool(workspaceRoot as string),
       createLoadSkillTool(workspaceRoot as string),
       createCodebaseSemanticSearchTool(workspaceRoot as string),
+      createCodebaseGraphTool(workspaceRoot as string),
       ...createTaskTools(taskStore),
     ].map(withResultBudget),
   };
