@@ -431,7 +431,6 @@ export async function getDiagnosticsForFile(workspaceRoot: string, filePath: str
 
 const lspOxcDiagnosticsSchema = v.object({
   filePath: v.optional(v.string()),
-  fix: v.optional(v.boolean()),
 });
 
 export function createLspTools(workspaceRoot: string) {
@@ -674,7 +673,7 @@ export function createLspTools(workspaceRoot: string) {
 
   const oxcDiagnosticsTool = defineTool({
     description:
-      'Run oxlint on a specific file or the workspace for fast JS/TS lint diagnostics. Oxlint is faster than the TypeScript language server and catches common issues (unused vars, type mismatches, style). Set fix to true to automatically fix autofixable issues. Use after edits to get immediate lint feedback.',
+      'Run oxlint on a specific file or the workspace for fast read-only JS/TS lint diagnostics. Oxlint is faster than the TypeScript language server and catches common issues (unused vars, type mismatches, style).',
     execute: async (args) => {
       try {
         const target =
@@ -683,9 +682,6 @@ export function createLspTools(workspaceRoot: string) {
             : workspaceRoot;
         const { execFileSync } = await import('node:child_process');
         const cmdArgs = ['oxlint', '--format=json'];
-        if (args.fix) {
-          cmdArgs.push('--fix');
-        }
         cmdArgs.push(target);
         const result = execFileSync('bunx', cmdArgs, {
           cwd: workspaceRoot,

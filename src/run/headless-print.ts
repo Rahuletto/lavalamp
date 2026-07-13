@@ -1,10 +1,16 @@
-import { FlueProcess } from '../tui/ipc';
+import * as readline from 'node:readline';
+import {
+  FlueProcess,
+  type PermissionRequestMsg,
+  type QuestionRequestMsg,
+} from '../tui/ipc';
 import { preflightHeadlessAuth, type PreflightContext } from './auth-preflight';
 import { resolveRuntimeRoute } from '../config/runtime-route';
 import { BUILD_MODEL } from '../config/models';
 import { withTerminalProgress } from './terminal-progress';
 
 export interface PrintOptions {
+  autoApprove: boolean;
   prompt: string;
   stdinContent: string;
   quiet: boolean;
@@ -40,7 +46,44 @@ export async function runPrint(opts: PrintOptions): Promise<void> {
   }
 
   const flue = new FlueProcess(opts.serverPath, opts.workspaceRoot, opts.agentName ?? 'build');
+  const isTTY = process.stdin.isTTY ?? false;
+  const permissionInput =
+    isTTY && !opts.autoApprove
+      ? readline.createInterface({ input: process.stdin, output: process.stderr })
+      : null;
   let pBashRunning = false;
+
+  flue.onPermissionRequest = (request: PermissionRequestMsg) => {
+    if (opts.autoApprove) {
+      flue.sendPermissionResponse(request.requestId, 'allow');
+      return;
+    }
+    if (permissionInput === null) {
+      flue.sendPermissionResponse(request.requestId, 'deny');
+      if (!opts.quiet && opts.outputFormat !== 'json') {
+        process.stderr.write(
+          `\n[lavalamp] Denied ${request.toolName}; use --yes to allow tool calls in non-interactive mode.\n`,
+        );
+      }
+      return;
+    }
+    permissionInput.question(
+      `\n[lavalamp] Allow ${request.toolName}? [y/N] `,
+      (answer) => {
+        const allow = answer.trim().toLowerCase().startsWith('y');
+        flue.sendPermissionResponse(request.requestId, allow ? 'allow' : 'deny');
+      },
+    );
+  };
+
+  flue.onQuestionRequest = (request: QuestionRequestMsg) => {
+    const answers: Record<string, unknown> = {};
+    for (const question of request.questions) {
+      answers[question.id] =
+        question.default ?? (question.type === 'multiselect' ? [] : '');
+    }
+    flue.sendQuestionResponse(request.requestId, answers);
+  };
 
   flue.onBashStream = (chunk: string, stream: 'stdout' | 'stderr') => {
     if (opts.quiet || opts.outputFormat === 'json') {
@@ -60,6 +103,7 @@ export async function runPrint(opts: PrintOptions): Promise<void> {
   try {
     await flue.start();
   } catch (error: unknown) {
+    permissionInput?.close();
     const msg = error instanceof Error ? error.message : String(error);
     if (opts.outputFormat === 'json') {
       process.stdout.write(`${JSON.stringify({ error: msg })}\n`);
@@ -183,6 +227,7 @@ export async function runPrint(opts: PrintOptions): Promise<void> {
     });
   }
   await flue.shutdown();
+  permissionInput?.close();
   if (exitCode !== 0) {
     process.exit(exitCode);
   }

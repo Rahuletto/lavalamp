@@ -15,7 +15,7 @@ export function createCodebaseSemanticSearchTool(workspaceRoot: string) {
       'Search the codebase semantically using vector database similarity. Best for finding code by intent, meaning, or functionality, rather than exact keyword matches.',
     execute: async (args) => {
       await indexer.startIndexing();
-      return indexer.semanticSearch(args.query, args.limit ?? 5);
+      return indexer.semanticSearch(args.query, Math.min(args.limit ?? 5, 10));
     },
     name: 'codebase_semantic_search',
     parameters: codebaseSemanticSearchSchema,

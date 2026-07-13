@@ -11,6 +11,7 @@ import { ChangeTracker } from './change-tracker';
 const fs = new NodeFilesystem();
 export const sharedSnapshots = new InMemorySnapshotStore();
 const patcher = new Patcher({ fs, snapshots: sharedSnapshots });
+const MAX_READ_LINES = 500;
 
 export const customReadTool = defineTool({
   description: 'Read file contents (supports offset/limit for chunks)',
@@ -35,11 +36,17 @@ export const customReadTool = defineTool({
 
     // Format like hashline expects: [path#tag] and line numbers
     const lines = content.split('\n');
-    const offset = args.offset ?? 0;
-    const limit = args.limit ?? lines.length;
+    const offset = Math.max(0, Math.floor(args.offset ?? 0));
+    const requestedLimit = Math.max(1, Math.floor(args.limit ?? MAX_READ_LINES));
+    const limit = Math.min(requestedLimit, MAX_READ_LINES);
     const sliced = lines.slice(offset, offset + limit);
     const formattedLines = sliced.map((line, i) => `${offset + i + 1}:${line}`).join('\n');
-    return `[${args.filePath}#${tag}]\n${formattedLines}`;
+    const nextOffset = offset + sliced.length;
+    const footer =
+      nextOffset < lines.length
+        ? `\n[Showing lines ${offset + 1}-${nextOffset} of ${lines.length}. Continue with offset=${nextOffset}.]`
+        : '';
+    return `[${args.filePath}#${tag}]\n${formattedLines}${footer}`;
   },
   name: 'read_file',
   parameters: v.object({

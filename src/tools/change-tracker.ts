@@ -2,7 +2,7 @@ import { rmSync } from 'node:fs';
 
 export interface FileSnapshot {
   path: string;
-  content: string | null;
+  content: Uint8Array | null;
 }
 
 export interface ChangeEntry {
@@ -18,7 +18,7 @@ export class ChangeTracker {
     for (const p of paths) {
       const file = Bun.file(p);
       if (await file.exists()) {
-        snapshots.push({ content: await file.text(), path: p });
+        snapshots.push({ content: new Uint8Array(await file.arrayBuffer()), path: p });
       } else {
         snapshots.push({ content: null, path: p });
       }

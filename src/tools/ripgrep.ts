@@ -131,7 +131,7 @@ export function createRipgrepTool(cwd: string) {
         return [header, ...stripped].join('\n') + footer;
       } catch (error) {
         throw new Error(
-          `ripgrep failed: ${error instanceof Error ? error.message : String(error)}. Is ripgrep installed? (brew install ripgrep)`,
+          `ripgrep failed: ${error instanceof Error ? error.message : String(error)}. Ensure the cross-platform "rg" executable is installed and available on PATH.`,
           { cause: error },
         );
       }
