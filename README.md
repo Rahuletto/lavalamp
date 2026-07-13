@@ -282,46 +282,32 @@ The diagram below shows how the indexing pipeline is structured, cached, and sto
 
 ```mermaid
 graph TD
-    subgraph "Host Workspace"
-        CWD["Workspace Root"] -->|SHA-256 Hash of Absolute Path| Hash["12-Char Path Hash"]
-        Files["Source Code Files (.ts, .py, .go, .rs, .c, etc.)"]
-    end
+    %% Define Styles
+    classDef workspace fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef database fill:#efebe9,stroke:#4e342e,stroke-width:2px;
+    classDef engine fill:#f1f8e9,stroke:#33691e,stroke-width:2px;
+    classDef query fill:#fff3e0,stroke:#e65100,stroke-width:2px;
 
-    subgraph "OS-Native App Data Storage"
-        Hash -->|Resolves Location| WorkspaceData["/workspaces/{name}-{hash}/"]
-        WorkspaceData -->|Unified Database| SQLite[("SQLite Unified DB: vector-db.db")]
-    end
+    %% Source Files & Workspace Hash
+    Files["Source Files (.ts, .py, .go, .rs, etc.)"]:::workspace
+    CWD["Workspace Path"] -->|SHA-256| Hash["12-Char Hash ID"]:::workspace
 
-    subgraph "1. Offline Codebase Graph Engine"
-        Files -->|Scan & File Stat Check| CheckCache{"Mtime/Size Changed?"}
-        CheckCache -->|Yes| Parse["Parse AST Payloads (Symbols, Imports, Usages)"]
-        CheckCache -->|No| LoadCache["Load Cached Payload"]
-        Parse -->|Save cache & format version| GraphCacheTable["Table: graph_file_cache"]
-        
-        LoadCache --> GraphCacheTable
-        GraphCacheTable -->|Resolve Imports & Link Edges| ResolveGraph["Dependency & Symbol Resolver"]
-        ResolveGraph -->|Write Edges| GraphTables["Tables: graph_symbols, graph_dependencies, graph_references, graph_files"]
-    end
+    %% Unified SQLite DB
+    Hash -->|Resolves Data Folder| SQLite[("Unified SQLite DB<br/>vector-db.db")]:::database
 
-    subgraph "2. Semantic Search Engine"
-        Files -->|Check File Hash| HashCheck{"Has File Hash Changed?"}
-        HashCheck -->|No| Skip["Use Existing Embeddings"]
-        HashCheck -->|Yes| Chunk["Sliding Window Chunker (1000 words, 200 overlap)"]
-        Chunk -->|Texts Array| EmbedAPI["Cloudflare AI Embeddings API (@cf/baai/bge-large-en-v1.5)"]
-        EmbedAPI -->|Vectors Float32Array| VectorTable["Tables: files, chunks"]
-    end
+    %% Graph Pipeline
+    Files -->|Incremental AST Parse| GraphEng["Codebase Graph Engine"]:::engine
+    GraphEng -->|Cache Payloads & Edges| SQLite
+    
+    %% Semantic Pipeline
+    Files -->|Sliding Window Chunking| VectorEng["Semantic Vector Engine"]:::engine
+    VectorEng -->|BGE Embeddings Web API| SQLite
 
-    SQLite --- GraphCacheTable
-    SQLite --- GraphTables
-    SQLite --- VectorTable
-
-    subgraph "Query Execution (Shared Across Sessions)"
-        Query["User Intent Query / Symbol Search"]
-        Query -->|1. codebase_graph| GraphTables
-        Query -->|2. codebase_semantic_search| VectorTable
-        GraphTables -->|Return Definitions, Calls, References| Context["Injected Context Window"]
-        VectorTable -->|Dot-Product Search & Rerank| Context
-    end
+    %% Query Pipeline
+    Query["Search Query / Intent"]:::query
+    Query -->|codebase_graph| SQLite
+    Query -->|codebase_semantic_search| SQLite
+    SQLite -->|Filtered Context / Symbol Match| Context["Injected Context Window"]:::query
 ```
 
 ### How the Unified Storage Works
