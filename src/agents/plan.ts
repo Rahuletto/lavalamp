@@ -1,4 +1,5 @@
 import { createAgent } from '@flue/runtime';
+import type { ToolDefinition } from '@flue/runtime';
 import { local } from '../sandbox/local';
 import { BUILD_MODEL } from '../config/models';
 import { resolveSelectedModel } from '../config/runtime-route';
@@ -9,6 +10,7 @@ import {
   getMemoryContext,
   createMemoryTools,
 } from '../sessions';
+import { customReadTool } from '../tools/file-tools';
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
@@ -20,6 +22,7 @@ import { TaskStore } from '../tools/task-store';
 import { createTaskTools } from '../tools/task-tools';
 import { createLoadSkillTool } from '../tools/skills';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
+import { withResultBudget } from '../tools/result-budget';
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
@@ -48,7 +51,7 @@ export default createAgent((ctx) => {
     '- Explain reasoning and trade-offs for each step.',
     '',
     '## Tools',
-    '- `read` → read file contents',
+    '- `read_file` → read file contents (supports offset/limit for chunks)',
     '- `ripgrep` → search file contents with regex',
     '- `glob` → find files by pattern',
     '- `codebase_search` → search codebase',
@@ -76,10 +79,13 @@ export default createAgent((ctx) => {
     sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
     thinkingLevel: 'medium',
     tools: [
+      customReadTool,
       createSessionsTool(),
       createSessionContextTool(),
       createPullSessionTool(),
-      ...createMemoryTools(workspaceRoot as string),
+      ...createMemoryTools(workspaceRoot as string).filter(
+        (tool: ToolDefinition) => tool.name === 'memory_read',
+      ),
       createWebSearchTool(),
       createFetchUrlTool(),
       createDeepWikiTool(),
@@ -89,6 +95,6 @@ export default createAgent((ctx) => {
       createLoadSkillTool(workspaceRoot as string),
       createCodebaseSemanticSearchTool(workspaceRoot as string),
       ...createTaskTools(taskStore),
-    ],
+    ].map(withResultBudget),
   };
 });
