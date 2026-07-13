@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run package
+      - name: Smoke-test packaged binary (Linux)
+        if: runner.os == 'Linux'
+        run: ./dist/lavalamp --version
+      - name: Smoke-test packaged binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binary = if (Test-Path dist/lavalamp.exe) { 'dist/lavalamp.exe' } else { 'dist/lavalamp' }
+          & $binary --version
+
+  website:
+    name: Website and installer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun install --cwd website --frozen-lockfile
+      - run: bun run website:build
+      - run: bash -n install.sh website/public/install.sh
+      - run: cmp install.sh website/public/install.sh
