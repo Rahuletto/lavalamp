@@ -1,6 +1,6 @@
 export const ACCENT_COLOR = '#FF5E1F';
 
-export const BUILD_MODEL = 'cloudflare-workers-ai/@cf/moonshotai/kimi-k2.7-code';
+export const BUILD_MODEL = 'cloudflare-workers-ai/@cf/zai-org/glm-4.7-flash';
 
 export interface ModelCapabilities {
   vision: boolean;

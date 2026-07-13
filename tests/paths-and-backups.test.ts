@@ -204,6 +204,21 @@ describe('WorkspaceGuard', () => {
     rmSync(root, { force: true, recursive: true });
   });
 
+  test('allows absolute paths through an alias of the workspace root', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'lavalamp-workspace-alias-'));
+    const root = join(parent, 'workspace');
+    const alias = join(parent, 'alias');
+    mkdirSync(root);
+    symlinkSync(root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const guard = new WorkspaceGuard(root);
+
+    expect(guard.constrain(join(alias, 'new.txt'))).toBe(
+      join(guard.root, 'new.txt'),
+    );
+
+    rmSync(parent, { force: true, recursive: true });
+  });
+
   test('rejects a symlink as a rename entry', () => {
     const root = mkdtempSync(join(tmpdir(), 'lavalamp-workspace-'));
     mkdirSync(join(root, 'target'));

@@ -54,12 +54,6 @@ export class WorkspaceGuard {
 
   assertInside(target: string): void {
     const resolved = this.resolve(target);
-    const lexicalRel = relative(this.root, resolved);
-
-    if (lexicalRel.startsWith('..') || isAbsolute(lexicalRel)) {
-      throw new WorkspaceViolationError(resolved, this.root);
-    }
-
     const canonical = this.canonicalize(resolved);
     const rel = relative(this.root, canonical);
 

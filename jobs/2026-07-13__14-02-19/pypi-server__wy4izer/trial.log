@@ -1,0 +1,5 @@
+Skipping image OS validation for alexgshaw/pypi-server:20251031: docker inspect returned 1
+Running command: if command -v apk &> /dev/null; then  apk add --no-cache curl bash git unzip; elif command -v apt-get &> /dev/null; then  apt-get update && apt-get install -y curl git unzip; elif command -v yum &> /dev/null; then  yum install -y curl git unzip; fi
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.14 && echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.bun/bin:$PATH" && bun --version
+Trial pypi-server__wy4izer cancelled

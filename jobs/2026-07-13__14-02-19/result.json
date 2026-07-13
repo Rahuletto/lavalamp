@@ -1,0 +1,40 @@
+{
+    "id": "2fb62a46-7fe7-45f5-a34b-5868e596fc7f",
+    "started_at": "2026-07-13T14:02:22.711310",
+    "updated_at": "2026-07-13T08:33:57.499231Z",
+    "finished_at": null,
+    "n_total_trials": 89,
+    "stats": {
+        "n_completed_trials": 4,
+        "n_errored_trials": 4,
+        "n_running_trials": 4,
+        "n_pending_trials": 81,
+        "n_cancelled_trials": 0,
+        "n_retries": 0,
+        "evals": {
+            "lavalamp__terminal-bench/terminal-bench-2-1": {
+                "n_trials": 0,
+                "n_errors": 4,
+                "metrics": [
+                    {
+                        "mean": 0.0
+                    }
+                ],
+                "pass_at_k": {},
+                "reward_stats": {},
+                "exception_stats": {
+                    "NonZeroAgentExitCodeError": [
+                        "schemelike-metacircular-eval__UdDWYbK",
+                        "kv-store-grpc__STge2fr",
+                        "write-compressor__EUGZyPB",
+                        "torch-tensor-parallelism__yUvLniJ"
+                    ]
+                }
+            }
+        },
+        "n_input_tokens": null,
+        "n_cache_tokens": null,
+        "n_output_tokens": null,
+        "cost_usd": null
+    }
+}

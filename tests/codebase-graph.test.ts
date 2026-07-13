@@ -3,19 +3,21 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { GraphIndexer } from '../src/storage/graph-indexer';
-import { VectorDb } from '../src/storage/vector-db';
+import { rerankChunks, VectorDb } from '../src/storage/vector-db';
 
 describe('offline codebase graph', () => {
   const roots: string[] = [];
   const graphs: GraphIndexer[] = [];
   const databases: VectorDb[] = [];
   const originalLavalampHome = process.env.LAVALAMP_HOME;
+  const originalFetch = globalThis.fetch;
   const makeGraph = (root: string) => {
     const graph = new GraphIndexer(root);
     graphs.push(graph);
     return graph;
   };
   afterEach(() => {
+    globalThis.fetch = originalFetch;
     for (const graph of graphs.splice(0)) graph.close();
     for (const database of databases.splice(0)) database.close();
     for (const root of roots.splice(0))
@@ -120,6 +122,62 @@ describe('offline codebase graph', () => {
     expect(graph.query('before')).toContain('No graph entry found');
   });
 
+  test('reuses persisted parses and reparses only changed files', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-graph-'));
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-state-'));
+    roots.push(root, state);
+    process.env.LAVALAMP_HOME = state;
+    fs.writeFileSync(path.join(root, 'a.ts'), 'export function oldName() {}\n');
+    fs.writeFileSync(path.join(root, 'b.ts'), 'export function stable() {}\n');
+
+    const first = makeGraph(root);
+    first.query('oldName');
+    expect(first.lastIndexStats).toEqual({ parsedFiles: 2, reusedFiles: 0 });
+
+    const second = makeGraph(root);
+    second.query('stable');
+    expect(second.lastIndexStats).toEqual({ parsedFiles: 0, reusedFiles: 2 });
+
+    fs.writeFileSync(
+      path.join(root, 'a.ts'),
+      'export function replacementWithLongerName() {}\n',
+    );
+    second.query('replacementWithLongerName');
+    expect(second.lastIndexStats).toEqual({ parsedFiles: 1, reusedFiles: 1 });
+    expect(second.query('oldName')).toContain('No graph entry found');
+  });
+
+  test('rebuilds cached importer edges when a target appears and removes deleted caches', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-graph-'));
+    const state = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-state-'));
+    roots.push(root, state);
+    process.env.LAVALAMP_HOME = state;
+    fs.writeFileSync(
+      path.join(root, 'consumer.ts'),
+      "import { later } from './target';\nlater();\n",
+    );
+    makeGraph(root).query('consumer.ts');
+
+    fs.writeFileSync(
+      path.join(root, 'target.ts'),
+      'export function later() {}\n',
+    );
+    const added = makeGraph(root);
+    expect(added.query('later')).toContain('consumer.ts:2 -> later');
+    expect(added.query('consumer.ts')).toContain('consumer.ts:1 -> target.ts');
+    expect(added.lastIndexStats).toEqual({ parsedFiles: 1, reusedFiles: 1 });
+
+    fs.rmSync(path.join(root, 'target.ts'));
+    const deleted = makeGraph(root);
+    expect(deleted.query('target.ts')).toContain('No graph entry found');
+    expect(deleted.lastIndexStats).toEqual({ parsedFiles: 0, reusedFiles: 1 });
+    const db = new VectorDb(root);
+    databases.push(db);
+    expect(db.getGraphFileCache().map((entry) => entry.path)).toEqual([
+      'consumer.ts',
+    ]);
+  });
+
   test('does not resolve dependencies across language families', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-graph-'));
     const state = fs.mkdtempSync(path.join(os.tmpdir(), 'lavalamp-state-'));
@@ -201,5 +259,42 @@ describe('offline codebase graph', () => {
     expect(db.getFileHash('source.ts')).toBe('new-hash');
     expect(db.getFileChunkCount('source.ts')).toBe(1);
     expect(db.search([0, 1])[0]?.content).toBe('new content');
+  });
+
+  test('reranks vector candidates with Workers AI scores', async () => {
+    let requestBody: unknown;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return Response.json({
+        success: true,
+        result: {
+          response: [
+            { id: 1, score: 0.9 },
+            { id: 0, score: 0.4 },
+          ],
+        },
+      });
+    }) as typeof fetch;
+
+    const result = await rerankChunks(
+      'permission checks',
+      [
+        { filePath: 'first.ts', content: 'first', similarity: 0.9 },
+        { filePath: 'second.ts', content: 'second', similarity: 0.7 },
+      ],
+      'account',
+      'token',
+      2,
+    );
+
+    expect(result.map((item) => item.filePath)).toEqual([
+      'second.ts',
+      'first.ts',
+    ]);
+    expect(requestBody).toEqual({
+      query: 'permission checks',
+      top_k: 2,
+      contexts: [{ text: 'first.ts\nfirst' }, { text: 'second.ts\nsecond' }],
+    });
   });
 });

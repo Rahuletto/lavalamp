@@ -1,0 +1,13 @@
+{
+    "task": {
+        "name": "terminal-bench/pypi-server",
+        "ref": "sha256:1a1e0542f58e2d3362fec17a9bbb98667717d9a4a3e9a4c8413d3150a4fa0ff1",
+        "source": "terminal-bench/terminal-bench-2-1"
+    },
+    "trial_name": "pypi-server__wy4izer",
+    "trials_dir": "jobs/2026-07-13__14-02-19",
+    "agent": {
+        "name": "bench.agent:LavalampAgent"
+    },
+    "job_id": "2fb62a46-7fe7-45f5-a34b-5868e596fc7f"
+}

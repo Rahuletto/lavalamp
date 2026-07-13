@@ -1,4 +1,9 @@
-import { VectorDb, chunkText, fetchEmbeddings } from './vector-db';
+import {
+  VectorDb,
+  chunkText,
+  fetchEmbeddings,
+  rerankChunks,
+} from './vector-db';
 import { loadCredentials } from '../auth/credentials';
 import { WorkspaceGuard } from '../sandbox/workspace';
 import * as path from 'node:path';
@@ -84,7 +89,20 @@ export class CodebaseIndexer {
         return 'Failed to embed query.';
       }
 
-      const matches = this.db.search(queryVector, limit);
+      const candidateLimit = Math.min(Math.max(limit * 4, 20), 40);
+      const candidates = this.db.search(queryVector, candidateLimit);
+      let matches = candidates.slice(0, limit);
+      try {
+        matches = await rerankChunks(
+          query,
+          candidates,
+          creds.accountId,
+          creds.apiToken,
+          limit,
+        );
+      } catch {
+        // Vector similarity remains a safe fallback if reranking is unavailable.
+      }
       if (matches.length === 0) {
         return 'No matching semantic chunks found.';
       }
@@ -92,7 +110,7 @@ export class CodebaseIndexer {
       return matches
         .map(
           (m, i) =>
-            `### Match ${i + 1} (${m.filePath} - similarity: ${(m.similarity * 100).toFixed(1)}%)\n\n${m.content}`,
+            `### Match ${i + 1} (${m.filePath} - ${m.relevance === undefined ? 'similarity' : 'rerank relevance'}: ${((m.relevance ?? m.similarity) * 100).toFixed(1)}%)\n\n${m.content}`,
         )
         .join('\n\n---\n\n');
     } catch (error: unknown) {

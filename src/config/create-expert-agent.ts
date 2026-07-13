@@ -149,8 +149,8 @@ export function createExpertAgent(id: ExpertId, parts: ExpertInstructionParts) {
       '',
       '## Method',
       ...(parts.method ?? [
-        '- Read only what you need to answer precisely.',
-        '- Prefer ripgrep/semantic search over blind full-file reads.',
+        '- For a known symbol/file and direct dependencies, start with codebase_graph. Use ripgrep for exact strings or patterns and codebase_semantic_search for conceptual or behavioral discovery, then targeted read_file or LSP queries.',
+        '- Once a tool locates the ownership path, do not run every retrieval tool redundantly; read only what you need to answer precisely.',
         '- If evidence is missing, say what you would need next.',
       ]),
       '',

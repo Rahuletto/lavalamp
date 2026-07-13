@@ -2,7 +2,12 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { WorkspaceGuard } from '../sandbox/workspace';
-import { type GraphReference, type GraphSymbol, VectorDb } from './vector-db';
+import {
+  type GraphFileCache,
+  type GraphReference,
+  type GraphSymbol,
+  VectorDb,
+} from './vector-db';
 
 const SOURCE = /\.(?:ts|tsx|js|jsx|py|go|rs|java|cs|c|cc|cpp|cxx|h|hpp)$/i;
 const MAX_FILES = 10_000;
@@ -13,7 +18,8 @@ const MAX_DEPENDENCIES = 100_000;
 const MAX_REFERENCES = 200_000;
 const MAX_REFERENCE_CHECKS = 2_000_000;
 const MAX_VISITED = 100_000;
-const GRAPH_FORMAT = '2';
+const MAX_CACHE_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const GRAPH_FORMAT = '3';
 const IGNORED = new Set([
   'node_modules',
   '.git',
@@ -313,12 +319,142 @@ function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+interface ParsedPayload {
+  symbols: GraphSymbol[];
+  imports: ParsedImport[];
+  usages: Array<{ importIndex: number; bindingIndex: number; lines: number[] }>;
+  referenceChecks: number;
+  incomplete: boolean;
+}
+
+function parsePayload(filePath: string, text: string): ParsedPayload {
+  const imports = parsedImports(filePath, text);
+  const ext = path.extname(filePath).toLowerCase();
+  const masked = ['.ts', '.tsx', '.js', '.jsx'].includes(ext)
+    ? maskTsJs(text)
+    : text;
+  const lines = masked.split(/\r?\n/);
+  const usages: ParsedPayload['usages'] = [];
+  let referenceChecks = 0;
+  let incomplete = false;
+  outer: for (
+    let importIndex = 0;
+    importIndex < imports.length;
+    importIndex++
+  ) {
+    const imported = imports[importIndex];
+    if (!imported) continue;
+    for (
+      let bindingIndex = 0;
+      bindingIndex < imported.bindings.length;
+      bindingIndex++
+    ) {
+      const binding = imported.bindings[bindingIndex];
+      if (!binding) continue;
+      const local = escapeRegex(binding.local);
+      const shadow = new RegExp(
+        [
+          `\\b(?:const|let|var|function|class|catch)\\s*(?:\\([^)]*)?\\b${local}\\b`,
+          `\\([^)]*\\b${local}\\b[^)]*\\)\\s*(?:=>|\\{)`,
+          `\\b${local}\\s*=>`,
+          `\\b(?:const|let|var)\\s*\\{[^}]*\\b${local}\\b\\s*(?:[,}=])`,
+          `\\b(?:const|let|var)\\s*\\[[^\]]*\\b${local}\\b`,
+        ].join('|'),
+      );
+      let shadowed = false;
+      for (let index = 0; index < lines.length; index++) {
+        if (index + 1 === imported.line) continue;
+        if (++referenceChecks >= MAX_REFERENCE_CHECKS) {
+          incomplete = true;
+          break outer;
+        }
+        if (shadow.test(lines[index] ?? '')) {
+          shadowed = true;
+          break;
+        }
+      }
+      if (shadowed) continue;
+      const usage = new RegExp(`(^|[^.\\w$])${local}\\b`);
+      const propertyKey = new RegExp(`\\b${local}\\s*:`);
+      const usageLines: number[] = [];
+      for (let index = 0; index < lines.length; index++) {
+        if (++referenceChecks >= MAX_REFERENCE_CHECKS) {
+          incomplete = true;
+          break outer;
+        }
+        if (index + 1 === imported.line) continue;
+        const code = lines[index] ?? '';
+        if (usage.test(code) && !propertyKey.test(code))
+          usageLines.push(index + 1);
+      }
+      usages.push({ importIndex, bindingIndex, lines: usageLines });
+    }
+  }
+  return {
+    symbols: extractSymbols(filePath, text),
+    imports,
+    usages,
+    referenceChecks,
+    incomplete,
+  };
+}
+
+function decodePayload(record: GraphFileCache): ParsedPayload | undefined {
+  try {
+    if (record.payload.length > MAX_FILE_BYTES * 4) return undefined;
+    const decoded: unknown = JSON.parse(record.payload);
+    if (typeof decoded !== 'object' || decoded === null) return undefined;
+    const value = decoded as ParsedPayload;
+    const symbolsValid = value.symbols?.every(
+      (symbol) =>
+        symbol.filePath === record.path &&
+        typeof symbol.name === 'string' &&
+        typeof symbol.kind === 'string' &&
+        Number.isSafeInteger(symbol.startLine),
+    );
+    const importsValid = value.imports?.every(
+      (imported) =>
+        typeof imported.specifier === 'string' &&
+        Number.isSafeInteger(imported.line) &&
+        Array.isArray(imported.bindings) &&
+        imported.bindings.every(
+          (binding) =>
+            typeof binding.local === 'string' &&
+            typeof binding.imported === 'string',
+        ),
+    );
+    const usagesValid = value.usages?.every(
+      (usage) =>
+        Number.isSafeInteger(usage.importIndex) &&
+        Number.isSafeInteger(usage.bindingIndex) &&
+        Array.isArray(usage.lines) &&
+        usage.lines.every((line) => Number.isSafeInteger(line) && line > 0),
+    );
+    if (
+      !Array.isArray(value.symbols) ||
+      !Array.isArray(value.imports) ||
+      !Array.isArray(value.usages) ||
+      !symbolsValid ||
+      !importsValid ||
+      !usagesValid ||
+      !Number.isSafeInteger(value.referenceChecks) ||
+      value.referenceChecks < 0 ||
+      typeof value.incomplete !== 'boolean'
+    )
+      return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
 export class GraphIndexer {
   private readonly db: VectorDb;
   private readonly guard: WorkspaceGuard;
   private manifest: string | undefined;
   private incomplete = false;
   private stale = false;
+  lastIndexStats = { parsedFiles: 0, reusedFiles: 0 };
   constructor(private readonly workspaceRoot: string) {
     this.db = new VectorDb(workspaceRoot);
     this.guard = new WorkspaceGuard(workspaceRoot);
@@ -372,27 +508,63 @@ export class GraphIndexer {
     }
     const manifest = JSON.stringify(candidates);
     if (manifest === this.manifest) return;
-    const records: Array<{ path: string; hash: string; text: string }> = [];
+    const cached = new Map(
+      this.db.getGraphFileCache().map((record) => [record.path, record]),
+    );
+    const records: Array<GraphFileCache & { parsed: ParsedPayload }> = [];
+    let parsedFiles = 0;
+    let reusedFiles = 0;
     for (const candidate of candidates) {
+      const prior = cached.get(candidate.path);
+      if (
+        prior?.format === GRAPH_FORMAT &&
+        prior.size === candidate.size &&
+        prior.mtimeMs === candidate.mtimeMs &&
+        prior.ctimeMs === candidate.ctimeMs
+      ) {
+        const parsed = decodePayload(prior);
+        if (parsed) {
+          records.push({ ...prior, parsed });
+          reusedFiles++;
+          continue;
+        }
+      }
       try {
         const text = fs.readFileSync(
           this.guard.constrain(candidate.path),
           'utf8',
         );
+        const parsed = parsePayload(candidate.path, text);
+        let payload = JSON.stringify(parsed);
+        if (payload.length > MAX_CACHE_PAYLOAD_BYTES) {
+          parsed.incomplete = true;
+          payload = '';
+        }
         records.push({
-          path: candidate.path,
-          text,
+          ...candidate,
           hash: crypto.createHash('sha256').update(text).digest('hex'),
+          format: GRAPH_FORMAT,
+          payload,
+          parsed,
         });
+        parsedFiles++;
       } catch {
         this.stale = true;
         return;
       }
     }
+    this.lastIndexStats = { parsedFiles, reusedFiles };
     const fingerprint = crypto
       .createHash('sha256')
       .update(`${incomplete ? 'incomplete' : 'complete'}\0`)
-      .update(records.map((r) => `${r.path}\0${r.hash}`).join('\0'))
+      .update(
+        records
+          .map(
+            (r) =>
+              `${r.path}\0${r.hash}\0${r.size}\0${r.mtimeMs}\0${r.ctimeMs}`,
+          )
+          .join('\0'),
+      )
       .digest('hex');
     const previous = this.db.getGraphSnapshotMeta();
     if (
@@ -412,7 +584,7 @@ export class GraphIndexer {
         incomplete = true;
         break;
       }
-      const extracted = extractSymbols(record.path, record.text);
+      const extracted = record.parsed.symbols;
       symbols.push(...extracted.slice(0, remaining));
       if (extracted.length > remaining) {
         incomplete = true;
@@ -428,7 +600,7 @@ export class GraphIndexer {
       line: number;
     }> = [];
     dependencyScan: for (const record of records) {
-      for (const imported of parsedImports(record.path, record.text)) {
+      for (const imported of record.parsed.imports) {
         if (dependencies.length >= MAX_DEPENDENCIES) {
           incomplete = true;
           break dependencyScan;
@@ -468,74 +640,43 @@ export class GraphIndexer {
     const references: GraphReference[] = [];
     let referenceChecks = 0;
     referenceScan: for (const record of records) {
-      const ext = path.extname(record.path).toLowerCase();
-      const masked = ['.ts', '.tsx', '.js', '.jsx'].includes(ext)
-        ? maskTsJs(record.text)
-        : record.text;
-      const lines = masked.split(/\r?\n/);
-      for (const imported of imports.get(record.path) ?? []) {
-        for (const binding of imported.bindings) {
-          const target = symbolsByFile
-            .get(imported.targetFile)
-            ?.get(binding.imported);
-          if (!target) {
-            continue;
+      referenceChecks += record.parsed.referenceChecks;
+      if (referenceChecks >= MAX_REFERENCE_CHECKS || record.parsed.incomplete) {
+        incomplete = true;
+        break;
+      }
+      for (const usage of record.parsed.usages) {
+        const rawImport = record.parsed.imports[usage.importIndex];
+        const binding = rawImport?.bindings[usage.bindingIndex];
+        if (!rawImport || !binding) continue;
+        const imported = (imports.get(record.path) ?? []).find(
+          (entry) =>
+            entry.line === rawImport.line &&
+            entry.specifier === rawImport.specifier,
+        );
+        if (!imported) continue;
+        const target = symbolsByFile
+          .get(imported.targetFile)
+          ?.get(binding.imported);
+        if (!target) {
+          continue;
+        }
+        for (const line of usage.lines) {
+          if (references.length >= MAX_REFERENCES) {
+            incomplete = true;
+            break referenceScan;
           }
-          const local = escapeRegex(binding.local);
-          const shadow = new RegExp(
-            [
-              `\\b(?:const|let|var|function|class|catch)\\s*(?:\\([^)]*)?\\b${local}\\b`,
-              `\\([^)]*\\b${local}\\b[^)]*\\)\\s*(?:=>|\\{)`,
-              `\\b${local}\\s*=>`,
-              `\\b(?:const|let|var)\\s*\\{[^}]*\\b${local}\\b\\s*(?:[,}=])`,
-              `\\b(?:const|let|var)\\s*\\[[^\]]*\\b${local}\\b`,
-            ].join('|'),
-          );
-          let shadowed = false;
-          for (let index = 0; index < lines.length; index++) {
-            if (index + 1 === imported.line) continue;
-            referenceChecks++;
-            if (referenceChecks >= MAX_REFERENCE_CHECKS) {
-              incomplete = true;
-              break referenceScan;
-            }
-            if (shadow.test(lines[index] ?? '')) {
-              shadowed = true;
-              break;
-            }
-          }
-          if (shadowed) {
-            continue;
-          }
-          const usage = new RegExp(`(^|[^.\\w$])${local}\\b`);
-          const propertyKey = new RegExp(`\\b${local}\\s*:`);
-          for (let index = 0; index < lines.length; index++) {
-            referenceChecks++;
-            if (
-              references.length >= MAX_REFERENCES ||
-              referenceChecks >= MAX_REFERENCE_CHECKS
-            ) {
-              incomplete = true;
-              break referenceScan;
-            }
-            if (index + 1 === imported.line) {
-              continue;
-            }
-            const code = lines[index] ?? '';
-            if (usage.test(code) && !propertyKey.test(code)) {
-              references.push({
-                sourceFile: record.path,
-                targetName: target.name,
-                line: index + 1,
-              });
-            }
-          }
+          references.push({
+            sourceFile: record.path,
+            targetName: target.name,
+            line,
+          });
         }
       }
     }
     try {
       this.db.replaceGraph(
-        records.map(({ path, hash }) => ({ path, hash })),
+        records.map(({ parsed: _parsed, ...record }) => record),
         symbols,
         dependencies,
         references,

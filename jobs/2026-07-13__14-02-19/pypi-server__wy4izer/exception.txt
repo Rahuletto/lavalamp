@@ -1,0 +1,46 @@
+Traceback (most recent call last):
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 350, in run
+    await self._prepare()
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 383, in _prepare
+    await self._setup_agent()
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 1129, in _setup_agent
+    await asyncio.wait_for(
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 507, in setup
+    await self.install(environment)
+  File "/Users/marban/Documents/Coding/lavalamp/bench/agent.py", line 131, in install
+    await self.exec_as_agent(
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 477, in exec_as_agent
+    return await self._exec(
+           ^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 428, in _exec
+    result = await environment.exec(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py", line 1069, in exec
+    return await self._compose_exec(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py", line 1146, in _compose_exec
+    return await self._run_docker_compose_command(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py", line 624, in _run_docker_compose_command
+    result = await self._collect_buffered_output(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/environments/docker/docker.py", line 654, in _collect_buffered_output
+    stdout_bytes, stderr_bytes = await process.communicate(input=stdin_data)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/subprocess.py", line 201, in communicate
+    stdin, stdout, stderr = await tasks.gather(stdin, stdout, stderr)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/subprocess.py", line 181, in _read_stream
+    output = await stream.read()
+             ^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/streams.py", line 706, in read
+    block = await self.read(self._limit)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/streams.py", line 713, in read
+    await self._wait_for_data('read')
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/streams.py", line 545, in _wait_for_data
+    await self._waiter
+asyncio.exceptions.CancelledError

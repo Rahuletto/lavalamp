@@ -1,0 +1,13 @@
+{
+    "task": {
+        "name": "terminal-bench/write-compressor",
+        "ref": "sha256:d9ddd9a8e925e2c566b37b2492cbf995afecefe58874e4043ef78d7f3c892c7e",
+        "source": "terminal-bench/terminal-bench-2-1"
+    },
+    "trial_name": "write-compressor__EUGZyPB",
+    "trials_dir": "jobs/2026-07-13__14-02-19",
+    "agent": {
+        "name": "bench.agent:LavalampAgent"
+    },
+    "job_id": "2fb62a46-7fe7-45f5-a34b-5868e596fc7f"
+}

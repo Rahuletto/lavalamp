@@ -1,0 +1,2 @@
+Running command: if command -v apk &> /dev/null; then  apk add --no-cache curl bash git unzip; elif command -v apt-get &> /dev/null; then  apt-get update && apt-get install -y curl git unzip; elif command -v yum &> /dev/null; then  yum install -y curl git unzip; fi
+Trial dna-assembly__8b3nDim cancelled

@@ -1,0 +1,2 @@
+Skipping image OS validation for alexgshaw/qemu-alpine-ssh:20251031: docker inspect returned 1
+Trial qemu-alpine-ssh__tC5Tb6L cancelled

@@ -1,0 +1,31 @@
+Traceback (most recent call last):
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 350, in run
+    await self._prepare()
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 383, in _prepare
+    await self._setup_agent()
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/trial/trial.py", line 1129, in _setup_agent
+    await asyncio.wait_for(
+  File "/Users/marban/.local/share/uv/python/cpython-3.12.12-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 507, in setup
+    await self.install(environment)
+  File "/Users/marban/Documents/Coding/lavalamp/bench/agent.py", line 192, in install
+    await self.exec_as_agent(
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 477, in exec_as_agent
+    return await self._exec(
+           ^^^^^^^^^^^^^^^^^
+  File "/Users/marban/.local/share/uv/tools/harbor/lib/python3.12/site-packages/harbor/agents/installed/base.py", line 444, in _exec
+    raise self._classify_exec_error(command, result)
+harbor.agents.installed.base.NonZeroAgentExitCodeError: Command failed (exit 1): set -euo pipefail; mkdir -p $HOME/.lavalamp-src && tar -xf /tmp/lavalamp.tar -C $HOME/.lavalamp-src --strip-components=1 && rm -f /tmp/lavalamp.tar && export PATH="$HOME/.bun/bin:$PATH"; cd $HOME/.lavalamp-src && bun install --frozen-lockfile && bun run build && mkdir -p "$HOME/.local/bin" && ln -sf "$HOME/.lavalamp-src/bin/lavalamp" "$HOME/.local/bin/lavalamp" && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH" && lavalamp --version
+stdout: bun install v1.3.14 (0d9b296a)
+2 |   "lockfileVersion": 2,
+                         ^
+error: Unknown lockfile version
+    at bun.lock:2:22
+UnknownLockfileVersion: failed to parse lockfile: 'bun.lock'
+
+warn: Ignoring lockfile
+error: lockfile had changes, but lockfile is frozen
+
+stderr: None

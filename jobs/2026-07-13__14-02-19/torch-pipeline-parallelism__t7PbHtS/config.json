@@ -1,0 +1,13 @@
+{
+    "task": {
+        "name": "terminal-bench/torch-pipeline-parallelism",
+        "ref": "sha256:db605337c749a872cea7b5b413429b3915bb4c3efe0f7875f0c46ce81bd8c4fb",
+        "source": "terminal-bench/terminal-bench-2-1"
+    },
+    "trial_name": "torch-pipeline-parallelism__t7PbHtS",
+    "trials_dir": "jobs/2026-07-13__14-02-19",
+    "agent": {
+        "name": "bench.agent:LavalampAgent"
+    },
+    "job_id": "2fb62a46-7fe7-45f5-a34b-5868e596fc7f"
+}

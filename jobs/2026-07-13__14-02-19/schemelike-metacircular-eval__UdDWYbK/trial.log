@@ -1,0 +1,19 @@
+Running command: if command -v apk &> /dev/null; then  apk add --no-cache curl bash git unzip; elif command -v apt-get &> /dev/null; then  apt-get update && apt-get install -y curl git unzip; elif command -v yum &> /dev/null; then  yum install -y curl git unzip; fi
+Command outputs captured
+Running command: set -euo pipefail; curl -fsSL https://bun.sh/install | bash -s -- bun-v1.3.14 && echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.bun/bin:$PATH" && bun --version
+Command outputs captured
+Running command: set -euo pipefail; mkdir -p $HOME/.lavalamp-src && tar -xf /tmp/lavalamp.tar -C $HOME/.lavalamp-src --strip-components=1 && rm -f /tmp/lavalamp.tar && export PATH="$HOME/.bun/bin:$PATH"; cd $HOME/.lavalamp-src && bun install --frozen-lockfile && bun run build && mkdir -p "$HOME/.local/bin" && ln -sf "$HOME/.lavalamp-src/bin/lavalamp" "$HOME/.local/bin/lavalamp" && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH" && lavalamp --version
+Command failed
+Trial schemelike-metacircular-eval__UdDWYbK failed: Command failed (exit 1): set -euo pipefail; mkdir -p $HOME/.lavalamp-src && tar -xf /tmp/lavalamp.tar -C $HOME/.lavalamp-src --strip-components=1 && rm -f /tmp/lavalamp.tar && export PATH="$HOME/.bun/bin:$PATH"; cd $HOME/.lavalamp-src && bun install --frozen-lockfile && bun run build && mkdir -p "$HOME/.local/bin" && ln -sf "$HOME/.lavalamp-src/bin/lavalamp" "$HOME/.local/bin/lavalamp" && echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && export PATH="$HOME/.local/bin:$PATH" && lavalamp --version
+stdout: bun install v1.3.14 (0d9b296a)
+2 |   "lockfileVersion": 2,
+                         ^
+error: Unknown lockfile version
+    at bun.lock:2:22
+UnknownLockfileVersion: failed to parse lockfile: 'bun.lock'
+
+warn: Ignoring lockfile
+error: lockfile had changes, but lockfile is frozen
+
+stderr: None
+Collecting main service artifacts

@@ -7,6 +7,7 @@ export interface ChunkResult {
   filePath: string;
   content: string;
   similarity: number;
+  relevance?: number;
 }
 
 export interface GraphSymbol {
@@ -29,6 +30,16 @@ export interface GraphSnapshotMeta {
   format: string | null;
   fingerprint: string | null;
   incomplete: boolean;
+}
+
+export interface GraphFileCache {
+  path: string;
+  hash: string;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  format: string;
+  payload: string;
 }
 
 export class VectorDb {
@@ -73,6 +84,11 @@ export class VectorDb {
     this.db.run(
       `CREATE TABLE IF NOT EXISTS graph_files (path TEXT PRIMARY KEY, hash TEXT NOT NULL)`,
     );
+    this.db.run(`CREATE TABLE IF NOT EXISTS graph_file_cache (
+      path TEXT PRIMARY KEY, hash TEXT NOT NULL, size INTEGER NOT NULL,
+      mtime_ms REAL NOT NULL, ctime_ms REAL NOT NULL, format TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      FOREIGN KEY (path) REFERENCES graph_files(path) ON DELETE CASCADE)`);
     this.db.run(`CREATE TABLE IF NOT EXISTS graph_symbols (
       id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, name TEXT NOT NULL,
       kind TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER, signature TEXT,
@@ -104,7 +120,7 @@ export class VectorDb {
   }
 
   replaceGraph(
-    files: { path: string; hash: string }[],
+    files: GraphFileCache[],
     symbols: GraphSymbol[],
     dependencies: { sourceFile: string; targetFile: string; line: number }[],
     references: GraphReference[],
@@ -132,6 +148,10 @@ export class VectorDb {
       const symbolStmt = this.db.prepare(
         `INSERT INTO graph_symbols (file_path,name,kind,start_line,end_line,signature) VALUES (?,?,?,?,?,?)`,
       );
+      const cacheStmt = this.db.prepare(
+        `INSERT INTO graph_file_cache
+         (path,hash,size,mtime_ms,ctime_ms,format,payload) VALUES (?,?,?,?,?,?,?)`,
+      );
       const depStmt = this.db.prepare(
         'INSERT OR IGNORE INTO graph_dependencies (source_file,target_file,line) VALUES (?,?,?)',
       );
@@ -140,6 +160,15 @@ export class VectorDb {
       );
       for (const file of files) {
         fileStmt.run(file.path, file.hash);
+        cacheStmt.run(
+          file.path,
+          file.hash,
+          file.size,
+          file.mtimeMs,
+          file.ctimeMs,
+          file.format,
+          file.payload,
+        );
       }
       for (const symbol of symbols) {
         const result = symbolStmt.run(
@@ -196,6 +225,15 @@ export class VectorDb {
       fingerprint: values.get('content_fingerprint') ?? null,
       incomplete: values.get('incomplete') === '1',
     };
+  }
+
+  getGraphFileCache(): GraphFileCache[] {
+    return this.db
+      .prepare(
+        `SELECT path,hash,size,mtime_ms mtimeMs,ctime_ms ctimeMs,format,payload
+         FROM graph_file_cache ORDER BY path`,
+      )
+      .all() as GraphFileCache[];
   }
 
   queryGraph(
@@ -331,10 +369,12 @@ export class VectorDb {
     const floatArray = new Float32Array(embedding);
     const buffer = Buffer.from(floatArray.buffer);
     this.db
-      .prepare(`
+      .prepare(
+        `
       INSERT INTO chunks (file_path, chunk_index, content, embedding)
       VALUES (?, ?, ?, ?)
-    `)
+    `,
+      )
       .run(filePath, chunkIndex, content, buffer);
   }
 
@@ -446,4 +486,67 @@ export async function fetchEmbeddings(
   }
 
   return result.result.data;
+}
+
+export async function rerankChunks(
+  query: string,
+  chunks: ChunkResult[],
+  accountId: string,
+  apiToken: string,
+  limit: number,
+): Promise<ChunkResult[]> {
+  if (chunks.length === 0) return [];
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-reranker-base`;
+  const response = await fetch(url, {
+    body: JSON.stringify({
+      query,
+      top_k: Math.max(1, Math.min(limit, chunks.length)),
+      contexts: chunks.map((chunk) => ({
+        text: `${chunk.filePath}\n${chunk.content}`,
+      })),
+    }),
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Cloudflare AI reranker API error: ${response.statusText}`);
+  }
+  const body = (await response.json()) as {
+    success?: boolean;
+    result?: { response?: Array<{ id?: number; score?: number }> };
+    errors?: unknown[];
+  };
+  if (!body.success || !Array.isArray(body.result?.response)) {
+    throw new Error(
+      `Cloudflare AI reranker failed: ${JSON.stringify(body.errors ?? [])}`,
+    );
+  }
+  const ranked: ChunkResult[] = [];
+  const seen = new Set<number>();
+  for (const item of body.result.response) {
+    if (
+      !Number.isSafeInteger(item.id) ||
+      item.id === undefined ||
+      item.id < 0 ||
+      item.id >= chunks.length ||
+      typeof item.score !== 'number' ||
+      !Number.isFinite(item.score) ||
+      seen.has(item.id)
+    ) {
+      continue;
+    }
+    const chunk = chunks[item.id];
+    if (!chunk) continue;
+    seen.add(item.id);
+    ranked.push({ ...chunk, relevance: item.score });
+  }
+  if (ranked.length === 0) {
+    throw new Error('Cloudflare AI reranker returned no valid results');
+  }
+  return ranked
+    .toSorted((a, b) => (b.relevance ?? 0) - (a.relevance ?? 0))
+    .slice(0, Math.max(1, limit));
 }
