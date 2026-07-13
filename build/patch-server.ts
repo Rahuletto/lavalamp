@@ -49,3 +49,29 @@ if (patched > 0) {
 } else {
   console.error('[patch-server] already patched — no changes needed');
 }
+
+// Flue leaves package imports and hashed dist/assets chunks external. The
+// compiled CLI extracts only server.mjs, so rebundle it into one self-contained
+// module before src/run.ts embeds it in the executable.
+const bundledServerPath = path.resolve(
+  import.meta.dir,
+  '..',
+  'dist',
+  'server-standalone.mjs',
+);
+const result = Bun.spawnSync([
+  process.execPath,
+  'build',
+  serverPath,
+  '--target=bun',
+  '--minify',
+  `--outfile=${bundledServerPath}`,
+]);
+
+if (result.exitCode !== 0) {
+  process.stderr.write(result.stderr);
+  process.exit(1);
+}
+
+fs.renameSync(bundledServerPath, serverPath);
+console.error('[patch-server] bundled standalone dist/server.mjs');

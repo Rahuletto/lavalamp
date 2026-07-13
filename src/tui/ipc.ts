@@ -247,6 +247,7 @@ export class FlueProcess {
       cwd: this.cwd,
       env: {
         ...process.env,
+        BUN_BE_BUN: '1',
         FLUE_CLI_ID: this.instanceId,
         FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_TARGET: 'agent',

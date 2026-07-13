@@ -6,8 +6,7 @@ Benchmark lavalamp against Terminal-Bench using the [Harbor framework](https://g
 
 - **Python ≥ 3.11** (for Harbor)
 - **Docker** (Harbor runs tasks in containers)
-- **Bun ≥ 1.3.14** (lavalamp runtime — installed automatically inside containers)
-- **lavalamp** built (`bun run build` in repo root)
+- A standalone Linux x64 **lavalamp** executable at `dist/lavalamp`
 
 ## Quick Start
 
@@ -37,10 +36,10 @@ ANTHROPIC_API_KEY=sk-... harbor run \
 ```
 Harbor Docker Container
   └─ LavalampAgent (BaseInstalledAgent, ATIF=True)
-       ├─ install()                → apt + bun + git clone lavalamp + bun install + bun run build
-       ├─ run()                    → lavalamp -p "INSTRUCTION" --sudo --quiet --output-format json
+       ├─ install()                → copies prebuilt dist/lavalamp into /usr/local/bin
+       ├─ run()                    → lavalamp -p "INSTRUCTION" --sudo
        │                             └─ copies session JSON out of container for trajectory
-       └─ populate_context_post_run() → parses session.json → ATIF Trajectory (Steps + ToolCalls)
+       └─ populate_context_post_run() → writes ATIF trajectory.json (Steps + ToolCalls)
 ```
 
 The adapter uses lavalamp's **print mode** (`-p`) which:

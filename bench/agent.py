@@ -1,8 +1,8 @@
 """
 Harbor agent adapter for lavalamp.
 
-Installs lavalamp (bun + repo) inside a Harbor-managed container and drives it
-via the non-interactive print mode (`lavalamp -p "..." --sudo --quiet`).
+Copies a prebuilt lavalamp Linux executable into each Harbor-managed container
+and drives it via non-interactive print mode (`lavalamp -p "..." --sudo`).
 
 Usage:
     harbor run -d terminal-bench/terminal-bench-2-1 \
@@ -34,12 +34,8 @@ from harbor.models.trajectories import (
     Trajectory,
 )
 
-# Minimum bun version that lavalamp requires
-_BUN_MIN_VERSION = "1.3.14"
-
 # Session data lives here inside the container (Linux XDG default)
 _CONTAINER_SESSION_DIR = "$HOME/.local/share/lavalamp/sessions"
-
 
 class LavalampAgent(BaseInstalledAgent):
     """Harbor adapter for the lavalamp AI coding harness."""
@@ -112,99 +108,36 @@ class LavalampAgent(BaseInstalledAgent):
             self.logger.debug("lavalamp is already installed")
             return
 
-        # Install system dependencies (as root)
-        await self.exec_as_root(
-            environment,
-            command=(
-                "if command -v apk &> /dev/null; then"
-                "  apk add --no-cache curl bash git unzip;"
-                " elif command -v apt-get &> /dev/null; then"
-                "  apt-get update && apt-get install -y curl git unzip;"
-                " elif command -v yum &> /dev/null; then"
-                "  yum install -y curl git unzip;"
-                " fi"
-            ),
-            env={"DEBIAN_FRONTEND": "noninteractive"},
-        )
-
-        # Install bun (as agent user)
-        await self.exec_as_agent(
-            environment,
-            command=(
-                "set -euo pipefail; "
-                "curl -fsSL https://bun.sh/install | bash -s -- "
-                f"bun-v{_BUN_MIN_VERSION} && "
-                'echo \'export PATH="$HOME/.bun/bin:$PATH"\' >> ~/.bashrc && '
-                'export PATH="$HOME/.bun/bin:$PATH" && '
-                "bun --version"
-            ),
-        )
-
-        # Copy repository from host to container (since it is a private repo)
-        import tempfile
-        import tarfile
+        # Copy the prebuilt Linux x64 executable into the container. Building
+        # from source here makes every trial depend on bun.sh and the package
+        # registry, and adds minutes of redundant setup work.
         import subprocess
-        from pathlib import Path
 
-        # Get container ID using hostname inside the container
         hostname_res = await environment.exec(command="hostname")
         container_id = hostname_res.stdout.strip()
         if not container_id:
             raise ValueError("Failed to retrieve container ID")
 
         repo_root = Path(__file__).resolve().parent.parent
-
-        with tempfile.NamedTemporaryFile(suffix=".tar", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-
-        try:
-            with tarfile.open(tmp_path, "w") as tar:
-                def exclude_func(tarinfo):
-                    parts = Path(tarinfo.name).parts
-                    exclude_names = {
-                        "node_modules",
-                        ".git",
-                        ".github",
-                        ".cache",
-                        "website",
-                        ".flue-vite",
-                        "jobs",
-                        "tests"
-                    }
-                    if any(p in exclude_names for p in parts):
-                        return None
-                    return tarinfo
-
-                tar.add(repo_root, arcname="lavalamp", filter=exclude_func)
-
-            # Copy the tar archive into the container
-            subprocess.run(
-                ["docker", "cp", str(tmp_path), f"{container_id}:/tmp/lavalamp.tar"],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+        binary_path = repo_root / "dist" / "lavalamp"
+        if not binary_path.is_file():
+            raise FileNotFoundError(
+                f"Prebuilt benchmark binary not found: {binary_path}. "
+                "Build dist/lavalamp for Linux x64 before running Harbor."
             )
-        finally:
-            if tmp_path.exists():
-                tmp_path.unlink()
 
-        # Extract the repository and install dependencies
-        await self.exec_as_agent(
+        subprocess.run(
+            ["docker", "cp", str(binary_path), f"{container_id}:/tmp/lavalamp"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        await self.exec_as_root(
             environment,
             command=(
-                "set -euo pipefail; "
-                "mkdir -p $HOME/.lavalamp-src && "
-                "tar -xf /tmp/lavalamp.tar -C $HOME/.lavalamp-src --strip-components=1 && "
-                "rm -f /tmp/lavalamp.tar && "
-                'export PATH="$HOME/.bun/bin:$PATH"; '
-                "cd $HOME/.lavalamp-src && "
-                "bun install && "
-                "bun run build && "
-                'mkdir -p "$HOME/.local/bin" && '
-                'ln -sf "$HOME/.lavalamp-src/bin/lavalamp" "$HOME/.local/bin/lavalamp" && '
-                'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && '
-                'export PATH="$HOME/.local/bin:$PATH" && '
-                "lavalamp --version"
+                "install -m 0755 /tmp/lavalamp /usr/local/bin/lavalamp && "
+                "rm -f /tmp/lavalamp && "
+                "/usr/local/bin/lavalamp --version"
             ),
         )
 
@@ -218,10 +151,12 @@ class LavalampAgent(BaseInstalledAgent):
     ) -> None:
         cmd_parts = [
             'export PATH="$HOME/.bun/bin:$HOME/.local/bin:$PATH"',
-            "cd /workspace",
         ]
 
-        lavalamp_cmd = "lavalamp -p {prompt} --sudo --quiet --output-format json".format(
+        # Use text mode without --quiet so Harbor streams tool activity into the
+        # trial log while the command is running. JSON mode intentionally hides
+        # Lavalamp's live bash/tool output.
+        lavalamp_cmd = "lavalamp -p {prompt} --sudo".format(
             prompt=shlex.quote(instruction),
         )
 
@@ -233,18 +168,60 @@ class LavalampAgent(BaseInstalledAgent):
                 cmd=lavalamp_cmd,
             )
 
-        cmd_parts.append(lavalamp_cmd)
+        # Run Lavalamp with its output attached to a regular file, then tail
+        # that file for Harbor. Task solutions often start a service with `&`;
+        # if that service inherits Docker exec's stdout pipe, Harbor never sees
+        # EOF and incorrectly reports an agent timeout after Lavalamp exits.
+        # Descendants may keep the file open without keeping the exec pipe open.
+        cmd_parts.append(
+            'OUTPUT_FILE=$(mktemp); '
+            'trap \'rm -f "$OUTPUT_FILE"\' EXIT; '
+            f'({lavalamp_cmd}) >"$OUTPUT_FILE" 2>&1 & '
+            'LAVALAMP_PID=$!; '
+            'tail -n +1 -f "$OUTPUT_FILE" & '
+            'TAIL_PID=$!; '
+            'wait "$LAVALAMP_PID"; STATUS=$?; '
+            'sleep 1; '
+            'kill "$TAIL_PID" 2>/dev/null || true; '
+            'wait "$TAIL_PID" 2>/dev/null || true; '
+            'exit "$STATUS"'
+        )
         command = " && ".join(cmd_parts)
 
-        result = await self.exec_as_agent(
-            environment,
-            command=command,
-            timeout=self.timeout,
-        )
+        # The compiled CLI cannot read host credentials directly, so copy
+        # explicitly supplied Workers AI credentials into the task container.
+        cf_id = os.environ.get("CF_ACCOUNT_ID")
+        cf_token = os.environ.get("CF_API_TOKEN")
 
-        # Parse JSON output
+        if cf_id and cf_token:
+            creds_json = json.dumps({"accountId": cf_id, "apiToken": cf_token})
+            await self.exec_as_agent(
+                environment,
+                command=(
+                    "mkdir -p $HOME/.config/lavalamp && "
+                    f"echo {shlex.quote(creds_json)} > $HOME/.config/lavalamp/credentials && "
+                    "chmod 600 $HOME/.config/lavalamp/credentials"
+                ),
+            )
+
+        async def log_agent_output(text: str, stream: str) -> None:
+            line = text.rstrip()
+            if line:
+                self.logger.info("[lavalamp %s] %s", stream, line)
+
+        # Harbor's CLI does not subscribe to raw environment output by default,
+        # so mirror streamed chunks into the trial logger explicitly.
+        with environment.scoped_output_callback(log_agent_output):
+            result = await self.exec_as_agent(
+                environment,
+                command=command,
+            )
+
+        # Preserve the visible text output in Harbor's agent context. The ATIF
+        # trajectory is populated separately from the saved session below.
         if result.stdout:
-            self._parse_output(result.stdout, context)
+            context.metadata = context.metadata or {}
+            context.metadata["final_output"] = result.stdout
 
         # Extract session file from the container for ATIF trajectory
         session_result = await self.exec_as_agent(
@@ -278,14 +255,14 @@ class LavalampAgent(BaseInstalledAgent):
                 data = json.loads(line)
                 if "error" in data:
                     self.logger.error("lavalamp error: %s", data["error"])
-                    context.error = data["error"]
+                    context.metadata = context.metadata or {}
+                    context.metadata["error"] = data["error"]
                 elif "text" in data:
-                    context.output = data.get("text", "")
+                    context.metadata = context.metadata or {}
+                    context.metadata["final_output"] = data.get("text", "")
                     if "usage" in data:
-                        context.metadata = context.metadata or {}
                         context.metadata["usage"] = data["usage"]
                     if "model" in data:
-                        context.metadata = context.metadata or {}
                         context.metadata["model"] = data["model"]
             except json.JSONDecodeError:
                 self.logger.debug("Non-JSON output line: %s", line[:200])
@@ -411,10 +388,15 @@ class LavalampAgent(BaseInstalledAgent):
                     step_id += 1
 
         if steps:
-            context.trajectory = Trajectory(steps=steps)
+            trajectory = Trajectory(steps=steps)
+            trajectory_path = self.logs_dir / "trajectory.json"
+            trajectory_path.write_text(
+                json.dumps(trajectory.to_json_dict(), indent=2)
+            )
             self.logger.info(
-                "Built ATIF trajectory with %d steps from lavalamp session",
+                "Built ATIF trajectory with %d steps at %s",
                 len(steps),
+                trajectory_path,
             )
 
     @staticmethod

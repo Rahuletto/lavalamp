@@ -13,3 +13,4 @@ testbench/cli.js
 .agents/attachments/
 .agents/vector-db.db
 .lavalamp/autorun.json
+jobs/

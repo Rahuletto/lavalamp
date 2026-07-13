@@ -72,18 +72,21 @@ if ! docker info &> /dev/null; then
 fi
 echo "  ✓ docker (daemon running)"
 
-if ! command -v bun &> /dev/null; then
-  echo "⚠️  Bun not found locally (will be installed inside containers)"
-else
-  echo "  ✓ bun $(bun --version)"
+# The adapter copies this standalone Linux executable into every task container.
+# Do not run `bun run build` here: Flue clears dist/ before rebuilding and would
+# delete the packaged executable.
+BENCH_BINARY="${REPO_DIR}/dist/lavalamp"
+if [ ! -x "$BENCH_BINARY" ]; then
+  echo "❌ Prebuilt Linux benchmark binary not found at dist/lavalamp"
+  echo "   Build it in a Linux x64 environment with: bun run package"
+  exit 1
 fi
-
-# Check that lavalamp builds
-if [ ! -f "${REPO_DIR}/dist/server.mjs" ]; then
-  echo "⚠️  dist/server.mjs not found. Building..."
-  (cd "$REPO_DIR" && bun run build)
+if ! file "$BENCH_BINARY" | grep -Eq 'ELF 64-bit.*x86-64'; then
+  echo "❌ dist/lavalamp is not a Linux x64 executable"
+  echo "   Terminal-Bench containers require a Linux x64 build."
+  exit 1
 fi
-echo "  ✓ lavalamp built"
+echo "  ✓ prebuilt lavalamp Linux x64 binary"
 
 # Warn about missing CF credentials for Workers AI
 if [ -z "${CF_ACCOUNT_ID:-}" ] || [ -z "${CF_API_TOKEN:-}" ]; then
