@@ -23,17 +23,17 @@ Here is what makes it different:
 ## Quick Start
 
 ### Prerequisites
-* You need [Bun](https://bun.sh/) (>= 1.3.14) installed.
+* You need [Bun](https://bun.sh/) (>= 1.3.14) only when building from source.
 * A Cloudflare account (or API keys for fallback providers like Anthropic/OpenAI).
 
 ### Installation
 Install the precompiled binary for your system:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rahuletto/lavalamp/main/install.sh | bash
+curl -fsSL https://lavalamp.marban.lol/install.sh | bash
 ```
 
 **How the installer works:**
-The script detects your OS and architecture (including Rosetta translation on macOS), downloads the platform binary from GitHub Releases, moves it to `~/.agents/bin/`, and appends this path to your shell configuration (`.zshrc`, `.bashrc`, `.bash_profile`, or `config.fish`).
+The script supports Linux and macOS, detects the architecture (including Rosetta translation), verifies a matching published checksum when available, and installs the standalone binary in `~/.agents/bin/`. The installed binary does not require Bun. Native Windows installation is not currently supported.
 
 Alternatively, build from source:
 ```bash

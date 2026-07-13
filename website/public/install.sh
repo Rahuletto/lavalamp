@@ -1,27 +1,45 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
 LAVALAMP_VERSION="${1:-latest}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.agents/bin}"
 REPO="rahuletto/lavalamp"
+ASSET_PREFIX="lavalamp"
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+info() { printf '[lavalamp] %s\n' "$*"; }
+warn() { printf '[lavalamp] Warning: %s\n' "$*" >&2; }
+error() { printf '[lavalamp] Error: %s\n' "$*" >&2; exit 1; }
 
-info() { echo -e "${GREEN}[lavalamp]${NC} $1"; }
-warn() { echo -e "${YELLOW}[lavalamp]${NC} $1"; }
-error() { echo -e "${RED}[lavalamp]${NC} $1" >&2; exit 1; }
+require_downloader() {
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 ||
+    error "curl or wget is required"
+}
 
-# Detect platform
+download() {
+  local url="$1" destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --silent --show-error --location --retry 3 \
+      --output "$destination" "$url"
+  else
+    wget --quiet --tries=3 --output-document="$destination" "$url"
+  fi
+}
+
+download_optional() {
+  local url="$1" destination="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --silent --show-error --location --output "$destination" "$url" 2>/dev/null
+  else
+    wget --quiet --output-document="$destination" "$url" 2>/dev/null
+  fi
+}
+
 detect_platform() {
   local os arch
   case "$(uname -s)" in
-    Linux*)  os="linux" ;;
+    Linux*) os="linux" ;;
     Darwin*) os="darwin" ;;
-    MINGW*|MSYS*|CYGWIN*) os="windows" ;;
+    MINGW*|MSYS*|CYGWIN*) error "Windows installation is not currently supported; use a Linux or macOS host" ;;
     *) error "Unsupported OS: $(uname -s)" ;;
   esac
 
@@ -31,158 +49,133 @@ detect_platform() {
     *) error "Unsupported architecture: $(uname -m)" ;;
   esac
 
-  # Handle Rosetta on macOS
-  if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
-    if sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
-      arch="arm64"
-    fi
+  if [ "$os" = "darwin" ] && [ "$arch" = "x64" ] &&
+    [ "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" = "1" ]; then
+    arch="arm64"
   fi
 
-  echo "${os}-${arch}"
+  printf '%s-%s\n' "$os" "$arch"
 }
 
-# Get latest version from GitHub
 get_latest_version() {
-  if command -v curl &>/dev/null; then
-    curl -sL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4
-  elif command -v wget &>/dev/null; then
-    wget -qO- "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4
+  local response version latest_url
+  if command -v curl >/dev/null 2>&1; then
+    response="$(curl --fail --silent --show-error --location --retry 3 \
+      "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)"
   else
-    error "curl or wget required"
+    response="$(wget --quiet --tries=3 --output-document=- \
+      "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null || true)"
   fi
+  version="$(printf '%s' "$response" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  [ -n "$version" ] && { printf '%s\n' "$version"; return; }
+
+  # Fallback avoids the API and extracts the tag from GitHub's latest-release redirect.
+  if command -v curl >/dev/null 2>&1; then
+    latest_url="$(curl --fail --silent --show-error --location --output /dev/null \
+      --write-out '%{url_effective}' "https://github.com/${REPO}/releases/latest")" || return 1
+  else
+    latest_url="$(wget --server-response --spider \
+      "https://github.com/${REPO}/releases/latest" 2>&1 |
+      sed -n 's/^[[:space:]]*Location: \([^[:space:]]*\).*/\1/p' | tail -n 1)"
+  fi
+  version="${latest_url##*/}"
+  [ -n "$version" ] && [ "$version" != "latest" ] && printf '%s\n' "$version"
 }
 
-# Check if directory is in PATH
-in_path() {
-  local dir="$1"
-  case ":$PATH:" in
-    *":$dir:"*) return 0 ;;
-    *) return 1 ;;
-  esac
+verify_checksum_if_available() {
+  local base_url="$1" asset_name="$2" binary="$3"
+  local checksum_file="$4" checksum_name expected actual
+
+  for checksum_name in "${asset_name}.sha256" SHA256SUMS checksums.txt; do
+    if download_optional "${base_url}/${checksum_name}" "$checksum_file"; then
+      if [ "$checksum_name" = "${asset_name}.sha256" ]; then
+        expected="$(sed -n 's/^\([0-9A-Fa-f]\{64\}\).*/\1/p' "$checksum_file" | head -n 1)"
+      else
+        expected="$(awk -v name="$asset_name" '$2 == name || $2 == "*" name { print $1; exit }' "$checksum_file")"
+      fi
+      [ -n "$expected" ] || continue
+
+      if command -v sha256sum >/dev/null 2>&1; then
+        actual="$(sha256sum "$binary" | awk '{print $1}')"
+      elif command -v shasum >/dev/null 2>&1; then
+        actual="$(shasum -a 256 "$binary" | awk '{print $1}')"
+      else
+        error "A checksum was published, but sha256sum or shasum is required to verify it"
+      fi
+      [ "$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')" = "$actual" ] ||
+        error "Checksum verification failed for ${asset_name}"
+      info "Verified SHA-256 checksum from ${checksum_name}"
+      return
+    fi
+  done
+  warn "No matching published checksum was found; proceeding without checksum verification"
 }
 
-# Add to PATH in shell config files
 setup_path() {
-  local dir="$1"
+  local marker='# lavalamp installer PATH' config shell_name path_line
+  case ":${PATH}:" in *":${INSTALL_DIR}:"*) info "PATH already includes ${INSTALL_DIR}"; return ;; esac
 
-  if in_path "$dir"; then
-    info "PATH already includes $dir"
+  shell_name="$(basename "${SHELL:-/bin/bash}")"
+  case "$shell_name" in
+    zsh) config="$HOME/.zshrc" ;;
+    fish) config="$HOME/.config/fish/config.fish" ;;
+    bash) [ "$(uname -s)" = Darwin ] && config="$HOME/.bash_profile" || config="$HOME/.bashrc" ;;
+    *) warn "Add ${INSTALL_DIR} to PATH to run lavalamp from a new shell"; return ;;
+  esac
+
+  mkdir -p "$(dirname "$config")"
+  touch "$config"
+  if grep -Fq "$marker" "$config"; then
+    info "PATH is already configured in ${config}"
     return
   fi
-
-  info "Adding $dir to PATH..."
-
-  # Detect shell and config file
-  local shell_name
-  shell_name="$(basename "${SHELL:-/bin/bash}")"
-
-  local config_files=()
-  case "$shell_name" in
-    zsh)
-      config_files+=("$HOME/.zshrc")
-      ;;
-    bash)
-      if [ "$(uname)" = "Darwin" ]; then
-        config_files+=("$HOME/.bash_profile")
-      else
-        config_files+=("$HOME/.bashrc")
-      fi
-      ;;
-    fish)
-      config_files+=("$HOME/.config/fish/config.fish")
-      ;;
-  esac
-
-  for config in "${config_files[@]}"; do
-    if [ -f "$config" ]; then
-      if grep -q "lavalamp" "$config" 2>/dev/null; then
-        info "PATH already configured in $config"
-        return
-      fi
-    fi
-
-    # Create config if it doesn't exist
-    mkdir -p "$(dirname "$config")"
-    touch "$config"
-
-    if [ "$shell_name" = "fish" ]; then
-      echo "set -gx PATH $dir \$PATH" >> "$config"
-    else
-      echo "" >> "$config"
-      echo "# lavalamp" >> "$config"
-      echo "export PATH=\"$dir:\$PATH\"" >> "$config"
-    fi
-
-    info "Added PATH to $config"
-  done
-
-  # Also export for current session
-  export PATH="$dir:$PATH"
+  if [ "$shell_name" = fish ]; then
+    path_line="fish_add_path ${INSTALL_DIR}"
+  else
+    path_line="export PATH=\"${INSTALL_DIR}:\$PATH\""
+  fi
+  printf '\n%s\n%s\n' "$marker" "$path_line" >> "$config"
+  info "Added ${INSTALL_DIR} to PATH in ${config} (restart your shell or source that file)"
 }
 
-# Download and install
 install_lavalamp() {
-  local platform version binary_url tmp_dir
-
-  platform=$(detect_platform)
-  info "Detected platform: ${platform}"
-
-  if [ "$LAVALAMP_VERSION" = "latest" ]; then
-    version=$(get_latest_version)
-    if [ -z "$version" ]; then
-      error "Failed to get latest version"
-    fi
-  else
-    version="$LAVALAMP_VERSION"
+  local platform version asset_name base_url tmp_dir candidate checksum_file destination
+  platform="$(detect_platform)"
+  version="$LAVALAMP_VERSION"
+  if [ "$version" = latest ]; then
+    version="$(get_latest_version)" || error "Failed to resolve the latest GitHub release"
+    [ -n "$version" ] || error "Failed to resolve the latest GitHub release"
   fi
 
-  info "Installing lavalamp ${version}..."
-
-  binary_url="https://github.com/${REPO}/releases/download/${version}/lavalamp-${platform}"
-  tmp_dir=$(mktemp -d)
-  trap "rm -rf $tmp_dir" EXIT
-
-  info "Downloading from ${binary_url}..."
-
-  if command -v curl &>/dev/null; then
-    curl -fsSL "$binary_url" -o "${tmp_dir}/lavalamp" || error "Failed to download ${binary_url}"
-  else
-    wget -q "$binary_url" -O "${tmp_dir}/lavalamp" || error "Failed to download ${binary_url}"
-  fi
-
-  if [ ! -s "${tmp_dir}/lavalamp" ]; then
-    error "Downloaded binary is empty"
-  fi
-
-  if head -c 256 "${tmp_dir}/lavalamp" | LC_ALL=C grep -Eiq '^(\{|Not Found|<\?xml|<html|Bad Gateway|404)'; then
-    error "Downloaded file does not look like a lavalamp binary"
-  fi
-
-  chmod +x "${tmp_dir}/lavalamp"
-
-  # Create install directory
+  # Release naming convention: lavalamp-{linux|darwin}-{x64|arm64}.
+  asset_name="${ASSET_PREFIX}-${platform}"
+  base_url="https://github.com/${REPO}/releases/download/${version}"
   mkdir -p "$INSTALL_DIR"
+  tmp_dir="$(mktemp -d "${INSTALL_DIR}/.lavalamp-install.XXXXXX")"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  candidate="${tmp_dir}/lavalamp"
+  checksum_file="${tmp_dir}/checksum"
+  destination="${INSTALL_DIR}/lavalamp"
 
-  mv "${tmp_dir}/lavalamp" "${INSTALL_DIR}/lavalamp"
+  info "Downloading ${asset_name} from release ${version}"
+  download "${base_url}/${asset_name}" "$candidate" ||
+    error "Failed to download ${base_url}/${asset_name}"
+  [ -s "$candidate" ] || error "Downloaded binary is empty"
+  verify_checksum_if_available "$base_url" "$asset_name" "$candidate" "$checksum_file"
+  chmod +x "$candidate"
+  "$candidate" --version >/dev/null 2>&1 ||
+    error "Downloaded binary failed its --version smoke check"
+  mv -f "$candidate" "$destination"
 
-  info "Installed lavalamp to ${INSTALL_DIR}/lavalamp"
-
-  # Setup PATH
-  setup_path "$INSTALL_DIR"
-
-  info "Done! Run 'lavalamp' to start."
+  "$destination" --version >/dev/null 2>&1 ||
+    error "Installed binary failed its --version smoke check"
+  info "Installed and verified ${destination}"
+  setup_path
+  info "Run '${destination} --version' now, or 'lavalamp' after refreshing your PATH"
 }
 
-# Main
 main() {
-  echo ""
-  echo "  lavalamp — Cloudflare-native AI coding harness"
-  echo ""
-
-  if ! command -v git &>/dev/null; then
-    error "git is required but not installed"
-  fi
-
+  require_downloader
   install_lavalamp
 }
 

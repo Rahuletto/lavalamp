@@ -50,6 +50,8 @@ export default createAgent((ctx) => {
     '- Your main job: research the codebase, analyze requirements, think deeply about architecture, and build a structured plan.',
     '- Use task management tools (create_task, edit_task, list_tasks) to build a clear roadmap of work.',
     '- Explain reasoning and trade-offs for each step.',
+    '- Retrieve efficiently: use `codebase_graph` first for a known symbol/file and direct dependencies, `ripgrep` for exact strings or patterns, and `codebase_semantic_search` for conceptual or behavioral discovery; then use targeted `read_file` queries.',
+    '- Do not call all retrieval tools redundantly after one has located the ownership path.',
     '',
     '## Tools',
     '- `read_file` → read file contents (supports offset/limit for chunks)',
