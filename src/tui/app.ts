@@ -48,6 +48,7 @@ import {
   extractFilePaths,
 } from './tools';
 import {
+  autorunPattern,
   isAllowAll,
   loadAutorun,
   setAllowAll,
@@ -57,7 +58,10 @@ import { getDefaultRules, loadRules } from '../permissions/rules';
 import { BackupEngine } from '../storage/backups';
 import { planMutationBackup } from '../storage/mutation-backups';
 import { steerPrompt } from '../storage/steering';
-import { pasteImageFromClipboard } from '../storage/clipboard';
+import {
+  copyTextToClipboard,
+  pasteImageFromClipboard,
+} from '../storage/clipboard';
 import { describeImageWithSpectacle } from '../storage/spectacle';
 import { openCodeViewer, openDiffViewer } from './viewers';
 import { configPath, resolveConfig, updateConfig } from '../config/user-config';
@@ -170,10 +174,11 @@ export async function startTui(options: TuiOptions): Promise<void> {
     },
   };
 
+  const baseAgentName = options.agentName ?? 'build';
   const flue = new FlueProcess(
     options.serverPath,
     options.cwd,
-    options.agentName ?? 'build',
+    baseAgentName,
   );
   loadAutorun(cwd);
   const permissionRules = loadRules(cwd);
@@ -239,7 +244,12 @@ export async function startTui(options: TuiOptions): Promise<void> {
     (async () => {
       const choice = await permissionBoxMgr.show(request);
       if (choice === 'always') {
-        setAutorun(cwd, request.toolName, 'allow');
+        setAutorun(
+          cwd,
+          request.toolName,
+          'allow',
+          autorunPattern(request.args),
+        );
         flue.sendPermissionResponse(request.requestId, 'allow', true);
         updateStatus();
       } else {
@@ -609,6 +619,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
     const followUp = `The parallel research has completed. Here are the findings:\n\n${summary}\n\nPlease analyze these results and continue with your task.`;
     if (state.processing) {
       state.queuePending.push(withModeTag(followUp));
+    } else {
+      _sendPrompt(followUp).catch((error: unknown) => {
+        addInfoLine(
+          `  subagent follow-up failed: ${error instanceof Error ? error.message : String(error)}`,
+          COLORS.red,
+        );
+      });
     }
     refreshQueuePanel();
   };
@@ -944,9 +961,43 @@ export async function startTui(options: TuiOptions): Promise<void> {
     renderer.requestRender();
   }
 
+  let modeSwitching = false;
+
   async function setPlanMode(enabled: boolean) {
-    state.planMode = enabled;
-    applyModeVisuals();
+    if (enabled === state.planMode || modeSwitching) {
+      return;
+    }
+    if (state.processing) {
+      addInfoLine('  finish or interrupt the current turn before switching modes', COLORS.yellow);
+      return;
+    }
+
+    const previousAgentName = state.planMode ? 'plan' : baseAgentName;
+    const nextAgentName = enabled ? 'plan' : baseAgentName;
+    modeSwitching = true;
+    state.processing = true;
+    updateStatus();
+
+    try {
+      flue.setAgentName(nextAgentName);
+      await flue.restart();
+      state.planMode = enabled;
+      applyModeVisuals();
+    } catch (error) {
+      flue.setAgentName(previousAgentName);
+      try {
+        await flue.restart();
+      } catch {}
+      addInfoLine(
+        `  could not switch mode: ${error instanceof Error ? error.message : String(error)}`,
+        COLORS.red,
+      );
+    } finally {
+      modeSwitching = false;
+      state.processing = false;
+      updateStatus();
+      drainPending();
+    }
   }
 
   function hideLavaLamp() {
@@ -1488,7 +1539,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     state.processing = true;
     turnBackupCreated = false;
     state.historyIndex = -1;
-    prompt = withModeTag(prompt);
+    prompt = withModeTag(visiblePrompt(prompt));
     state.commandHistory.push(visiblePrompt(prompt));
     hideResultPanel();
     hideConfirm(false);
@@ -1672,23 +1723,32 @@ export async function startTui(options: TuiOptions): Promise<void> {
   }
 
   function drainPending() {
-    if (state.steerPending.length > 0) {
-      const prompt = state.steerPending.shift();
-      if (prompt === undefined) {
-        return;
-      }
-      refreshQueuePanel();
-      addInfoLine('  (steer)', COLORS.dim);
+    if (state.processing) {
       return;
     }
-    if (state.queuePending.length > 0) {
-      const prompt = state.queuePending.shift();
-      if (prompt === undefined) {
-        return;
-      }
-      refreshQueuePanel();
+
+    let prompt: string | undefined;
+    if (state.steerPending.length > 0) {
+      prompt = state.steerPending.shift();
+      addInfoLine('  (steer)', COLORS.dim);
+    } else if (state.queuePending.length > 0) {
+      prompt = state.queuePending.shift();
       addInfoLine('  (queued)', COLORS.yellow);
     }
+
+    refreshQueuePanel();
+    if (prompt === undefined) {
+      return;
+    }
+
+    _sendPrompt(prompt).catch((error: unknown) => {
+      state.processing = false;
+      addInfoLine(
+        `  queued prompt failed: ${error instanceof Error ? error.message : String(error)}`,
+        COLORS.red,
+      );
+      drainPending();
+    });
   }
 
   function handleInterrupt() {
@@ -2452,22 +2512,13 @@ export async function startTui(options: TuiOptions): Promise<void> {
             return `${prefix}${m.content}`;
           })
           .join('\n\n');
-        try {
-          const proc = Bun.spawnSync(['pbcopy'], {
-            stdin: Buffer.from(transcript),
-          });
-          if (proc.exitCode === 0) {
-            showResultPanel('/copy', [
-              { content: '  session copied to clipboard', fg: COLORS.green },
-            ]);
-          } else {
-            showResultPanel('/copy', [
-              { content: '  failed to copy', fg: COLORS.red },
-            ]);
-          }
-        } catch {
+        if (copyTextToClipboard(transcript)) {
           showResultPanel('/copy', [
-            { content: '  pbcopy not available', fg: COLORS.dim },
+            { content: '  session copied to clipboard', fg: COLORS.green },
+          ]);
+        } else {
+          showResultPanel('/copy', [
+            { content: '  no supported clipboard command found', fg: COLORS.dim },
           ]);
         }
         break;

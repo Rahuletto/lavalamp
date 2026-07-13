@@ -68,7 +68,7 @@ export class PermissionBoxManager extends BaseBoxManager<
 
     rows.push(
       {
-        content: '    [y] Allow    [n] Deny    [a] Always Allow',
+        content: '    [y] Allow    [n] Deny    [a] Always Allow Exact',
         fg: COLORS.warn,
       },
       { content: '', fg: COLORS.dim },

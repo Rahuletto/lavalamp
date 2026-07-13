@@ -108,6 +108,8 @@ export class FlueProcess {
     if (raw.type === 'permission_request') {
       if (this.onPermissionRequest != null) {
         this.onPermissionRequest(raw as unknown as PermissionRequestMsg);
+      } else if (typeof raw.requestId === 'string') {
+        this.sendPermissionResponse(raw.requestId, 'deny');
       }
       return;
     }
@@ -115,6 +117,22 @@ export class FlueProcess {
     if (raw.type === 'question_request') {
       if (this.onQuestionRequest != null) {
         this.onQuestionRequest(raw as unknown as QuestionRequestMsg);
+      } else if (typeof raw.requestId === 'string' && Array.isArray(raw.questions)) {
+        const answers: Record<string, unknown> = {};
+        for (const question of raw.questions) {
+          if (typeof question === 'object' && question !== null) {
+            const typed = question as {
+              id?: unknown;
+              default?: unknown;
+              type?: unknown;
+            };
+            if (typeof typed.id === 'string') {
+              answers[typed.id] =
+                typed.default ?? (typed.type === 'multiselect' ? [] : '');
+            }
+          }
+        }
+        this.sendQuestionResponse(raw.requestId, answers);
       }
       return;
     }

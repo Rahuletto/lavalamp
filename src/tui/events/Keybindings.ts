@@ -8,6 +8,7 @@ import type { CompletionManager } from '../components/CompletionManager';
 import type { SubPanelManager } from '../components/QueueSubPanel';
 import type { SubAgentManager } from '../subs';
 import { COLORS } from '../theme';
+import { copyTextToClipboard } from '../../storage/clipboard';
 
 export interface KeybindingsContext {
   store: AppStateStore;
@@ -64,19 +65,7 @@ export function handleKeyPress(key: KeyEvent, ctx: KeybindingsContext): void {
   if (key.meta && key.name === 'c') {
     const textToCopy = inputField.getSelectedText() || inputField.plainText;
     if (textToCopy) {
-      try {
-        if (process.platform === 'darwin') {
-          Bun.spawnSync(['pbcopy'], { stdin: Buffer.from(textToCopy) });
-        } else if (process.platform === 'linux') {
-          Bun.spawnSync(['xclip', '-selection', 'clipboard'], {
-            stdin: Buffer.from(textToCopy),
-          });
-        } else if (process.platform === 'win32') {
-          Bun.spawnSync(['clip'], { stdin: Buffer.from(textToCopy) });
-        }
-      } catch {
-        /* ignored */
-      }
+      copyTextToClipboard(textToCopy);
     }
     key.stopPropagation();
     return;
