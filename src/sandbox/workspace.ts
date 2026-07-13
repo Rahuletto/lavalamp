@@ -101,7 +101,9 @@ export class WorkspaceGuard {
 
   constrain(target: string): string {
     this.assertAccessible(target);
-    return this.canonicalize(this.resolve(target));
+    const canonical = this.canonicalize(this.resolve(target));
+    this.assertNotSecret(canonical);
+    return canonical;
   }
 
   constrainEntry(target: string): string {

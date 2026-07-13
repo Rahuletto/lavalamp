@@ -307,3 +307,10 @@ export function local(options: { env?: Record<string, string> } = {}) {
     },
   };
 }
+
+export function readOnlyLocal(options: { env?: Record<string, string> } = {}) {
+  return {
+    ...local(options),
+    tools: () => [],
+  };
+}

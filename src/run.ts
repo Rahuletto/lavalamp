@@ -79,6 +79,19 @@ USAGE:
   lavalamp models                List known models
   lavalamp config show           Show persisted config
   lavalamp config set KEY VALUE  Persist model/Gateway config
+
+OPTIONS:
+  -p, --print PROMPT             Run a single prompt and exit
+      --repl                     TUI-less interactive REPL
+      --simple                   Plain text chat mode
+      --yes, --auto-approve      Auto-approve tool calls in headless modes
+  -c, --continue [SESSION_ID]    Resume a previous session
+  -w, --workspace PATH           Set workspace directory
+  -m, --model MODEL              Override the configured model
+      --output-format FORMAT     Output format: text or json
+      --quiet                    Suppress diagnostic status messages
+  -h, --help                     Show this help
+  -v, --version                  Show version
 `);
   process.exit(0);
 }
@@ -107,6 +120,8 @@ const resumeSessionId =
     : undefined;
 const outputFormatStr = findFlagValue(['--output-format', '--format']) ?? 'text';
 const quiet = process.argv.includes('--quiet');
+const autoApprove =
+  process.argv.includes('--yes') || process.argv.includes('--auto-approve');
 
 if (outputFormatStr !== 'text' && outputFormatStr !== 'json') {
   console.error('[lavalamp] Error: --output-format must be text or json');
@@ -141,6 +156,7 @@ async function main() {
     }
 
     await runPrint({
+      autoApprove,
       prompt,
       stdinContent,
       quiet,

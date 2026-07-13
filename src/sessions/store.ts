@@ -8,6 +8,7 @@ import {
 import { basename, join } from 'node:path';
 import {
   sessionDirs,
+  isSafeSessionId,
   sessionPath,
   sessionPathCandidates,
   sessionsDir,
@@ -68,24 +69,29 @@ function readSessionFile(filePath: string): SessionRecord | null {
 }
 
 export function findSessionFilePath(sessionId: string): string | null {
+  if (!isSafeSessionId(sessionId)) {
+    return null;
+  }
+
   for (const candidate of sessionPathCandidates(sessionId)) {
     if (existsSync(candidate)) {
       return candidate;
     }
   }
 
+  const prefixMatches: string[] = [];
   for (const dir of sessionDirs()) {
     if (!existsSync(dir)) {
       continue;
     }
-    const match = readdirSync(dir)
+    const matches = readdirSync(dir)
       .filter((f) => f.endsWith('.json'))
-      .find((f) => f.startsWith(sessionId));
-    if (match !== undefined) {
-      return join(dir, match);
+      .filter((f) => f.startsWith(sessionId));
+    for (const match of matches) {
+      prefixMatches.push(join(dir, match));
     }
   }
-  return null;
+  return prefixMatches.length === 1 ? prefixMatches[0] ?? null : null;
 }
 
 export function endSession(sessionId: string, summary?: string) {

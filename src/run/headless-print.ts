@@ -67,8 +67,18 @@ export async function runPrint(opts: PrintOptions): Promise<void> {
       }
       return;
     }
+    let serializedArgs: string;
+    try {
+      serializedArgs = JSON.stringify(request.args, null, 2);
+    } catch {
+      serializedArgs = String(request.args);
+    }
+    const visibleArgs =
+      serializedArgs.length > 4000
+        ? `${serializedArgs.slice(0, 4000)}\n... (arguments truncated)`
+        : serializedArgs;
     permissionInput.question(
-      `\n[lavalamp] Allow ${request.toolName}? [y/N] `,
+      `\n[lavalamp] ${request.toolName} requests permission:\n${visibleArgs}\nAllow? [y/N] `,
       (answer) => {
         const allow = answer.trim().toLowerCase().startsWith('y');
         flue.sendPermissionResponse(request.requestId, allow ? 'allow' : 'deny');
