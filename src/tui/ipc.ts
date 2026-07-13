@@ -90,6 +90,7 @@ export class FlueProcess {
   private ready = false;
   private readonly pending = new Map<string, PromptCallbacks>();
   private shutdownRequested = false;
+  private readonly instanceId: string;
   onPermissionRequest?: OnPermissionRequest;
   onQuestionRequest?: OnQuestionRequest;
   onBashStream?: OnBashStream;
@@ -192,7 +193,10 @@ export class FlueProcess {
     private readonly serverPath: string,
     private readonly cwd: string,
     private agentName = 'build',
-  ) {}
+    instanceId?: string,
+  ) {
+    this.instanceId = instanceId ?? `inst_${randomUUID().slice(0, 8)}`;
+  }
 
   setAgentName(name: string) {
     this.agentName = name;
@@ -237,14 +241,13 @@ export class FlueProcess {
   }
 
   async start(): Promise<void> {
-    const instanceId = `inst_${randomUUID().slice(0, 8)}`;
     this.shutdownRequested = false;
 
     this.child = spawn(process.execPath, [this.serverPath], {
       cwd: this.cwd,
       env: {
         ...process.env,
-        FLUE_CLI_ID: instanceId,
+        FLUE_CLI_ID: this.instanceId,
         FLUE_CLI_NAME: this.agentName,
         FLUE_CLI_TARGET: 'agent',
         FLUE_INTERNAL_CLI_IPC: '1',
@@ -324,7 +327,7 @@ export class FlueProcess {
     });
     this.child.on('message', this.handleChildMessage);
 
-    await this.waitForReady(instanceId);
+    await this.waitForReady(this.instanceId);
   }
 
   private async waitForReady(instanceId: string): Promise<void> {

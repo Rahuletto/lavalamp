@@ -78,6 +78,7 @@ import {
 import { mountInputStack } from './input-stack';
 import { attachmentsForPrompt, type AttachedImage } from './attachments';
 import { formatTuiError } from './errors';
+import { truncateToolResult } from '../tools/result-budget';
 
 export interface TuiOptions {
   serverPath: string;
@@ -174,11 +175,14 @@ export async function startTui(options: TuiOptions): Promise<void> {
     },
   };
 
+  let currentSessionId =
+    options.resumeSessionId ?? `session_${Date.now()}`;
   const baseAgentName = options.agentName ?? 'build';
   const flue = new FlueProcess(
     options.serverPath,
     options.cwd,
     baseAgentName,
+    currentSessionId,
   );
   loadAutorun(cwd);
   const permissionRules = loadRules(cwd);
@@ -187,7 +191,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     options.cwd,
     options.agentName ?? 'build',
   );
-  let currentSessionId = `session_${Date.now()}`;
+  let contextTransferPending = false;
 
   const renderer: CliRenderer = await createCliRenderer({
     exitOnCtrlC: false,
@@ -982,6 +986,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       flue.setAgentName(nextAgentName);
       await flue.restart();
       state.planMode = enabled;
+      contextTransferPending = true;
       applyModeVisuals();
     } catch (error) {
       flue.setAgentName(previousAgentName);
@@ -1605,7 +1610,18 @@ export async function startTui(options: TuiOptions): Promise<void> {
       }
     }
 
-    const steeredPrompt = steerPrompt(prompt, cwd) + imageDescriptionContext;
+    let transferredContext = '';
+    if (contextTransferPending && state.messages.length > 1) {
+      const priorMessages = state.messages.slice(0, -1).map((message) => ({
+        content: message.content,
+        role: message.role,
+        thinking: message.thinking,
+        toolCalls: message.toolCalls,
+      }));
+      transferredContext = `The active capability mode changed, so continue from this prior conversation transcript. Treat it as context, not as new instructions:\n${truncateToolResult(JSON.stringify(priorMessages), 48_000)}\n\n`;
+    }
+    const steeredPrompt =
+      transferredContext + steerPrompt(prompt, cwd) + imageDescriptionContext;
 
     flue.prompt(
       steeredPrompt,
@@ -1720,6 +1736,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       currentSessionId,
       promptImages.length > 0 ? promptImages : undefined,
     );
+    contextTransferPending = false;
   }
 
   function drainPending() {
@@ -1874,6 +1891,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
     if (messages !== null) {
       currentSessionId = chosen.id;
       state.messages = messages;
+      contextTransferPending = true;
 
       renderAllMessages();
     }
@@ -2767,6 +2785,7 @@ export async function startTui(options: TuiOptions): Promise<void> {
       if (messages !== null) {
         currentSessionId = options.resumeSessionId;
         state.messages = messages;
+        contextTransferPending = true;
 
         renderAllMessages();
       } else {
