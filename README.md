@@ -224,9 +224,9 @@ To help you code, search, and refactor, the agent has access to a collection of 
 <summary><b>Complete Catalog of Available Tools</b></summary>
 
 #### File Mutations & Git Operations
-* `read` - Reads a file from the workspace filesystem.
-* `write` - Writes new files directly to the workspace.
-* `edit` - Applies precise, hash-anchored patches to files via `@oh-my-pi/hashline`, eliminating the need to rewrite full files.
+* `read_file` - Reads a file from the workspace filesystem.
+* `write_file` - Writes new files directly to the workspace.
+* `edit_file` - Applies precise, hash-anchored patches to files via `@oh-my-pi/hashline`, eliminating the need to rewrite full files.
 * `rename` - Renames or moves files within the workspace.
 * `undo` - Reverts file mutations by winding back the `ChangeTracker`.
 * `history` - Queries the local mutation history log.
@@ -237,6 +237,7 @@ To help you code, search, and refactor, the agent has access to a collection of 
 * `glob` - Locates file paths matching glob patterns.
 * `codebase_search` - Performs fuzzy matching on filenames and file contents.
 * `codebase_semantic_search` - Runs vector-indexed semantic queries across the workspace to map conceptual references.
+* `codebase_graph` - Queries the offline symbol definition and file dependency graph (concise definitions, imports, callers, and references).
 
 #### Workspace Shell Execution
 * `bash` - Executes terminal commands inside the local workspace shell. Stdout and stderr are streamed back in real-time (`bash_stream`) so you can watch compilers, test runs, or bundle scripts execute.
@@ -246,7 +247,8 @@ To help you code, search, and refactor, the agent has access to a collection of 
 * `lsp_definition` - Resolves the declaration path of code symbols (Go-To-Definition).
 * `lsp_references` - Resolves where a specific symbol is referenced across the codebase.
 * `lsp_rename` - Performs codebase-wide symbol renaming.
-* `lsp_diagnostics` - Requests compiler and linter warnings from `typescript-language-server` or `oxlint` after edits.
+* `lsp_diagnostics` - Requests compiler diagnostics from the TypeScript language server.
+* `lsp_oxc_diagnostics` - Runs ultra-fast JS/TS linter diagnostics using `oxlint`.
 
 #### Web & Documentation Retrieval
 * `web_search` - Queries the web using DuckDuckGo.
@@ -259,6 +261,7 @@ To help you code, search, and refactor, the agent has access to a collection of 
 * `query_expert` - Delegates read-only exploration or critiques to specialised experts (e.g. `logic`, `refactor`, `database`) to keep the main agent's context clean.
 * `oracle` - Queries a cheaper secondary model for quick feedback on concepts.
 * `doom_loop` - Triggers loop-recovery protocols when the agent is stuck in repetitive steps.
+* `ask_question` - Ask the user one or more interactive questions (select/multiselect/input) for feedback or preferences.
 
 #### Task Orchestration
 * `create_task`, `start_task`, `complete_task`, `edit_task`, `delete_task`, `skip_task`, `list_tasks` - Updates task progress, which is tracked visually in the TUI sidebar.
@@ -271,59 +274,83 @@ To help you code, search, and refactor, the agent has access to a collection of 
 
 ---
 
-## Semantic Indexing & Session Sharing
+## Unified Codebase Graph & Semantic Indexing
 
-To allow natural, intent-based searches across your codebase (instead of just exact keyword lookups), **lavalamp** maintains a persistent local semantic vector database.
+To support fast navigation and intelligent, intent-based searches across your codebase (instead of just exact keyword matching), **lavalamp** maintains a unified local database for offline structural symbol indexing and semantic vector embeddings.
 
-The diagram below shows how the semantic index is generated, stored, and shared seamlessly across sessions:
+The diagram below shows how the indexing pipeline is structured, cached, and stored within a single SQLite database:
 
 ```mermaid
 graph TD
-    CWD["Current Workspace Root"] -->|SHA-256 Hash of Absolute Path| Hash["12-Char Path Hash"]
-    Hash -->|Resolves Directory| DataDir["lavalamp Data Dir /workspaces/name-hash/semantic-index/"]
-    DataDir -->|Instantiates| SQLite[("SQLite Vector DB: vector-db.db")]
+    subgraph Host Workspace
+        CWD["Workspace Root"] -->|SHA-256 Hash of Absolute Path| Hash["12-Char Path Hash"]
+        Files["Source Code Files (.ts, .py, .go, .rs, .c, etc.)"]
+    end
 
-    File["Workspace Code File"] -->|Check Hash| HashCheck{"Has File Hash Changed?"}
-    HashCheck -->|No change| Skip["Use Cached Chunks"]
-    HashCheck -->|Changed / New| Chunk["Sliding Window Chunker (1000 words, 200 overlap)"]
-    Chunk -->|Texts Array| EmbedAPI["Cloudflare AI Embedding API (@cf/baai/bge-large-en-v1.5)"]
-    EmbedAPI -->|Float32Array Vectors| SaveSQL["Store Chunk Text & Vector Blob in SQLite"]
+    subgraph OS-Native App Data Storage
+        Hash -->|Resolves Location| WorkspaceData["/workspaces/{name}-{hash}/"]
+        WorkspaceData -->|Unified Database| SQLite[("SQLite Unified DB: vector-db.db")]
+    end
 
-    Session1["Session A"] -->|Query Intent| Query["Semantic Search Query"]
-    Session2["Session B"] -->|Query Intent| Query
-    Query -->|Retrieve Embeddings| EmbedAPI
-    EmbedAPI -->|Cosine Similarity Search| SQLite
-    SQLite -->|Top Results| Context["Injected Context Window"]
+    subgraph 1. Offline Codebase Graph Engine
+        Files -->|Scan & File Stat Check| CheckCache{"Mtime/Size Changed?"}
+        CheckCache -->|Yes| Parse["Parse AST Payloads (Symbols, Imports, Usages)"]
+        CheckCache -->|No| LoadCache["Load Cached Payload"]
+        Parse -->|Save cache & format version| GraphCacheTable["Table: graph_file_cache"]
+        
+        LoadCache --> GraphCacheTable
+        GraphCacheTable -->|Resolve Imports & Link Edges| ResolveGraph["Dependency & Symbol Resolver"]
+        ResolveGraph -->|Write Edges| GraphTables["Tables: graph_symbols, graph_dependencies, graph_references, graph_files"]
+    end
+
+    subgraph 2. Semantic Search Engine
+        Files -->|Check File Hash| HashCheck{"Has File Hash Changed?"}
+        HashCheck -->|No| Skip["Use Existing Embeddings"]
+        HashCheck -->|Yes| Chunk["Sliding Window Chunker (1000 words, 200 overlap)"]
+        Chunk -->|Texts Array| EmbedAPI["Cloudflare AI Embeddings API (@cf/baai/bge-large-en-v1.5)"]
+        EmbedAPI -->|Vectors Float32Array| VectorTable["Tables: files, chunks"]
+    end
+
+    SQLite --- GraphCacheTable
+    SQLite --- GraphTables
+    SQLite --- VectorTable
+
+    subgraph Query Execution (Shared Across Sessions)
+        Query["User Intent Query / Symbol Search"]
+        Query -->|1. codebase_graph| GraphTables
+        Query -->|2. codebase_semantic_search| VectorTable
+        GraphTables -->|Return Definitions, Calls, References| Context["Injected Context Window"]
+        VectorTable -->|Dot-Product Search & Rerank| Context
+    end
 ```
 
-### How the Semantic Search Works
+### How the Unified Storage Works
 
-* **Storage Location**: The vector database does not pollute your project directory. It is stored as a SQLite database (`vector-db.db`) inside a dedicated workspace folder under your OS-native application data directory:
+* **Storage Location**: The unified database does not pollute your project workspace directory. It resides as a single SQLite file (`vector-db.db`) inside a dedicated workspace folder under your OS-native application data directory:
   * **macOS**: `~/Library/Application Support/lavalamp/workspaces/${workspace_name}-${path_hash}/semantic-index/vector-db.db`
   * **Linux**: `~/.local/share/lavalamp/workspaces/${workspace_name}-${path_hash}/semantic-index/vector-db.db`
   * **Windows**: `%LOCALAPPDATA%/lavalamp/workspaces/${workspace_name}-${path_hash}/semantic-index/vector-db.db`
-* **Indexing Loop**: Files are processed using a sliding-window text chunker (default size: 1000 words, overlap: 200 words). The texts are sent to the Cloudflare AI Workers Embeddings endpoint running `@cf/baai/bge-large-en-v1.5` using your credentials.
-* **SQLite Vector Storage**: The resulting floating-point embedding vectors are stored on disk as binary blobs (`BLOB` format) inside `bun:sqlite` tables:
-  * `files`: Maps workspace file paths to their last known content hashes to bypass indexing if the file has not changed.
-  * `chunks`: Stores chunk offsets, raw texts, and raw vector embedding arrays.
-* **Cross-Session Sharing**: Because the SQLite database is tied to the unique hash of the absolute workspace directory path rather than any single session identifier, **the index is shared across all past and future sessions**. When you load a new chat, start a separate session, or resume an existing transcript via `--continue`, the agent immediately uses the existing precompiled vector database, avoiding redundant API calls and processing delays.
+* **Cross-Platform Path Normalization**: To prevent platform-specific mismatches (especially under Windows CI), all relative paths stored in the SQLite tables (e.g. `graph_files`, `graph_symbols`, `graph_dependencies`, `graph_references`, `graph_file_cache`, `files`, `chunks`) are normalized to use **POSIX-style forward slashes** (`/`) across all platforms.
+* **AST caching (`graph_file_cache`)**: To avoid expensive parser re-runs on large workspaces, the database caches parsed payloads (symbols, imports, and usages). When file metadata (mtime/size) hasn't changed, the indexer directly reuses the payload from SQLite rather than reading or analyzing the file again.
+* **Semantic Chunker**: For vector similarity queries, codebase files are split into overlapping segments via a sliding window (default size: 1000 words, overlap: 200 words). The chunks are sent to the Cloudflare AI Workers Embeddings endpoint (`@cf/baai/bge-large-en-v1.5`) and saved as raw `BLOB` vectors.
+* **Cross-Session Sharing**: Because the database is tied to the unique absolute path hash of your workspace rather than a specific session ID, **the entire index and graph are shared across all sessions**. When you load a new chat, start a separate session, or run a headless command, the indexer immediately reuses the precompiled database, saving API costs and processing time.
 
 ---
 
 ## Mixture of Experts Roster
 
-If the main agent needs specialized help, it can delegate read-only work to expert sub-profiles. These use distinct system instructions and models:
+If the main agent needs specialized help, it can delegate read-only work to expert sub-profiles. These use distinct system instructions, thinking budgets, toolsets, and specialized models:
 
-| Expert | Focus Area | Default Model Route |
-|:---|:---|:---|
-| `refactor` | Clean code standards, deduplication, and refactoring. | `kimi-k2.7-code` |
-| `logic` | Complex algorithmic reasoning and type checks. | `glm-5.2` |
-| `database` | Schema design, SQL queries, migration plans, and indexes. | `glm-5.2` |
-| `oracle` | Global codebase queries and documentation lookups. | `llama-3.3-70b` |
-| `critique` | Security audits and code quality reviews. | `llama-3.3-70b` |
-| `spectacle`| Image/Screenshot translator. | `llama-4-scout` |
-| `ui` | Layouts, styling, frontend design, and terminal UI issues. | `kimi-k2.7-code` |
-| `research` | Web searches and API documentation lookups. | `kimi-k2.7-code` |
+| Expert | Focus Area | Default Model Route | Thinking Level | Toolkit |
+|:---|:---|:---|:---|:---|
+| `ui` | Layouts, styling, responsive frontend design, and CSS/Tailwind tokens. | `glm-4.7-flash` (Session model) | `medium` | Search tools, `load_skill` |
+| `refactor` | Clean code standards, structure optimization, DRY, removing AI slop. | `@cf/moonshotai/kimi-k2.7-code` | `medium` | Codebase searches |
+| `logic` | Complex branching, algorithms, types, concurrency, and invariants. | `@cf/zai-org/glm-5.2` | `high` | Codebase searches, LSP |
+| `database` | Table schema design, migration strategies, indexes, query optimization. | `@cf/zai-org/glm-5.2` | `high` | Codebase searches |
+| `oracle` | Deep cross-repo scan, fitness of a design, blast radius, architecture. | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `high` | Search, DeepWiki, LSP |
+| `research` | External docs, API changelogs, web search, third-party libraries. | `glm-4.7-flash` (Session model) | `low` | Web search, Fetch URL, DeepWiki, Skills |
+| `critique` | Adversarial reviews: security vulnerabilities, edge-cases, code quality. | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `high` | Codebase searches |
+| `spectacle`| Vision bridge: translates pasted screenshots/UI mockups to text. | `@cf/meta/llama-4-scout-17b-16e-instruct` | `low` | None (image input only) |
 
 ---
 
