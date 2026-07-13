@@ -1,0 +1,11 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "lavalamp",
+	"compatibility_date": "2025-07-13",
+	"compatibility_flags": [
+		"nodejs_compat"
+	]
+	// Static assets are handled by @astrojs/cloudflare adapter automatically.
+	// Custom domain: set lavalamp.marban.lol in the
+	// Cloudflare dashboard → Workers → lavalamp → Settings → Domains & Routes
+}

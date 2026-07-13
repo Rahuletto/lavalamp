@@ -11,7 +11,7 @@
     "package": "bun run build && bun build --compile --minify --target=bun src/run.ts --outfile dist/lavalamp",
     "postinstall": "bun run build/postinstall.ts",
     "test": "bun test",
-    "e2e": "bun run build && bun test --timeout=180000 ./testbench/e2e/actual-bin.e2e.ts",
+    "e2e": "bun run build && bun test --timeout=180000 ./tests/e2e/actual-bin.e2e.ts",
     "typecheck": "tsc --noEmit",
     "dev": "flue build --target node --watch",
     "website:dev": "bun run --cwd website dev",

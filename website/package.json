@@ -12,6 +12,7 @@
     "astro": "astro"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^14.1.2",
     "@astrojs/react": "^6.0.1",
     "@astryxdesign/core": "^0.1.4",
     "@stylexjs/stylex": "^0.19.0",
@@ -19,5 +20,8 @@
     "astro": "^7.0.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.110.0"
   }
 }
