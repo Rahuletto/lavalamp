@@ -29,6 +29,10 @@ const IGNORED = new Set([
   'build',
 ]);
 
+function toForwardSlash(p: string): string {
+  return p.replaceAll('\\', '/');
+}
+
 interface ScanState {
   files: string[];
   visited: number;
@@ -63,7 +67,7 @@ function scan(
       if (entry.isDirectory() && !IGNORED.has(entry.name)) {
         scan(root, path.join(dir, entry.name), state);
       } else if (entry.isFile() && SOURCE.test(entry.name)) {
-        state.files.push(path.relative(root, path.join(dir, entry.name)));
+        state.files.push(toForwardSlash(path.relative(root, path.join(dir, entry.name))));
       }
     }
   } catch {
@@ -227,9 +231,9 @@ function resolveDependency(
     for (let index = 1; index < dots; index++) {
       parent = path.dirname(parent);
     }
-    base = path.join(parent, specifier.slice(dots).replaceAll('.', path.sep));
+    base = toForwardSlash(path.join(parent, specifier.slice(dots).replaceAll('.', '/')));
   } else if (ext === '.rs') {
-    base = path.join(path.dirname(source), specifier);
+    base = toForwardSlash(path.join(path.dirname(source), specifier));
   } else {
     if (
       ['.ts', '.tsx', '.js', '.jsx'].includes(ext) &&
@@ -237,7 +241,7 @@ function resolveDependency(
     ) {
       return undefined;
     }
-    base = path.normalize(path.join(path.dirname(source), specifier));
+    base = toForwardSlash(path.normalize(path.join(path.dirname(source), specifier)));
   }
   let candidates: string[];
   if (['.ts', '.tsx', '.js', '.jsx'].includes(ext)) {
@@ -245,13 +249,13 @@ function resolveDependency(
       base,
       ...['.ts', '.tsx', '.js', '.jsx'].map((e) => base + e),
       ...['index.ts', 'index.tsx', 'index.js', 'index.jsx'].map((n) =>
-        path.join(base, n),
+        toForwardSlash(path.join(base, n)),
       ),
     ];
   } else if (ext === '.py') {
-    candidates = [base + '.py', path.join(base, '__init__.py')];
+    candidates = [base + '.py', toForwardSlash(path.join(base, '__init__.py'))];
   } else if (ext === '.rs') {
-    candidates = [base + '.rs', path.join(base, 'mod.rs')];
+    candidates = [base + '.rs', toForwardSlash(path.join(base, 'mod.rs'))];
   } else if (['.c', '.cc', '.cpp', '.cxx', '.h', '.hpp'].includes(ext)) {
     candidates = [base];
   } else {
@@ -701,8 +705,8 @@ export class GraphIndexer {
 
   query(query: string, limit = 20, depth = 1): string {
     this.index();
-    let fileQuery = path.normalize(query.replaceAll('/', path.sep));
-    if (fileQuery.startsWith(`.${path.sep}`)) {
+    let fileQuery = toForwardSlash(path.normalize(query.replaceAll('/', path.sep)));
+    if (fileQuery.startsWith('./')) {
       fileQuery = fileQuery.slice(2);
     }
     const result = this.db.queryGraph(
