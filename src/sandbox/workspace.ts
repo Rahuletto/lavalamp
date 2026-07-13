@@ -1,4 +1,11 @@
-import { resolve, relative, isAbsolute, basename } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  relative,
+  resolve,
+} from 'node:path';
+import { lstatSync, realpathSync } from 'node:fs';
 
 const SECRET_PATTERNS = [
   /\.env$/,
@@ -35,7 +42,7 @@ export class WorkspaceGuard {
   readonly root: string;
 
   constructor(root: string) {
-    this.root = resolve(root);
+    this.root = realpathSync(resolve(root));
   }
 
   resolve(target: string): string {
@@ -47,10 +54,17 @@ export class WorkspaceGuard {
 
   assertInside(target: string): void {
     const resolved = this.resolve(target);
-    const rel = relative(this.root, resolved);
+    const lexicalRel = relative(this.root, resolved);
+
+    if (lexicalRel.startsWith('..') || isAbsolute(lexicalRel)) {
+      throw new WorkspaceViolationError(resolved, this.root);
+    }
+
+    const canonical = this.canonicalize(resolved);
+    const rel = relative(this.root, canonical);
 
     if (rel.startsWith('..') || isAbsolute(rel)) {
-      throw new WorkspaceViolationError(resolved, this.root);
+      throw new WorkspaceViolationError(canonical, this.root);
     }
   }
 
@@ -87,7 +101,59 @@ export class WorkspaceGuard {
 
   constrain(target: string): string {
     this.assertAccessible(target);
-    return this.resolve(target);
+    return this.canonicalize(this.resolve(target));
+  }
+
+  constrainEntry(target: string): string {
+    const resolved = this.resolve(target);
+    const parent = this.canonicalize(dirname(resolved));
+    this.assertInside(parent);
+    const entry = resolve(parent, basename(resolved));
+    this.assertNotSecret(entry);
+
+    try {
+      if (lstatSync(entry).isSymbolicLink()) {
+        throw new WorkspaceViolationError(entry, this.root);
+      }
+    } catch (error: unknown) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? (error as { code?: unknown }).code
+          : undefined;
+      if (code !== 'ENOENT') {
+        throw error;
+      }
+    }
+
+    return entry;
+  }
+
+  private canonicalize(target: string): string {
+    const missingParts: string[] = [];
+    let current = target;
+
+    while (true) {
+      try {
+        lstatSync(current);
+        break;
+      } catch (error: unknown) {
+        const code =
+          typeof error === 'object' && error !== null && 'code' in error
+            ? (error as { code?: unknown }).code
+            : undefined;
+        if (code !== 'ENOENT') {
+          throw error;
+        }
+        const parent = dirname(current);
+        if (parent === current) {
+          throw error;
+        }
+        missingParts.unshift(basename(current));
+        current = parent;
+      }
+    }
+
+    return resolve(realpathSync(current), ...missingParts);
   }
 }
 

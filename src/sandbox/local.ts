@@ -11,6 +11,7 @@ import {
 import { dirname } from 'node:path';
 import { requestPermission } from '../permissions/middleware';
 import { WorkspaceGuard } from './workspace';
+import { withMutationLock } from './mutation-lock';
 
 function findShell(): string {
   const { platform } = process;
@@ -53,6 +54,31 @@ interface ShellResult {
   timedOut: boolean;
 }
 
+function shellEnvironment(overrides?: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const name of [
+    'COMSPEC',
+    'HOME',
+    'LANG',
+    'LC_ALL',
+    'PATH',
+    'PATHEXT',
+    'SHELL',
+    'SYSTEMROOT',
+    'TEMP',
+    'TERM',
+    'TMP',
+    'TMPDIR',
+    'USERPROFILE',
+  ]) {
+    const value = process.env[name];
+    if (value !== undefined) {
+      env[name] = value;
+    }
+  }
+  return { ...env, ...overrides };
+}
+
 async function execCommand(
   command: string,
   options: ExecOptions = {},
@@ -60,7 +86,7 @@ async function execCommand(
 ): Promise<ShellResult> {
   return new Promise((resolve) => {
     const cwd = options.cwd ?? process.cwd();
-    const env = { ...process.env, ...options.env };
+    const env = shellEnvironment(options.env);
 
     const isWin = process.platform === 'win32';
     const shellCmd = isWin ? 'cmd.exe' : detectedShell;
@@ -104,6 +130,19 @@ async function execCommand(
     });
 
     proc.stderr.on('data', (chunk: Buffer) => {
+      totalBytes += chunk.length;
+      if (totalBytes > MAX_OUTPUT_BYTES) {
+        if (!killed) {
+          killed = true;
+          proc.kill('SIGTERM');
+          setTimeout(() => {
+            try {
+              proc.kill('SIGKILL');
+            } catch {}
+          }, KILL_GRACE_MS);
+        }
+        return;
+      }
       errChunks.push(chunk);
       if (onStream) {
         onStream(chunk.toString('utf8'), 'stderr');
@@ -163,7 +202,7 @@ async function gatedExec(
       timedOut: false,
     };
   }
-  return execCommand(command, options, onStream);
+  return withMutationLock(() => execCommand(command, options, onStream));
 }
 
 /**
@@ -183,12 +222,14 @@ async function gatedWriteFile(
   if (response.decision === 'deny') {
     throw new Error('Permission denied for write');
   }
-  const resolved = guard.constrain(filePath);
-  mkdirSync(dirname(resolved), { recursive: true });
-  writeFileSync(resolved, content);
+  await withMutationLock(async () => {
+    const resolved = guard.constrain(filePath);
+    mkdirSync(dirname(resolved), { recursive: true });
+    writeFileSync(resolved, content);
+  });
 }
 
-export function local(_options: { env?: Record<string, string> } = {}) {
+export function local(options: { env?: Record<string, string> } = {}) {
   return {
     createSessionEnv: async () => {
       const cwd = process.cwd();
@@ -196,7 +237,10 @@ export function local(_options: { env?: Record<string, string> } = {}) {
       return {
         cwd,
         exec: async (command: string, opts: ExecOptions = {}) => {
-          const safeOptions = { ...opts };
+          const safeOptions = {
+            ...opts,
+            env: { ...options.env, ...opts.env },
+          };
           if (safeOptions.cwd !== undefined) {
             safeOptions.cwd = guard.constrain(safeOptions.cwd);
           }
