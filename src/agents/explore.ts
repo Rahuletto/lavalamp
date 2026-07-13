@@ -1,6 +1,6 @@
 import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
+import { readOnlyLocal } from '../sandbox/local';
 import { BUILD_MODEL } from '../config/models';
 import { resolveSelectedModel } from '../config/runtime-route';
 import {
@@ -21,6 +21,8 @@ import { createLoadSkillTool } from '../tools/skills';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
 import { createLspTools } from '../tools/lsp-client';
 import { createQueryExpertTool } from '../tools/query-expert';
+import { customReadTool } from '../tools/file-tools';
+import { withResultBudget } from '../tools/result-budget';
 
 export default createAgent((ctx) => {
   const workspaceRoot = ctx.env.LAVALAMP_WORKSPACE ?? process.cwd();
@@ -41,12 +43,11 @@ export default createAgent((ctx) => {
     '- DO NOT attempt to write, edit, modify files or execute shell commands.',
     '- Focus on tracing code flow, finding relevant files, mapping imports, and clarifying context.',
     '- Use `ripgrep` for fast codebase search with regex.',
-    '- Use `read` with offset/limit to read chunks of large files.',
+    '- Use `read_file` with offset/limit to read chunks of large files.',
     '',
     '## Tools',
-    '- `read` → read file contents (supports offset/limit for chunks)',
+    '- `read_file` → read file contents (supports offset/limit for chunks)',
     '- `ripgrep` → search file contents with regex',
-    '- `glob` → find files by pattern',
     '- `codebase_search` → search codebase by filename and content',
     '- `web_search` → search the web for information',
     '- `fetch_url` → fetch a URL and return clean markdown',
@@ -70,9 +71,10 @@ export default createAgent((ctx) => {
     cwd: workspaceRoot,
     instructions: instructions.join('\n'),
     model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    sandbox: readOnlyLocal({ env: { PATH: process.env.PATH ?? '' } }),
     thinkingLevel: 'medium',
     tools: [
+      customReadTool,
       createSessionsTool(),
       createSessionContextTool(),
       createPullSessionTool(),
@@ -89,6 +91,6 @@ export default createAgent((ctx) => {
       createCodebaseSemanticSearchTool(workspaceRoot as string),
       ...createLspTools(workspaceRoot as string),
       createQueryExpertTool(workspaceRoot as string),
-    ],
+    ].map(withResultBudget),
   };
 });

@@ -1,6 +1,6 @@
 import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
+import { readOnlyLocal } from '../sandbox/local';
 import { BUILD_MODEL } from '../config/models';
 import { resolveSelectedModel } from '../config/runtime-route';
 import {
@@ -53,7 +53,6 @@ export default createAgent((ctx) => {
     '## Tools',
     '- `read_file` → read file contents (supports offset/limit for chunks)',
     '- `ripgrep` → search file contents with regex',
-    '- `glob` → find files by pattern',
     '- `codebase_search` → search codebase',
     '- `oracle` → get second opinion',
     '- `create_task` → add a task',
@@ -76,7 +75,7 @@ export default createAgent((ctx) => {
     cwd: workspaceRoot,
     instructions: instructions.join('\n'),
     model,
-    sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+    sandbox: readOnlyLocal({ env: { PATH: process.env.PATH ?? '' } }),
     thinkingLevel: 'medium',
     tools: [
       customReadTool,
