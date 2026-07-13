@@ -4,6 +4,7 @@ export { ChangeTracker } from './change-tracker';
 export { createDeployParallelSubsTool } from './deploy-parallel-subs';
 export { createLoadSkillTool } from './skills';
 export { createCodebaseSemanticSearchTool } from './codebase-semantic-search';
+export { createCodebaseGraphTool } from './codebase-graph';
 export { createLspTools } from './lsp-client';
 export { createQueryExpertTool } from './query-expert';
 export { createAskQuestionTool } from './ask-question';

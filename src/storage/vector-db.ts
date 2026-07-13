@@ -21,8 +21,14 @@ export interface GraphSymbol {
 
 export interface GraphReference {
   sourceFile: string;
-  targetSymbolId: number;
+  targetName: string;
   line: number;
+}
+
+export interface GraphSnapshotMeta {
+  format: string | null;
+  fingerprint: string | null;
+  incomplete: boolean;
 }
 
 export class VectorDb {
@@ -35,6 +41,8 @@ export class VectorDb {
     }
     const dbPath = path.join(dir, 'vector-db.db');
     this.db = new Database(dbPath);
+    this.db.run('PRAGMA busy_timeout = 5000');
+    this.db.run('PRAGMA journal_mode = WAL');
     this.initSchema();
   }
 
@@ -59,8 +67,12 @@ export class VectorDb {
     this.db.run(
       `CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_path);`,
     );
-    this.db.run(`CREATE TABLE IF NOT EXISTS graph_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-    this.db.run(`CREATE TABLE IF NOT EXISTS graph_files (path TEXT PRIMARY KEY, hash TEXT NOT NULL)`);
+    this.db.run(
+      `CREATE TABLE IF NOT EXISTS graph_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+    );
+    this.db.run(
+      `CREATE TABLE IF NOT EXISTS graph_files (path TEXT PRIMARY KEY, hash TEXT NOT NULL)`,
+    );
     this.db.run(`CREATE TABLE IF NOT EXISTS graph_symbols (
       id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, name TEXT NOT NULL,
       kind TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER, signature TEXT,
@@ -75,59 +87,175 @@ export class VectorDb {
       PRIMARY KEY (source_file, target_symbol_id, line),
       FOREIGN KEY (source_file) REFERENCES graph_files(path) ON DELETE CASCADE,
       FOREIGN KEY (target_symbol_id) REFERENCES graph_symbols(id) ON DELETE CASCADE)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_graph_symbol_name ON graph_symbols(name)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_graph_dep_target ON graph_dependencies(target_file)`);
-    this.db.run(`CREATE INDEX IF NOT EXISTS idx_graph_ref_target ON graph_references(target_symbol_id)`);
-    this.db.prepare(`INSERT OR REPLACE INTO graph_meta (key, value) VALUES ('schema_version', '1')`).run();
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_graph_symbol_name ON graph_symbols(name)`,
+    );
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_graph_dep_target ON graph_dependencies(target_file)`,
+    );
+    this.db.run(
+      `CREATE INDEX IF NOT EXISTS idx_graph_ref_target ON graph_references(target_symbol_id)`,
+    );
+    this.db
+      .prepare(
+        `INSERT OR IGNORE INTO graph_meta (key, value) VALUES ('schema_version', '1')`,
+      )
+      .run();
   }
 
-  replaceGraph(
-    files: { path: string; hash: string }[],
-    symbols: GraphSymbol[],
-    dependencies: { sourceFile: string; targetFile: string; line: number }[],
-    references: Omit<GraphReference, 'targetSymbolId'>[] & never,
-  ): void;
   replaceGraph(
     files: { path: string; hash: string }[],
     symbols: GraphSymbol[],
     dependencies: { sourceFile: string; targetFile: string; line: number }[],
     references: GraphReference[],
-  ): void {
-    this.db.transaction(() => {
+    metadata: { format: string; fingerprint: string; incomplete: boolean },
+    expected: GraphSnapshotMeta,
+  ): boolean {
+    let replaced = false;
+    const replace = this.db.transaction(() => {
+      const current = this.getGraphSnapshotMeta();
+      if (
+        (current.format === metadata.format &&
+          current.fingerprint === metadata.fingerprint) ||
+        current.format !== expected.format ||
+        current.fingerprint !== expected.fingerprint
+      ) {
+        return;
+      }
       this.db.run('DELETE FROM graph_references');
       this.db.run('DELETE FROM graph_dependencies');
       this.db.run('DELETE FROM graph_symbols');
       this.db.run('DELETE FROM graph_files');
-      const fileStmt = this.db.prepare('INSERT INTO graph_files (path, hash) VALUES (?, ?)');
-      const symbolStmt = this.db.prepare(`INSERT INTO graph_symbols (file_path,name,kind,start_line,end_line,signature) VALUES (?,?,?,?,?,?)`);
-      const depStmt = this.db.prepare('INSERT OR IGNORE INTO graph_dependencies (source_file,target_file,line) VALUES (?,?,?)');
-      const refStmt = this.db.prepare('INSERT OR IGNORE INTO graph_references (source_file,target_symbol_id,line) VALUES (?,?,?)');
-      for (const file of files) fileStmt.run(file.path, file.hash);
+      const fileStmt = this.db.prepare(
+        'INSERT INTO graph_files (path, hash) VALUES (?, ?)',
+      );
+      const symbolStmt = this.db.prepare(
+        `INSERT INTO graph_symbols (file_path,name,kind,start_line,end_line,signature) VALUES (?,?,?,?,?,?)`,
+      );
+      const depStmt = this.db.prepare(
+        'INSERT OR IGNORE INTO graph_dependencies (source_file,target_file,line) VALUES (?,?,?)',
+      );
+      const refStmt = this.db.prepare(
+        'INSERT OR IGNORE INTO graph_references (source_file,target_symbol_id,line) VALUES (?,?,?)',
+      );
+      for (const file of files) {
+        fileStmt.run(file.path, file.hash);
+      }
       for (const symbol of symbols) {
-        const result = symbolStmt.run(symbol.filePath, symbol.name, symbol.kind, symbol.startLine, symbol.endLine ?? null, symbol.signature ?? null);
+        const result = symbolStmt.run(
+          symbol.filePath,
+          symbol.name,
+          symbol.kind,
+          symbol.startLine,
+          symbol.endLine ?? null,
+          symbol.signature ?? null,
+        );
         symbol.id = Number(result.lastInsertRowid);
       }
-      for (const edge of dependencies) depStmt.run(edge.sourceFile, edge.targetFile, edge.line);
-      for (const edge of references) refStmt.run(edge.sourceFile, edge.targetSymbolId, edge.line);
-    })();
+      for (const edge of dependencies) {
+        depStmt.run(edge.sourceFile, edge.targetFile, edge.line);
+      }
+      const uniqueSymbols = new Map<string, GraphSymbol>();
+      const duplicateNames = new Set<string>();
+      for (const symbol of symbols) {
+        if (uniqueSymbols.has(symbol.name)) {
+          duplicateNames.add(symbol.name);
+        } else {
+          uniqueSymbols.set(symbol.name, symbol);
+        }
+      }
+      for (const edge of references) {
+        const target = duplicateNames.has(edge.targetName)
+          ? undefined
+          : uniqueSymbols.get(edge.targetName);
+        if (target?.id !== undefined) {
+          refStmt.run(edge.sourceFile, target.id, edge.line);
+        }
+      }
+      const metaStmt = this.db.prepare(
+        `INSERT INTO graph_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+      );
+      metaStmt.run('format_version', metadata.format);
+      metaStmt.run('content_fingerprint', metadata.fingerprint);
+      metaStmt.run('incomplete', metadata.incomplete ? '1' : '0');
+      replaced = true;
+    });
+    replace.immediate();
+    return replaced;
   }
 
-  queryGraph(query: string, limit: number): {
+  getGraphSnapshotMeta(): GraphSnapshotMeta {
+    const rows = this.db
+      .prepare(
+        `SELECT key,value FROM graph_meta WHERE key IN ('format_version','content_fingerprint','incomplete')`,
+      )
+      .all() as Array<{ key: string; value: string }>;
+    const values = new Map(rows.map((row) => [row.key, row.value]));
+    return {
+      format: values.get('format_version') ?? null,
+      fingerprint: values.get('content_fingerprint') ?? null,
+      incomplete: values.get('incomplete') === '1',
+    };
+  }
+
+  queryGraph(
+    query: string,
+    limit: number,
+    fileQuery = query,
+  ): {
+    fileFound: boolean;
     symbols: GraphSymbol[];
     dependencies: { sourceFile: string; targetFile: string; line: number }[];
     references: { sourceFile: string; line: number; symbol: GraphSymbol }[];
   } {
-    const symbols = this.db.prepare(`SELECT id, file_path filePath, name, kind, start_line startLine, end_line endLine, signature FROM graph_symbols WHERE name = ? OR file_path = ? ORDER BY file_path,start_line LIMIT ?`).all(query, query, limit) as GraphSymbol[];
+    const symbols = this.db
+      .prepare(
+        `SELECT id, file_path filePath, name, kind, start_line startLine, end_line endLine, signature FROM graph_symbols WHERE name = ? OR file_path = ? ORDER BY file_path,start_line LIMIT ?`,
+      )
+      .all(query, fileQuery, limit) as GraphSymbol[];
     const files = new Set(symbols.map((s) => s.filePath));
-    if (this.db.prepare('SELECT 1 FROM graph_files WHERE path = ?').get(query)) files.add(query);
-    const dependencies: { sourceFile: string; targetFile: string; line: number }[] = [];
-    for (const file of files) dependencies.push(...(this.db.prepare(`SELECT source_file sourceFile,target_file targetFile,line FROM graph_dependencies WHERE source_file = ? OR target_file = ? ORDER BY source_file,line LIMIT ?`).all(file, file, limit) as typeof dependencies));
-    const references: { sourceFile: string; line: number; symbol: GraphSymbol }[] = [];
+    const fileFound = Boolean(
+      this.db
+        .prepare('SELECT 1 FROM graph_files WHERE path = ?')
+        .get(fileQuery),
+    );
+    if (fileFound) files.add(fileQuery);
+    const dependencies: {
+      sourceFile: string;
+      targetFile: string;
+      line: number;
+    }[] = [];
+    for (const file of files)
+      dependencies.push(
+        ...(this.db
+          .prepare(
+            `SELECT source_file sourceFile,target_file targetFile,line FROM graph_dependencies WHERE source_file = ? OR target_file = ? ORDER BY source_file,line LIMIT ?`,
+          )
+          .all(file, file, limit) as typeof dependencies),
+      );
+    const references: {
+      sourceFile: string;
+      line: number;
+      symbol: GraphSymbol;
+    }[] = [];
     for (const symbol of symbols) {
-      const rows = this.db.prepare(`SELECT r.source_file sourceFile,r.line,s.id,s.file_path filePath,s.name,s.kind,s.start_line startLine,s.end_line endLine,s.signature FROM graph_references r JOIN graph_symbols s ON s.id=r.target_symbol_id WHERE r.target_symbol_id=? ORDER BY r.source_file,r.line LIMIT ?`).all(symbol.id, limit) as Array<{sourceFile:string;line:number} & GraphSymbol>;
-      references.push(...rows.map((r) => ({ sourceFile: r.sourceFile, line: r.line, symbol: r })));
+      if (symbol.id === undefined) continue;
+      const rows = this.db
+        .prepare(
+          `SELECT r.source_file sourceFile,r.line,s.id,s.file_path filePath,s.name,s.kind,s.start_line startLine,s.end_line endLine,s.signature FROM graph_references r JOIN graph_symbols s ON s.id=r.target_symbol_id WHERE r.target_symbol_id=? ORDER BY r.source_file,r.line LIMIT ?`,
+        )
+        .all(symbol.id, limit) as Array<
+        { sourceFile: string; line: number } & GraphSymbol
+      >;
+      references.push(
+        ...rows.map((r) => ({
+          sourceFile: r.sourceFile,
+          line: r.line,
+          symbol: r,
+        })),
+      );
     }
-    return { symbols, dependencies, references };
+    return { fileFound, symbols, dependencies, references };
   }
 
   getFileHash(filePath: string): string | null {
@@ -137,15 +265,61 @@ export class VectorDb {
     return row ? row.hash : null;
   }
 
+  getFileChunkCount(filePath: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) count FROM chunks WHERE file_path = ?')
+      .get(filePath) as { count: number };
+    return row.count;
+  }
+
   upsertFile(filePath: string, hash: string) {
     this.db
-      .prepare('INSERT OR REPLACE INTO files (path, hash) VALUES (?, ?)')
+      .prepare(
+        'INSERT INTO files (path, hash) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash',
+      )
       .run(filePath, hash);
   }
 
   deleteFile(filePath: string) {
     this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
     this.db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
+  }
+
+  deleteChunks(filePath: string) {
+    this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
+  }
+
+  replaceFileChunks(
+    filePath: string,
+    expectedHash: string | null,
+    hash: string,
+    chunks: Array<{ content: string; embedding: number[] }>,
+  ): boolean {
+    let replaced = false;
+    const replace = this.db.transaction(() => {
+      const currentHash = this.getFileHash(filePath);
+      if (
+        currentHash === hash &&
+        this.getFileChunkCount(filePath) === chunks.length
+      ) {
+        replaced = true;
+        return;
+      }
+      if (currentHash !== expectedHash) {
+        return;
+      }
+      this.upsertFile(filePath, hash);
+      this.deleteChunks(filePath);
+      for (let index = 0; index < chunks.length; index++) {
+        const chunk = chunks[index];
+        if (chunk) {
+          this.insertChunk(filePath, index, chunk.content, chunk.embedding);
+        }
+      }
+      replaced = true;
+    });
+    replace.immediate();
+    return replaced;
   }
 
   insertChunk(
@@ -167,7 +341,11 @@ export class VectorDb {
   search(queryVector: number[], limit = 5): ChunkResult[] {
     const qVec = new Float32Array(queryVector);
     const rows = this.db
-      .prepare('SELECT file_path, content, embedding FROM chunks')
+      .prepare(
+        `SELECT c.file_path, c.content, c.embedding
+         FROM chunks c JOIN files f ON f.path = c.file_path
+         WHERE f.hash NOT LIKE 'pending:%'`,
+      )
       .all() as {
       file_path: string;
       content: string;

@@ -120,22 +120,29 @@ export class CodebaseIndexer {
 
       const content = fs.readFileSync(fullPath, 'utf8');
       const hash = crypto.createHash('sha256').update(content).digest('hex');
+      const chunks = chunkText(content);
 
       const existingHash = this.db.getFileHash(file);
-      if (existingHash === hash) {
+      if (
+        existingHash === hash &&
+        this.db.getFileChunkCount(file) === chunks.length
+      ) {
         continue;
       } // Up to date
 
       // Hash changed or file is new - remove old chunks and re-index
-      this.db.deleteFile(file);
-
-      const chunks = chunkText(content);
       if (chunks.length === 0) {
+        this.db.deleteFile(file);
         continue;
       }
 
       try {
         const batchSize = 16;
+        let dimensions: number | undefined;
+        const embeddedChunks: Array<{
+          content: string;
+          embedding: number[];
+        }> = [];
         for (let i = 0; i < chunks.length; i += batchSize) {
           const batch = chunks.slice(i, i + batchSize);
           const vectors = await fetchEmbeddings(
@@ -143,16 +150,32 @@ export class CodebaseIndexer {
             creds.accountId,
             creds.apiToken,
           );
+          const expectedDimensions = dimensions ?? vectors[0]?.length;
+          if (
+            vectors.length !== batch.length ||
+            expectedDimensions === undefined ||
+            vectors.some(
+              (vector) =>
+                !Array.isArray(vector) ||
+                vector.length === 0 ||
+                vector.some((value) => !Number.isFinite(value)) ||
+                vector.length !== expectedDimensions,
+            )
+          ) {
+            throw new Error(
+              'Embedding response did not contain one valid vector per chunk',
+            );
+          }
+          dimensions = expectedDimensions;
           for (let j = 0; j < batch.length; j++) {
             const content = batch[j];
             const vector = vectors[j];
-            if (content === undefined || vector === undefined) {
-              continue;
-            }
-            this.db.insertChunk(file, i + j, content, vector);
+            if (content === undefined || vector === undefined)
+              throw new Error('Invalid embedding batch');
+            embeddedChunks.push({ content, embedding: vector });
           }
         }
-        this.db.upsertFile(file, hash);
+        this.db.replaceFileChunks(file, existingHash, hash, embeddedChunks);
       } catch (error) {
         console.error(`[lavalamp] Failed to index ${file}:`, error);
       }

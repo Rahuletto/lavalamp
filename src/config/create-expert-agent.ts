@@ -6,6 +6,7 @@ import { getMemoryContext, createMemoryTools } from '../sessions';
 import { createRipgrepTool } from '../tools/ripgrep';
 import { createCodebaseSearchTool } from '../tools/codebase-search';
 import { createCodebaseSemanticSearchTool } from '../tools/codebase-semantic-search';
+import { createCodebaseGraphTool } from '../tools/codebase-graph';
 import { createLspTools } from '../tools/lsp-client';
 import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
@@ -67,6 +68,7 @@ function buildToolkit(
         break;
       case 'semantic_search':
         tools.push(createCodebaseSemanticSearchTool(workspaceRoot));
+        tools.push(createCodebaseGraphTool(workspaceRoot));
         break;
       case 'lsp':
         tools.push(...createLspTools(workspaceRoot));
@@ -97,7 +99,8 @@ function toolLegend(toolkit: ExpertToolkit[]): string {
     memory_read: '`memory_read` — project memory',
     ripgrep: '`ripgrep` — fast regex search (preferred over grep)',
     codebase_search: '`codebase_search` — filename + content search',
-    semantic_search: '`codebase_semantic_search` — semantic code search',
+    semantic_search:
+      '`codebase_semantic_search` / `codebase_graph` — semantic search and offline symbol/dependency graph',
     lsp: '`lsp_hover` / `lsp_definition` — language server queries',
     web_search: '`web_search` — web search',
     fetch_url: '`fetch_url` — fetch a URL as clean markdown',
@@ -121,10 +124,7 @@ export interface ExpertInstructionParts {
 /**
  * Build a Flue expert agent from the roster profile + domain instructions.
  */
-export function createExpertAgent(
-  id: ExpertId,
-  parts: ExpertInstructionParts,
-) {
+export function createExpertAgent(id: ExpertId, parts: ExpertInstructionParts) {
   const profile = EXPERT_PROFILES[id];
 
   return createAgent((ctx) => {
