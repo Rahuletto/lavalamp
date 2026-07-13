@@ -282,17 +282,17 @@ The diagram below shows how the indexing pipeline is structured, cached, and sto
 
 ```mermaid
 graph TD
-    subgraph Host Workspace
+    subgraph "Host Workspace"
         CWD["Workspace Root"] -->|SHA-256 Hash of Absolute Path| Hash["12-Char Path Hash"]
         Files["Source Code Files (.ts, .py, .go, .rs, .c, etc.)"]
     end
 
-    subgraph OS-Native App Data Storage
+    subgraph "OS-Native App Data Storage"
         Hash -->|Resolves Location| WorkspaceData["/workspaces/{name}-{hash}/"]
         WorkspaceData -->|Unified Database| SQLite[("SQLite Unified DB: vector-db.db")]
     end
 
-    subgraph 1. Offline Codebase Graph Engine
+    subgraph "1. Offline Codebase Graph Engine"
         Files -->|Scan & File Stat Check| CheckCache{"Mtime/Size Changed?"}
         CheckCache -->|Yes| Parse["Parse AST Payloads (Symbols, Imports, Usages)"]
         CheckCache -->|No| LoadCache["Load Cached Payload"]
@@ -303,7 +303,7 @@ graph TD
         ResolveGraph -->|Write Edges| GraphTables["Tables: graph_symbols, graph_dependencies, graph_references, graph_files"]
     end
 
-    subgraph 2. Semantic Search Engine
+    subgraph "2. Semantic Search Engine"
         Files -->|Check File Hash| HashCheck{"Has File Hash Changed?"}
         HashCheck -->|No| Skip["Use Existing Embeddings"]
         HashCheck -->|Yes| Chunk["Sliding Window Chunker (1000 words, 200 overlap)"]
@@ -315,7 +315,7 @@ graph TD
     SQLite --- GraphTables
     SQLite --- VectorTable
 
-    subgraph Query Execution (Shared Across Sessions)
+    subgraph "Query Execution (Shared Across Sessions)"
         Query["User Intent Query / Symbol Search"]
         Query -->|1. codebase_graph| GraphTables
         Query -->|2. codebase_semantic_search| VectorTable
