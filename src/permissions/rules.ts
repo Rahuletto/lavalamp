@@ -36,12 +36,6 @@ const DEFAULT_RULES: PermissionRule[] = [
   { action: 'allow', description: 'Edit a task', tool: 'edit_task' },
   { action: 'allow', description: 'Delete a task', tool: 'delete_task' },
   { action: 'allow', description: 'Skip a task', tool: 'skip_task' },
-  {
-    action: 'allow',
-    commandClass: 'read',
-    description: 'Run read-only shell inspection',
-    tool: 'bash',
-  },
   { action: 'ask', description: 'Create or overwrite file', tool: 'write' },
   { action: 'ask', description: 'Apply hashline patch', tool: 'edit' },
   { action: 'ask', description: 'Run shell command', tool: 'bash' },
@@ -134,7 +128,7 @@ export function loadRules(cwd: string): PermissionRule[] {
     const content = readFileSync(rulesPath, 'utf8');
     const parsed = JSON.parse(content) as { rules?: PermissionRule[] };
     const userRules = parsed.rules ?? [];
-    return [...DEFAULT_RULES, ...userRules];
+    return [...userRules, ...DEFAULT_RULES];
   } catch {
     return [...DEFAULT_RULES];
   }

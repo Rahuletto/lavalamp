@@ -13,6 +13,14 @@ export interface AutorunEntry {
 const autorunMap = new Map<string, AutorunEntry>();
 let allowAll = false;
 
+export function autorunPattern(args: Record<string, unknown>): string {
+  return JSON.stringify(args);
+}
+
+function entryKey(tool: string, pattern?: string): string {
+  return pattern !== undefined ? `${tool}:${pattern}` : tool;
+}
+
 function getAutorunPath(cwd: string): string {
   return join(workspaceDataDir(cwd), 'autorun.json');
 }
@@ -31,7 +39,9 @@ export function loadAutorun(cwd: string): void {
     autorunMap.clear();
     if (parsed.entries) {
       for (const entry of parsed.entries) {
-        autorunMap.set(entry.tool, entry);
+        if (entry.pattern !== undefined) {
+          autorunMap.set(entryKey(entry.tool, entry.pattern), entry);
+        }
       }
     }
     allowAll = parsed.allowAll ?? false;
@@ -54,14 +64,18 @@ export function setAutorun(
   action: PermissionAction,
   pattern?: string,
 ): void {
-  const key = pattern !== undefined ? `${tool}:${pattern}` : tool;
+  const key = entryKey(tool, pattern);
   autorunMap.set(key, { action, pattern, timestamp: Date.now(), tool });
   saveAutorun(cwd);
 }
 
 export function clearAutorun(cwd: string, tool?: string): void {
   if (tool !== undefined) {
-    autorunMap.delete(tool);
+    for (const [key, entry] of autorunMap) {
+      if (entry.tool === tool) {
+        autorunMap.delete(key);
+      }
+    }
   } else {
     autorunMap.clear();
     allowAll = false;
@@ -79,23 +93,19 @@ export function isAllowAll(): boolean {
 }
 
 export function getAutorun(tool: string): AutorunEntry | undefined {
-  return autorunMap.get(tool);
+  return [...autorunMap.values()].find((entry) => entry.tool === tool);
 }
 
 export function getMatchingAutorun(
   tool: string,
   args: Record<string, unknown>,
 ): AutorunEntry | undefined {
-  const exact = autorunMap.get(tool);
-  if (exact) {
-    return exact;
-  }
   const argsText = JSON.stringify(args);
   for (const entry of autorunMap.values()) {
     if (entry.tool !== tool) {
       continue;
     }
-    if (entry.pattern !== undefined && argsText.includes(entry.pattern)) {
+    if (entry.pattern !== undefined && argsText === entry.pattern) {
       return entry;
     }
   }

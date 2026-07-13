@@ -1,6 +1,12 @@
 import { matchRules, loadRules } from './rules';
 import type { PermissionRule, PermissionAction } from './rules';
-import { getMatchingAutorun, isAllowAll, setAutorun } from './autorun';
+import {
+  autorunPattern,
+  getMatchingAutorun,
+  isAllowAll,
+  setAutorun,
+} from './autorun';
+import { withMutationLock } from '../sandbox/mutation-lock';
 
 export interface PermissionRequest {
   type: 'permission_request';
@@ -21,12 +27,15 @@ const pending = new Map<
   { resolve: (response: PermissionResponse) => void }
 >();
 
-let rules: PermissionRule[] | null = null;
+let rules: { cwd: string; values: PermissionRule[] } | null = null;
 let ipcListenerInstalled = false;
+let permissionQueue: Promise<void> = Promise.resolve();
 
 function ensureRules(cwd: string): PermissionRule[] {
-  rules ??= loadRules(cwd);
-  return rules;
+  if (rules === null || rules.cwd !== cwd) {
+    rules = { cwd, values: loadRules(cwd) };
+  }
+  return rules.values;
 }
 
 const pendingQuestions = new Map<
@@ -105,7 +114,33 @@ export async function requestPermission(
     return { decision: 'deny', requestId: '', type: 'permission_response' };
   }
 
-  // action === 'ask' — send IPC request to TUI
+  const previous = permissionQueue;
+  let releaseQueue: () => void = () => {};
+  permissionQueue = new Promise<void>((resolve) => {
+    releaseQueue = resolve;
+  });
+  await previous;
+
+  try {
+    const queuedAction = checkPermission(toolName, args, cwd);
+    if (queuedAction === 'allow' || queuedAction === 'deny') {
+      return {
+        decision: queuedAction,
+        requestId: '',
+        type: 'permission_response',
+      };
+    }
+    return await requestPermissionViaIpc(toolName, args, cwd);
+  } finally {
+    releaseQueue();
+  }
+}
+
+function requestPermissionViaIpc(
+  toolName: string,
+  args: Record<string, unknown>,
+  cwd: string,
+): Promise<PermissionResponse> {
   installIpcListener();
 
   const requestId = `perm_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -134,7 +169,7 @@ export async function requestPermission(
       resolve: (resp) => {
         clearTimeout(timeout);
         if (resp.alwaysAllow) {
-          setAutorun(cwd, toolName, 'allow');
+          setAutorun(cwd, toolName, 'allow', autorunPattern(args));
         }
         origResolve(resp);
       },
@@ -144,10 +179,10 @@ export async function requestPermission(
     if (process.send) {
       process.send(request);
     } else {
-      // No IPC channel (running standalone) — auto-allow
+      // No user is available to approve the operation. Fail closed.
       pending.delete(requestId);
       clearTimeout(timeout);
-      resolve({ decision: 'allow', requestId, type: 'permission_response' });
+      resolve({ decision: 'deny', requestId, type: 'permission_response' });
     }
   });
 }
@@ -166,6 +201,22 @@ export function wrapToolExecute(
 
     if (response.decision === 'deny') {
       return { error: `Permission denied for ${toolName}` };
+    }
+
+    if (
+      [
+        'bash',
+        'edit',
+        'edit_file',
+        'memory_append',
+        'memory_write',
+        'rename',
+        'undo',
+        'write',
+        'write_file',
+      ].includes(toolName)
+    ) {
+      return withMutationLock(() => originalExecute(args));
     }
 
     return originalExecute(args);
