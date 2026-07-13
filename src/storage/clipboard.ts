@@ -3,6 +3,29 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { workspaceDataDir } from './paths';
 
+export function copyTextToClipboard(text: string): boolean {
+  const input = Buffer.from(text);
+  const commands: Array<[string, string[]]> =
+    process.platform === 'darwin'
+      ? [['pbcopy', []]]
+      : process.platform === 'win32'
+        ? [['clip.exe', []]]
+        : process.platform === 'linux'
+          ? [
+              ['wl-copy', []],
+              ['xclip', ['-selection', 'clipboard']],
+            ]
+          : [];
+
+  for (const [command, args] of commands) {
+    const result = spawnSync(command, args, { input });
+    if (result.status === 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function pasteImageFromClipboard(
   workspaceRoot: string,
 ): Promise<string | null> {

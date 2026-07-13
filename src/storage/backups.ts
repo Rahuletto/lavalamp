@@ -1,6 +1,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import { workspaceDataDir } from './paths';
+import { WorkspaceGuard } from '../sandbox/workspace';
 
 interface BackupManifest {
   createdAt: string;
@@ -15,9 +16,12 @@ interface BackupManifest {
 
 export class BackupEngine {
   private readonly backupDir: string;
+  private readonly guard: WorkspaceGuard;
 
   constructor(private readonly workspaceRoot: string) {
-    this.backupDir = path.join(workspaceDataDir(workspaceRoot), 'backups');
+    this.guard = new WorkspaceGuard(workspaceRoot);
+    this.workspaceRoot = this.guard.root;
+    this.backupDir = path.join(workspaceDataDir(this.workspaceRoot), 'backups');
     if (!fs.existsSync(this.backupDir)) {
       fs.mkdirSync(this.backupDir, { recursive: true });
     }
@@ -72,12 +76,11 @@ export class BackupEngine {
       return null;
     }
 
-    const resolved = path.resolve(this.workspaceRoot, requestedPath);
-    const relative = path.relative(this.workspaceRoot, resolved);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    try {
+      return this.guard.constrain(requestedPath);
+    } catch {
       return null;
     }
-    return resolved;
   }
 
   restoreBackup(timestamp: string): void {
@@ -91,25 +94,7 @@ export class BackupEngine {
       this.restorePartialBackup(srcFolder, this.readManifest(manifestPath));
       return;
     }
-
-    const restoreDir = (dir: string) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullSrc = path.join(dir, entry.name);
-        const relative = path.relative(srcFolder, fullSrc);
-        const fullDest = path.join(this.workspaceRoot, relative);
-
-        if (entry.isDirectory()) {
-          if (!fs.existsSync(fullDest)) {
-            fs.mkdirSync(fullDest, { recursive: true });
-          }
-          restoreDir(fullSrc);
-        } else {
-          fs.copyFileSync(fullSrc, fullDest);
-        }
-      }
-    };
-    restoreDir(srcFolder);
+    throw new Error(`Invalid backup: manifest not found in ${srcFolder}`);
   }
 
   private readManifest(manifestPath: string): BackupManifest {

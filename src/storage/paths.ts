@@ -126,11 +126,21 @@ export function sessionDirs(): string[] {
   return uniquePaths([sessionsDir(), legacySessionsDir()]);
 }
 
+export function isSafeSessionId(sessionId: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(sessionId);
+}
+
 export function sessionPath(sessionId: string): string {
+  if (!isSafeSessionId(sessionId)) {
+    throw new Error(`Invalid session ID: ${sessionId}`);
+  }
   return path.join(sessionsDir(), `${sessionId}.json`);
 }
 
 export function sessionPathCandidates(sessionId: string): string[] {
+  if (!isSafeSessionId(sessionId)) {
+    return [];
+  }
   return sessionDirs().map((dir) => path.join(dir, `${sessionId}.json`));
 }
 
