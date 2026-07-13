@@ -1,6 +1,6 @@
 import { createAgent } from '@flue/runtime';
 import type { ToolDefinition } from '@flue/runtime';
-import { local } from '../sandbox/local';
+import { readOnlyLocal } from '../sandbox/local';
 import { WorkspaceGuard } from '../sandbox/workspace';
 import { getMemoryContext, createMemoryTools } from '../sessions';
 import { createRipgrepTool } from '../tools/ripgrep';
@@ -11,6 +11,8 @@ import { createWebSearchTool } from '../tools/web-search';
 import { createFetchUrlTool } from '../tools/fetch-url';
 import { createDeepWikiTool } from '../tools/deepwiki';
 import { createLoadSkillTool } from '../tools/skills';
+import { withResultBudget } from '../tools/result-budget';
+import { customReadTool } from '../tools/file-tools';
 import {
   type ExpertId,
   type ExpertToolkit,
@@ -40,6 +42,13 @@ function buildToolkit(
 ): ToolDefinition[] {
   const guard = new WorkspaceGuard(workspaceRoot);
   const tools: ToolDefinition[] = [];
+  if (
+    toolkit.some((tag) =>
+      ['codebase_search', 'lsp', 'ripgrep', 'semantic_search'].includes(tag),
+    )
+  ) {
+    tools.push(customReadTool);
+  }
 
   for (const tag of toolkit) {
     switch (tag) {
@@ -77,7 +86,7 @@ function buildToolkit(
     }
   }
 
-  return tools;
+  return tools.map(withResultBudget);
 }
 
 function toolLegend(toolkit: ExpertToolkit[]): string {
@@ -164,7 +173,7 @@ export function createExpertAgent(
       cwd: workspaceRoot,
       instructions: instructions.join('\n'),
       model,
-      sandbox: local({ env: { PATH: process.env.PATH ?? '' } }),
+      sandbox: readOnlyLocal({ env: { PATH: process.env.PATH ?? '' } }),
       thinkingLevel: profile.thinkingLevel,
       tools: buildToolkit(profile.toolkit, workspaceRoot),
     };
