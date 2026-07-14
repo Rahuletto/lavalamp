@@ -22,6 +22,13 @@ export function credentialsPath(): string {
 }
 
 export function loadCredentials(): Credentials | null {
+  if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
+    return {
+      accountId: process.env.CF_ACCOUNT_ID,
+      apiToken: process.env.CF_API_TOKEN,
+    };
+  }
+
   for (const candidate of credentialsPathCandidates()) {
     if (!existsSync(candidate)) {
       continue;
