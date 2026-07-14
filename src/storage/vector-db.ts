@@ -112,11 +112,21 @@ export class VectorDb {
     this.db.run(
       `CREATE INDEX IF NOT EXISTS idx_graph_ref_target ON graph_references(target_symbol_id)`,
     );
-    this.db
-      .prepare(
-        `INSERT OR IGNORE INTO graph_meta (key, value) VALUES ('schema_version', '1')`,
-      )
-      .run();
+    this.db.run(
+      `INSERT OR IGNORE INTO graph_meta (key, value) VALUES ('schema_version', '1')`,
+    );
+  }
+
+  private immediateTransaction<T>(run: () => T): T {
+    this.db.run('BEGIN IMMEDIATE');
+    try {
+      const result = run();
+      this.db.run('COMMIT');
+      return result;
+    } catch (error) {
+      this.db.run('ROLLBACK');
+      throw error;
+    }
   }
 
   replaceGraph(
@@ -128,7 +138,7 @@ export class VectorDb {
     expected: GraphSnapshotMeta,
   ): boolean {
     let replaced = false;
-    const replace = this.db.transaction(() => {
+    this.immediateTransaction(() => {
       const current = this.getGraphSnapshotMeta();
       if (
         (current.format === metadata.format &&
@@ -142,20 +152,20 @@ export class VectorDb {
       this.db.run('DELETE FROM graph_dependencies');
       this.db.run('DELETE FROM graph_symbols');
       this.db.run('DELETE FROM graph_files');
-      const fileStmt = this.db.prepare(
+      using fileStmt = this.db.prepare(
         'INSERT INTO graph_files (path, hash) VALUES (?, ?)',
       );
-      const symbolStmt = this.db.prepare(
+      using symbolStmt = this.db.prepare(
         `INSERT INTO graph_symbols (file_path,name,kind,start_line,end_line,signature) VALUES (?,?,?,?,?,?)`,
       );
-      const cacheStmt = this.db.prepare(
+      using cacheStmt = this.db.prepare(
         `INSERT INTO graph_file_cache
          (path,hash,size,mtime_ms,ctime_ms,format,payload) VALUES (?,?,?,?,?,?,?)`,
       );
-      const depStmt = this.db.prepare(
+      using depStmt = this.db.prepare(
         'INSERT OR IGNORE INTO graph_dependencies (source_file,target_file,line) VALUES (?,?,?)',
       );
-      const refStmt = this.db.prepare(
+      using refStmt = this.db.prepare(
         'INSERT OR IGNORE INTO graph_references (source_file,target_symbol_id,line) VALUES (?,?,?)',
       );
       for (const file of files) {
@@ -201,7 +211,7 @@ export class VectorDb {
           refStmt.run(edge.sourceFile, target.id, edge.line);
         }
       }
-      const metaStmt = this.db.prepare(
+      using metaStmt = this.db.prepare(
         `INSERT INTO graph_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
       );
       metaStmt.run('format_version', metadata.format);
@@ -209,16 +219,14 @@ export class VectorDb {
       metaStmt.run('incomplete', metadata.incomplete ? '1' : '0');
       replaced = true;
     });
-    replace.immediate();
     return replaced;
   }
 
   getGraphSnapshotMeta(): GraphSnapshotMeta {
-    const rows = this.db
-      .prepare(
-        `SELECT key,value FROM graph_meta WHERE key IN ('format_version','content_fingerprint','incomplete')`,
-      )
-      .all() as Array<{ key: string; value: string }>;
+    using statement = this.db.prepare(
+      `SELECT key,value FROM graph_meta WHERE key IN ('format_version','content_fingerprint','incomplete')`,
+    );
+    const rows = statement.all() as Array<{ key: string; value: string }>;
     const values = new Map(rows.map((row) => [row.key, row.value]));
     return {
       format: values.get('format_version') ?? null,
@@ -228,12 +236,11 @@ export class VectorDb {
   }
 
   getGraphFileCache(): GraphFileCache[] {
-    return this.db
-      .prepare(
-        `SELECT path,hash,size,mtime_ms mtimeMs,ctime_ms ctimeMs,format,payload
-         FROM graph_file_cache ORDER BY path`,
-      )
-      .all() as GraphFileCache[];
+    using statement = this.db.prepare(
+      `SELECT path,hash,size,mtime_ms mtimeMs,ctime_ms ctimeMs,format,payload
+       FROM graph_file_cache ORDER BY path`,
+    );
+    return statement.all() as GraphFileCache[];
   }
 
   queryGraph(
@@ -246,43 +253,47 @@ export class VectorDb {
     dependencies: { sourceFile: string; targetFile: string; line: number }[];
     references: { sourceFile: string; line: number; symbol: GraphSymbol }[];
   } {
-    const symbols = this.db
-      .prepare(
-        `SELECT id, file_path filePath, name, kind, start_line startLine, end_line endLine, signature FROM graph_symbols WHERE name = ? OR file_path = ? ORDER BY file_path,start_line LIMIT ?`,
-      )
-      .all(query, fileQuery, limit) as GraphSymbol[];
-    const files = new Set(symbols.map((s) => s.filePath));
-    const fileFound = Boolean(
-      this.db
-        .prepare('SELECT 1 FROM graph_files WHERE path = ?')
-        .get(fileQuery),
+    using symbolsStatement = this.db.prepare(
+      `SELECT id, file_path filePath, name, kind, start_line startLine, end_line endLine, signature FROM graph_symbols WHERE name = ? OR file_path = ? ORDER BY file_path,start_line LIMIT ?`,
     );
+    const symbols = symbolsStatement.all(
+      query,
+      fileQuery,
+      limit,
+    ) as GraphSymbol[];
+    const files = new Set(symbols.map((s) => s.filePath));
+    using fileStatement = this.db.prepare(
+      'SELECT 1 FROM graph_files WHERE path = ?',
+    );
+    const fileFound = Boolean(fileStatement.get(fileQuery));
     if (fileFound) files.add(fileQuery);
     const dependencies: {
       sourceFile: string;
       targetFile: string;
       line: number;
     }[] = [];
+    using dependenciesStatement = this.db.prepare(
+      `SELECT source_file sourceFile,target_file targetFile,line FROM graph_dependencies WHERE source_file = ? OR target_file = ? ORDER BY source_file,line LIMIT ?`,
+    );
     for (const file of files)
       dependencies.push(
-        ...(this.db
-          .prepare(
-            `SELECT source_file sourceFile,target_file targetFile,line FROM graph_dependencies WHERE source_file = ? OR target_file = ? ORDER BY source_file,line LIMIT ?`,
-          )
-          .all(file, file, limit) as typeof dependencies),
+        ...(dependenciesStatement.all(
+          file,
+          file,
+          limit,
+        ) as typeof dependencies),
       );
     const references: {
       sourceFile: string;
       line: number;
       symbol: GraphSymbol;
     }[] = [];
+    using referencesStatement = this.db.prepare(
+      `SELECT r.source_file sourceFile,r.line,s.id,s.file_path filePath,s.name,s.kind,s.start_line startLine,s.end_line endLine,s.signature FROM graph_references r JOIN graph_symbols s ON s.id=r.target_symbol_id WHERE r.target_symbol_id=? ORDER BY r.source_file,r.line LIMIT ?`,
+    );
     for (const symbol of symbols) {
       if (symbol.id === undefined) continue;
-      const rows = this.db
-        .prepare(
-          `SELECT r.source_file sourceFile,r.line,s.id,s.file_path filePath,s.name,s.kind,s.start_line startLine,s.end_line endLine,s.signature FROM graph_references r JOIN graph_symbols s ON s.id=r.target_symbol_id WHERE r.target_symbol_id=? ORDER BY r.source_file,r.line LIMIT ?`,
-        )
-        .all(symbol.id, limit) as Array<
+      const rows = referencesStatement.all(symbol.id, limit) as Array<
         { sourceFile: string; line: number } & GraphSymbol
       >;
       references.push(
@@ -297,34 +308,38 @@ export class VectorDb {
   }
 
   getFileHash(filePath: string): string | null {
-    const row = this.db
-      .prepare('SELECT hash FROM files WHERE path = ?')
-      .get(filePath) as { hash: string } | undefined;
+    using statement = this.db.prepare('SELECT hash FROM files WHERE path = ?');
+    const row = statement.get(filePath) as { hash: string } | undefined;
     return row ? row.hash : null;
   }
 
   getFileChunkCount(filePath: string): number {
-    const row = this.db
-      .prepare('SELECT COUNT(*) count FROM chunks WHERE file_path = ?')
-      .get(filePath) as { count: number };
+    using statement = this.db.prepare(
+      'SELECT COUNT(*) count FROM chunks WHERE file_path = ?',
+    );
+    const row = statement.get(filePath) as { count: number };
     return row.count;
   }
 
   upsertFile(filePath: string, hash: string) {
-    this.db
-      .prepare(
-        'INSERT INTO files (path, hash) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash',
-      )
-      .run(filePath, hash);
+    using statement = this.db.prepare(
+      'INSERT INTO files (path, hash) VALUES (?, ?) ON CONFLICT(path) DO UPDATE SET hash=excluded.hash',
+    );
+    statement.run(filePath, hash);
   }
 
   deleteFile(filePath: string) {
-    this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
-    this.db.prepare('DELETE FROM files WHERE path = ?').run(filePath);
+    using chunksStatement = this.db.prepare(
+      'DELETE FROM chunks WHERE file_path = ?',
+    );
+    using fileStatement = this.db.prepare('DELETE FROM files WHERE path = ?');
+    chunksStatement.run(filePath);
+    fileStatement.run(filePath);
   }
 
   deleteChunks(filePath: string) {
-    this.db.prepare('DELETE FROM chunks WHERE file_path = ?').run(filePath);
+    using statement = this.db.prepare('DELETE FROM chunks WHERE file_path = ?');
+    statement.run(filePath);
   }
 
   replaceFileChunks(
@@ -334,7 +349,7 @@ export class VectorDb {
     chunks: Array<{ content: string; embedding: number[] }>,
   ): boolean {
     let replaced = false;
-    const replace = this.db.transaction(() => {
+    this.immediateTransaction(() => {
       const currentHash = this.getFileHash(filePath);
       if (
         currentHash === hash &&
@@ -356,7 +371,6 @@ export class VectorDb {
       }
       replaced = true;
     });
-    replace.immediate();
     return replaced;
   }
 
@@ -368,25 +382,21 @@ export class VectorDb {
   ) {
     const floatArray = new Float32Array(embedding);
     const buffer = Buffer.from(floatArray.buffer);
-    this.db
-      .prepare(
-        `
+    using statement = this.db.prepare(`
       INSERT INTO chunks (file_path, chunk_index, content, embedding)
       VALUES (?, ?, ?, ?)
-    `,
-      )
-      .run(filePath, chunkIndex, content, buffer);
+    `);
+    statement.run(filePath, chunkIndex, content, buffer);
   }
 
   search(queryVector: number[], limit = 5): ChunkResult[] {
     const qVec = new Float32Array(queryVector);
-    const rows = this.db
-      .prepare(
-        `SELECT c.file_path, c.content, c.embedding
-         FROM chunks c JOIN files f ON f.path = c.file_path
-         WHERE f.hash NOT LIKE 'pending:%'`,
-      )
-      .all() as {
+    using statement = this.db.prepare(
+      `SELECT c.file_path, c.content, c.embedding
+       FROM chunks c JOIN files f ON f.path = c.file_path
+       WHERE f.hash NOT LIKE 'pending:%'`,
+    );
+    const rows = statement.all() as {
       file_path: string;
       content: string;
       embedding: Buffer;
@@ -429,7 +439,7 @@ export class VectorDb {
   }
 
   close() {
-    this.db.close();
+    this.db.close(true);
   }
 }
 
