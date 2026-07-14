@@ -24,6 +24,8 @@ jobs:
             asset: lavalamp-darwin-x64
           - os: macos-15
             asset: lavalamp-darwin-arm64
+          - os: windows-latest
+            asset: lavalamp-windows-x64.exe
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -33,11 +35,19 @@ jobs:
       - run: bun run typecheck
       - run: bun test
       - run: bun run package
-      - name: Prepare release asset
+      - name: Prepare release asset (Unix)
+        if: runner.os != 'Windows'
         run: |
           mv dist/lavalamp "${{ matrix.asset }}"
           chmod +x "${{ matrix.asset }}"
           "./${{ matrix.asset }}" --version
+      - name: Prepare release asset (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $source = if (Test-Path dist/lavalamp.exe) { 'dist/lavalamp.exe' } else { 'dist/lavalamp' }
+          Move-Item $source '${{ matrix.asset }}'
+          & '.\${{ matrix.asset }}' --version
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
@@ -49,6 +59,7 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release-assets
