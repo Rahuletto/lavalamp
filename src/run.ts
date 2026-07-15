@@ -6,6 +6,8 @@ import { lavalampDataDir } from './storage/paths';
 import { preflightInteractiveAuth } from './run/auth-preflight';
 import { runPrint } from './run/headless-print';
 import { runRepl } from './run/headless-repl';
+import { offerUpdate, runUpdateCommand } from './run/update';
+import packageJson from '../package.json' with { type: 'json' };
 
 // @ts-ignore
 import serverCode from '../dist/server.mjs' with { type: 'text' };
@@ -18,7 +20,15 @@ const model =
   (config.defaultModel.length > 0 ? config.defaultModel : undefined);
 
 const subcommand = process.argv[2];
-if (subcommand === 'login' || subcommand === 'logout' || subcommand === 'status') {
+const version = packageJson.version;
+if (subcommand === 'update') {
+  process.exit(await runUpdateCommand(version));
+}
+if (
+  subcommand === 'login' ||
+  subcommand === 'logout' ||
+  subcommand === 'status'
+) {
   await import('./cli/auth');
   process.exit(0);
 }
@@ -59,7 +69,7 @@ const versionIdx = findFlag(['-v', '--version']);
 const helpIdx = findFlag(['-h', '--help']);
 
 if (versionIdx !== -1) {
-  console.log('lavalamp 0.1.0');
+  console.log(`lavalamp ${version}`);
   process.exit(0);
 }
 
@@ -77,6 +87,7 @@ USAGE:
   lavalamp --workspace /path     Set workspace directory (default: cwd)
   lavalamp --model MODEL         Override default model
   lavalamp models                List known models
+  lavalamp update                Download and install the latest release
   lavalamp config show           Show persisted config
   lavalamp config set KEY VALUE  Persist model/Gateway config
 
@@ -91,6 +102,7 @@ OPTIONS:
   -m, --model MODEL              Override the configured model
       --output-format FORMAT     Output format: text or json
       --quiet                    Suppress diagnostic status messages
+      --no-update-check          Skip the interactive startup update check
   -h, --help                     Show this help
   -v, --version                  Show version
 `);
@@ -119,7 +131,8 @@ const resumeSessionId =
   resumeSession && continueArg !== undefined && !continueArg.startsWith('-')
     ? continueArg
     : undefined;
-const outputFormatStr = findFlagValue(['--output-format', '--format']) ?? 'text';
+const outputFormatStr =
+  findFlagValue(['--output-format', '--format']) ?? 'text';
 const quiet = process.argv.includes('--quiet');
 const sudoMode = process.argv.includes('--sudo');
 const autoApprove =
@@ -154,6 +167,18 @@ async function readStdin(): Promise<string> {
 async function main() {
   const agentName = askMode ? 'explore' : 'build';
   const replLikeMode = replIdx !== -1 || simpleMode;
+  const checkForUpdates =
+    !isPrintMode &&
+    !replLikeMode &&
+    (process.stdin.isTTY ?? false) &&
+    (process.stdout.isTTY ?? false) &&
+    (process.stderr.isTTY ?? false) &&
+    process.env.LAVALAMP_NO_UPDATE_CHECK !== '1' &&
+    !process.argv.includes('--no-update-check');
+
+  if (checkForUpdates && (await offerUpdate(version))) {
+    return;
+  }
 
   if (isPrintMode) {
     let prompt = process.argv[printPromptIdx + 1] ?? '';

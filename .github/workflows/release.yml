@@ -37,17 +37,23 @@ jobs:
       - run: bun run package
       - name: Prepare release asset (Unix)
         if: runner.os != 'Windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mv dist/lavalamp "${{ matrix.asset }}"
           chmod +x "${{ matrix.asset }}"
           "./${{ matrix.asset }}" --version
+          "./${{ matrix.asset }}" update
       - name: Prepare release asset (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $source = if (Test-Path dist/lavalamp.exe) { 'dist/lavalamp.exe' } else { 'dist/lavalamp' }
           Move-Item $source '${{ matrix.asset }}'
           & '.\${{ matrix.asset }}' --version
+          & '.\${{ matrix.asset }}' update
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}

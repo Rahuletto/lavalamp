@@ -1,6 +1,6 @@
 {
   "name": "lavalamp",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Cloudflare-native local AI coding harness",
   "bin": {
     "lavalamp": "./bin/lavalamp"
@@ -8,7 +8,7 @@
   "type": "module",
   "scripts": {
     "build": "flue build --target node && bun run build/patch-server.ts",
-    "package": "bun run build && bun build --compile --minify --target=bun src/run.ts --outfile dist/lavalamp",
+    "package": "bun run build && bun build --compile --minify --target=bun --define globalThis.__LAVALAMP_STANDALONE__=true src/run.ts --outfile dist/lavalamp",
     "postinstall": "bun run build/postinstall.ts",
     "test": "bun test",
     "e2e": "bun run build && bun test --timeout=180000 ./tests/e2e/actual-bin.e2e.ts",

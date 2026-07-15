@@ -31,7 +31,16 @@ describe('actual CLI entrypoint', () => {
     const result = await run('--version');
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout.trim()).toBe('lavalamp 0.1.0');
+    expect(result.stdout.trim()).toBe('lavalamp 0.1.2');
+  });
+
+  test('does not self-update the Bun development runtime', async () => {
+    const result = await run('update');
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      'Self-update is only available in release binaries',
+    );
   });
 
   test('rejects an invalid output format', async () => {

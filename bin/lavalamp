@@ -69,7 +69,7 @@ EOF
 }
 
 show_version() {
-  echo "lavalamp 0.1.0"
+  echo "lavalamp 0.1.2"
 }
 
 # Handle subcommands before flag parsing
