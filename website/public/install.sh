@@ -20,15 +20,82 @@ require_downloader() {
 
 download() {
   local url="$1" destination="$2"
+  local size=0
+  
   if command -v curl >/dev/null 2>&1; then
-    curl --fail --show-error --location --retry 3 \
-      --progress-bar --output "$destination" "$url"
+    size=$(curl -sIL "$url" | grep -i '^content-length:' | tail -n 1 | tr -d '\r' | cut -d' ' -f2 || echo 0)
+  fi
+  
+  if ! [[ "$size" =~ ^[0-9]+$ ]]; then
+    size=0
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --silent --show-error --location --retry 3 \
+      --output "$destination" "$url" &
   else
-    if wget --help 2>&1 | grep -q '\--show-progress'; then
-      wget --quiet --show-progress --tries=3 --output-document="$destination" "$url"
-    else
-      wget --tries=3 --output-document="$destination" "$url"
+    wget --quiet --tries=3 --output-document="$destination" "$url" &
+  fi
+  
+  local pid=$!
+  local current=0
+  local percent=0
+  local bar_size=20
+  local filled=0
+  local empty=0
+  local bar=""
+  
+  while kill -0 $pid 2>/dev/null; do
+    if [ -f "$destination" ]; then
+      if [ "$(uname -s)" = "Darwin" ]; then
+        current=$(stat -f %z "$destination" 2>/dev/null || echo 0)
+      else
+        current=$(stat -c %s "$destination" 2>/dev/null || echo 0)
+      fi
+      
+      if [ "$size" -gt 0 ]; then
+        percent=$(( current * 100 / size ))
+        if [ "$percent" -gt 100 ]; then percent=100; fi
+        
+        filled=$(( percent * bar_size / 100 ))
+        empty=$(( bar_size - filled ))
+        
+        bar=""
+        for ((i=0; i<filled; i++)); do bar="${bar}#"; done
+        for ((i=0; i<empty; i++)); do bar="${bar}-"; done
+        
+        local cur_mb=$((current / 1048576))
+        local cur_frac=$(( (current % 1048576) * 10 / 1048576 ))
+        local sz_mb=$((size / 1048576))
+        local sz_frac=$(( (size % 1048576) * 10 / 1048576 ))
+        
+        printf '\r[lavalamp] Downloading... [%-20s] %d%% (%d.%d/%d.%d MB)' "$bar" "$percent" "$cur_mb" "$cur_frac" "$sz_mb" "$sz_frac" >&2
+      else
+        local cur_mb=$((current / 1048576))
+        local cur_frac=$(( (current % 1048576) * 10 / 1048576 ))
+        printf '\r[lavalamp] Downloading... %d.%d MB' "$cur_mb" "$cur_frac" >&2
+      fi
     fi
+    sleep 0.1
+  done
+  
+  wait $pid
+  local exit_code=$?
+  
+  if [ $exit_code -eq 0 ]; then
+    if [ "$size" -gt 0 ]; then
+      bar=""
+      for ((i=0; i<bar_size; i++)); do bar="${bar}#"; done
+      local sz_mb=$((size / 1048576))
+      local sz_frac=$(( (size % 1048576) * 10 / 1048576 ))
+      printf '\r[lavalamp] Downloading... [%-20s] 100%% (%d.%d/%d.%d MB)\n' "$bar" "$sz_mb" "$sz_frac" "$sz_mb" "$sz_frac" >&2
+    else
+      printf '\r[lavalamp] Downloading... Done\n' >&2
+    fi
+    return 0
+  else
+    printf '\n' >&2
+    return $exit_code
   fi
 }
 
