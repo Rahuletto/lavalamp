@@ -6,6 +6,9 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/.agents/bin}"
 REPO="rahuletto/lavalamp"
 ASSET_PREFIX="lavalamp"
 
+# Global cleanup variables
+tmp_dir=""
+
 info() { printf '[lavalamp] %s\n' "$*"; }
 warn() { printf '[lavalamp] Warning: %s\n' "$*" >&2; }
 error() { printf '[lavalamp] Error: %s\n' "$*" >&2; exit 1; }
@@ -18,10 +21,14 @@ require_downloader() {
 download() {
   local url="$1" destination="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl --fail --silent --show-error --location --retry 3 \
-      --output "$destination" "$url"
+    curl --fail --show-error --location --retry 3 \
+      --progress-bar --output "$destination" "$url"
   else
-    wget --quiet --tries=3 --output-document="$destination" "$url"
+    if wget --help 2>&1 | grep -q '\--show-progress'; then
+      wget --quiet --show-progress --tries=3 --output-document="$destination" "$url"
+    else
+      wget --tries=3 --output-document="$destination" "$url"
+    fi
   fi
 }
 
@@ -139,7 +146,7 @@ setup_path() {
 }
 
 install_lavalamp() {
-  local platform version asset_name base_url tmp_dir candidate checksum_file destination
+  local platform version asset_name base_url candidate checksum_file destination
   platform="$(detect_platform)"
   version="$LAVALAMP_VERSION"
   if [ "$version" = latest ]; then
